@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 class Greetings {
   static String getGreeting() {
     final hour = DateTime.now().hour;
@@ -11,5 +13,15 @@ class Greetings {
     } else {
       return 'Good Night!';
     }
+  }
+
+  //  Add today's date
+  static String getTodayDate() {
+    return DateFormat('MMMM d, yyyy').format(DateTime.now());
+  }
+
+  //  Optional: Greeting + Date combined
+  static String getGreetingWithDate() {
+    return '${getGreeting()} Today is ${getTodayDate()}';
   }
 }
