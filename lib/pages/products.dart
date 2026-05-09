@@ -51,13 +51,16 @@ class _ProductsPageState extends State<ProductsPage> {
   ];
 
   List<Map<String, dynamic>> get filteredProducts {
-    return allProducts
-        .where(
-          (product) => product['title'].toString().toLowerCase().contains(
-            _searchQuery.toLowerCase(),
-          ),
-        )
-        .toList();
+    final query = _searchQuery.trim().toLowerCase();
+
+    if (query.isEmpty) {
+      return allProducts;
+    }
+
+    return allProducts.where((product) {
+      final title = product['title'].toString().toLowerCase();
+      return title.contains(query);
+    }).toList();
   }
 
   String _getStockStatus(int stock, int threshold) {
@@ -118,7 +121,7 @@ class _ProductsPageState extends State<ProductsPage> {
                       borderRadius: BorderRadius.circular(12.0),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 8,
                           offset: const Offset(0, 4),
                         ),
@@ -136,6 +139,8 @@ class _ProductsPageState extends State<ProductsPage> {
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: TextField(
                 controller: _searchController,
+                textInputAction: TextInputAction.search,
+                autocorrect: false,
                 onChanged: (value) {
                   setState(() {
                     _searchQuery = value;
@@ -271,8 +276,8 @@ class _ProductsPageState extends State<ProductsPage> {
                                               vertical: 6.0,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: statusColor.withOpacity(
-                                                0.18,
+                                              color: statusColor.withValues(
+                                                alpha: 0.18,
                                               ),
                                               borderRadius:
                                                   BorderRadius.circular(12.0),

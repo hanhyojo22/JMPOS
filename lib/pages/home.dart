@@ -82,7 +82,7 @@ class _HomePageState extends State<HomePage> {
               borderRadius: BorderRadius.circular(28.0),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.12),
+                  color: Colors.black.withValues(alpha: 0.12),
                   blurRadius: 20,
                   offset: const Offset(0, 8),
                 ),
@@ -110,7 +110,7 @@ class _HomePageState extends State<HomePage> {
                         Text(
                           Greetings.getTodayDate(),
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.8),
+                            color: Colors.white.withValues(alpha: 0.8),
                             fontSize: 12,
                           ),
                         ),
@@ -119,7 +119,7 @@ class _HomePageState extends State<HomePage> {
                     Container(
                       padding: const EdgeInsets.all(12.0),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withValues(alpha: 0.2),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
@@ -150,10 +150,10 @@ class _HomePageState extends State<HomePage> {
                           horizontal: 18.0,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
+                          color: Colors.white.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20.0),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.2),
+                            color: Colors.white.withValues(alpha: 0.2),
                             width: 1,
                           ),
                         ),
@@ -164,14 +164,14 @@ class _HomePageState extends State<HomePage> {
                               children: [
                                 Icon(
                                   Icons.receipt_long,
-                                  color: Colors.white.withOpacity(0.9),
+                                  color: Colors.white.withValues(alpha: 0.9),
                                   size: 18,
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
                                   'Transactions',
                                   style: TextStyle(
-                                    color: Colors.white.withOpacity(0.9),
+                                    color: Colors.white.withValues(alpha: 0.9),
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -199,10 +199,10 @@ class _HomePageState extends State<HomePage> {
                           horizontal: 18.0,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
+                          color: Colors.white.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20.0),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.2),
+                            color: Colors.white.withValues(alpha: 0.2),
                             width: 1,
                           ),
                         ),
@@ -213,14 +213,14 @@ class _HomePageState extends State<HomePage> {
                               children: [
                                 Icon(
                                   Icons.inventory_2,
-                                  color: Colors.white.withOpacity(0.9),
+                                  color: Colors.white.withValues(alpha: 0.9),
                                   size: 18,
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
                                   'Avg. Order',
                                   style: TextStyle(
-                                    color: Colors.white.withOpacity(0.9),
+                                    color: Colors.white.withValues(alpha: 0.9),
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -326,21 +326,50 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       body: _buildPageContent(),
+      floatingActionButton: _selectedIndex == 0
+          ? FloatingActionButton(
+              onPressed: () => setState(() => _selectedIndex = 3),
+              backgroundColor: const Color(0xFF667EEA),
+
+              tooltip: 'New Sales',
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onNavBarTapped,
+        backgroundColor: Colors.white,
+        elevation: 8.0,
+        shadowColor: Colors.black.withValues(alpha: 0.1),
+        indicatorColor: const Color(0xFF667EEA).withValues(alpha: 0.2),
+        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
           NavigationDestination(
-            icon: Icon(Icons.shopping_bag),
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.inventory_2_outlined),
+            selectedIcon: Icon(Icons.inventory_2),
             label: 'Inventory',
           ),
           NavigationDestination(
-            icon: Icon(Icons.add, size: 40),
-            label: 'Add Products',
+            icon: Icon(Icons.add_circle_outline, size: 32),
+            selectedIcon: Icon(Icons.add_circle, size: 32),
+            label: 'Add',
           ),
-          NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Sales'),
-          NavigationDestination(icon: Icon(Icons.book), label: 'Reports'),
+          NavigationDestination(
+            icon: Icon(Icons.bar_chart_outlined),
+            selectedIcon: Icon(Icons.bar_chart),
+            label: 'Sales',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.book_outlined),
+            selectedIcon: Icon(Icons.book),
+            label: 'Reports',
+          ),
         ],
       ),
     );

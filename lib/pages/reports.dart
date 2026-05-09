@@ -85,7 +85,7 @@ class ReportsPage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(18.0),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
+                        color: Colors.black.withValues(alpha: 0.04),
                         blurRadius: 10,
                         offset: const Offset(0, 6),
                       ),
@@ -283,7 +283,7 @@ class _ReportTabView extends StatelessWidget {
                       vertical: 10.0,
                     ),
                     decoration: BoxDecoration(
-                      color: _trendColor.withOpacity(0.16),
+                      color: _trendColor.withValues(alpha: 0.16),
                       borderRadius: BorderRadius.circular(16.0),
                     ),
                     child: Row(

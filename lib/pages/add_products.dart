@@ -95,7 +95,7 @@ class _AddProductsPageState extends State<AddProductsPage> {
                   borderRadius: BorderRadius.circular(20.0),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
+                      color: Colors.black.withValues(alpha: 0.8),
                       blurRadius: 12,
                       offset: const Offset(0, 6),
                     ),
