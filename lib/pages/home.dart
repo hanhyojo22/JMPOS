@@ -3,12 +3,13 @@ import 'add_products.dart';
 import 'products.dart';
 import 'sales.dart';
 import 'reports.dart';
+import 'account_page.dart';
 import 'package:pos_app/utils/greetings.dart';
 import 'package:pos_app/utils/currency.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.title});
-
+  const HomePage({super.key, required this.title, required this.username});
+  final String username;
   final String title;
 
   @override
@@ -17,8 +18,8 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
-  double totalSales = 1234.56; // Placeholder for total sales today
-  int totalTransactions = 42; // Placeholder for total transactions today
+  double totalSales = 1234.56;
+  int totalTransactions = 42;
 
   final List<Map<String, dynamic>> recentTransactions = [
     {
@@ -52,6 +53,12 @@ class _HomePageState extends State<HomePage> {
       'imagePath': 'lib/assets/birds tree.png',
     },
   ];
+
+  void _openAccount() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => AccountPage(username: widget.username)),
+    );
+  }
 
   Widget _buildPageContent() {
     switch (_selectedIndex) {
@@ -320,9 +327,15 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(Greetings.getGreeting()),
-        actions: const [
-          Icon(Icons.account_circle, size: 32),
-          SizedBox(width: 16),
+        actions: [
+          // ── Tappable account icon ──────────────────────────────
+          GestureDetector(
+            onTap: _openAccount,
+            child: Container(
+              margin: const EdgeInsets.only(right: 16),
+              child: const Icon(Icons.account_circle, size: 32),
+            ),
+          ),
         ],
       ),
       body: _buildPageContent(),
@@ -330,7 +343,6 @@ class _HomePageState extends State<HomePage> {
           ? FloatingActionButton(
               onPressed: () => setState(() => _selectedIndex = 3),
               backgroundColor: const Color(0xFF667EEA),
-
               tooltip: 'New Sales',
               child: const Icon(Icons.add, color: Colors.white),
             )
