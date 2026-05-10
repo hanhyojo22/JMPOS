@@ -58,6 +58,9 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
     },
   ];
 
+  final TextEditingController searchController = TextEditingController();
+  String searchQuery = '';
+
   List<Map<String, dynamic>> cart = [];
   List<Map<String, dynamic>> salesHistory = [
     {
@@ -111,6 +114,7 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
   @override
   void dispose() {
     _tabController.dispose();
+    searchController.dispose();
     super.dispose();
   }
 
@@ -141,6 +145,76 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
     0.0,
     (sum, item) => sum + (item['product']['price'] * item['quantity']),
   );
+
+  int get cartQuantity =>
+      cart.fold(0, (sum, item) => sum + (item['quantity'] as int));
+
+  void openCartPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => CartPage(
+          cart: cart,
+          onAdd: addToCart,
+          onRemove: removeFromCart,
+          onCompleteSale: () {
+            completeSale();
+            Navigator.of(context).pop();
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCartIcon() {
+    return GestureDetector(
+      onTap: openCartPage,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: const BoxDecoration(
+              color: Color(0xFF667EEA),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.shopping_cart_outlined,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+          if (cartQuantity > 0)
+            Positioned(
+              right: -4,
+              top: -4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$cartQuantity',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> get filteredProducts {
+    if (searchQuery.isEmpty) return allProducts;
+    return allProducts.where((product) {
+      final title = (product['title'] as String).toLowerCase();
+      return title.contains(searchQuery.toLowerCase());
+    }).toList();
+  }
 
   void completeSale() {
     if (cart.isEmpty) return;
@@ -219,18 +293,29 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
                 horizontal: 16.0,
                 vertical: 20.0,
               ),
-              child: Column(
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Sales',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Sales',
+                          style: TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Create new sales or view transaction history.',
+                          style: TextStyle(fontSize: 14, color: Colors.black54),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Create new sales or view transaction history.',
-                    style: TextStyle(fontSize: 14, color: Colors.black54),
-                  ),
+                  _buildCartIcon(),
                 ],
               ),
             ),
@@ -248,20 +333,56 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
                   // ── NEW SALE TAB ──────────────────────────────────
                   Column(
                     children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16.0,
+                          vertical: 10.0,
+                        ),
+                        child: TextField(
+                          controller: searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Search products',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      searchController.clear();
+                                      setState(() {
+                                        searchQuery = '';
+                                      });
+                                    },
+                                  )
+                                : null,
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14.0),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          onChanged: (value) {
+                            setState(() {
+                              searchQuery = value;
+                            });
+                          },
+                        ),
+                      ),
+                      // Product list — takes remaining space above cart
                       Expanded(
-                        child: allProducts.isEmpty
+                        child: filteredProducts.isEmpty
                             ? Center(
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Icon(
-                                      Icons.shopping_bag_outlined,
+                                      Icons.search_off,
                                       size: 64,
                                       color: Colors.grey[300],
                                     ),
                                     const SizedBox(height: 16),
                                     Text(
-                                      'No products available',
+                                      'No products found',
                                       style: TextStyle(
                                         fontSize: 16,
                                         color: Colors.grey[600],
@@ -272,9 +393,9 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
                               )
                             : ListView.builder(
                                 padding: const EdgeInsets.all(16.0),
-                                itemCount: allProducts.length,
+                                itemCount: filteredProducts.length,
                                 itemBuilder: (context, index) {
-                                  final product = allProducts[index];
+                                  final product = filteredProducts[index];
                                   final stockColor = _getStockColor(
                                     product['stock'],
                                   );
@@ -428,7 +549,7 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
                                                     0xFF667EEA,
                                                   ),
                                                   iconColor: Colors.white,
-                                                  size: 36, // smaller size
+                                                  size: 36,
                                                   onTap: () =>
                                                       addToCart(product),
                                                 ),
@@ -437,36 +558,14 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
                                           else
                                             Row(
                                               mainAxisAlignment:
-                                                  MainAxisAlignment.center,
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
                                               children: [
-                                                _qtyButton(
-                                                  icon: Icons.remove,
-                                                  bgColor: Colors.grey[200]!,
-                                                  iconColor: Colors.black87,
-                                                  onTap: () {
-                                                    final cartIndex = cart
-                                                        .indexWhere(
-                                                          (item) =>
-                                                              item['product']['title'] ==
-                                                              product['title'],
-                                                        );
-                                                    if (cartIndex != -1) {
-                                                      removeFromCart(cartIndex);
-                                                    }
-                                                  },
-                                                ),
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 16,
-                                                      ),
-                                                  child: Text(
-                                                    '$qty',
-                                                    style: const TextStyle(
-                                                      fontSize: 18,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
+                                                Text(
+                                                  'In cart: $qty',
+                                                  style: const TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
                                                 _qtyButton(
@@ -475,6 +574,7 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
                                                     0xFF667EEA,
                                                   ),
                                                   iconColor: Colors.white,
+                                                  size: 36,
                                                   onTap: () =>
                                                       addToCart(product),
                                                 ),
@@ -487,270 +587,6 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
                                 },
                               ),
                       ),
-
-                      // Cart panel
-                      if (cart.isNotEmpty)
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border(
-                              top: BorderSide(
-                                color: Colors.grey[200]!,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text(
-                                    'Shopping Cart',
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF667EEA),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      '${cart.length} item${cart.length != 1 ? 's' : ''}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-
-                              ...List.generate(cart.length, (i) {
-                                final item = cart[i];
-                                final String name = item['product']['title'];
-                                final double price = item['product']['price'];
-                                final int qty = item['quantity'];
-                                final double subtotal = price * qty;
-
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 14),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[50],
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: Colors.grey[200]!,
-                                      ),
-                                    ),
-                                    child: Column(
-                                      children: [
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                name,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 15,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            GestureDetector(
-                                              onTap: () {
-                                                setState(() {
-                                                  cart.removeAt(i);
-                                                });
-                                              },
-                                              child: Icon(
-                                                Icons.delete_outline,
-                                                color: Colors.red[400],
-                                                size: 20,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Row(
-                                          children: [
-                                            // Price
-                                            Expanded(
-                                              flex: 2,
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    'Price',
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      color: Colors.grey[600],
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    CurrencyFormatter.format(
-                                                      price,
-                                                    ),
-                                                    style: const TextStyle(
-                                                      fontSize: 14,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Color(0xFF667EEA),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            // Qty stepper
-                                            Expanded(
-                                              flex: 2,
-                                              child: Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.center,
-                                                children: [
-                                                  _qtyButton(
-                                                    icon: Icons.remove,
-                                                    bgColor: Colors.grey[200]!,
-                                                    iconColor: Colors.black87,
-                                                    size: 36,
-                                                    onTap: () =>
-                                                        removeFromCart(i),
-                                                  ),
-                                                  SizedBox(
-                                                    width: 40,
-                                                    child: Text(
-                                                      '$qty',
-                                                      textAlign:
-                                                          TextAlign.center,
-                                                      style: const TextStyle(
-                                                        fontSize: 15,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  _qtyButton(
-                                                    icon: Icons.add,
-                                                    bgColor: const Color(
-                                                      0xFF667EEA,
-                                                    ),
-                                                    iconColor: Colors.white,
-                                                    size: 36,
-                                                    onTap: () => addToCart(
-                                                      item['product'],
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            // Subtotal
-                                            Expanded(
-                                              flex: 2,
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.end,
-                                                children: [
-                                                  Text(
-                                                    'Subtotal',
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      color: Colors.grey[600],
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    CurrencyFormatter.format(
-                                                      subtotal,
-                                                    ),
-                                                    style: const TextStyle(
-                                                      fontSize: 14,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }),
-
-                              Divider(height: 24, color: Colors.grey[300]),
-
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text(
-                                    'Total:',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    CurrencyFormatter.format(cartTotal),
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF667EEA),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-
-                              ElevatedButton(
-                                onPressed: completeSale,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF667EEA),
-                                  minimumSize: const Size(double.infinity, 56),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  elevation: 2,
-                                ),
-                                child: const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.check_circle_outline,
-                                      color: Colors.white,
-                                    ),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Complete Sale',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                     ],
                   ),
 
@@ -959,6 +795,297 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
           ],
         ),
       ),
+    );
+  }
+}
+
+class CartPage extends StatefulWidget {
+  const CartPage({
+    super.key,
+    required this.cart,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onCompleteSale,
+  });
+
+  final List<Map<String, dynamic>> cart;
+  final void Function(Map<String, dynamic> product) onAdd;
+  final void Function(int index) onRemove;
+  final VoidCallback onCompleteSale;
+
+  @override
+  State<CartPage> createState() => _CartPageState();
+}
+
+class _CartPageState extends State<CartPage> {
+  @override
+  Widget build(BuildContext context) {
+    final cart = widget.cart;
+    final double cartTotal = cart.fold(
+      0.0,
+      (sum, item) => sum + (item['product']['price'] * item['quantity']),
+    );
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Shopping Cart'), centerTitle: true),
+      body: cart.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: const [
+                  Icon(
+                    Icons.shopping_cart_outlined,
+                    size: 72,
+                    color: Colors.grey,
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Your cart is empty',
+                    style: TextStyle(fontSize: 16, color: Colors.black54),
+                  ),
+                ],
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: cart.length,
+                      itemBuilder: (context, i) {
+                        final item = cart[i];
+                        final String name = item['product']['title'];
+                        final double price = item['product']['price'];
+                        final int qty = item['quantity'];
+                        final double subtotal = price * qty;
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 14.0),
+                          child: Container(
+                            padding: const EdgeInsets.all(14.0),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(18.0),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () =>
+                                          setState(() => widget.onRemove(i)),
+                                      child: Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.red[400],
+                                        size: 22,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      flex: 2,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Price',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            CurrencyFormatter.format(price),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF667EEA),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 3,
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          GestureDetector(
+                                            onTap: () => setState(
+                                              () => widget.onRemove(i),
+                                            ),
+                                            child: Container(
+                                              width: 32,
+                                              height: 32,
+                                              alignment: Alignment.center,
+                                              decoration: BoxDecoration(
+                                                color: Colors.grey[200],
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              child: const Icon(
+                                                Icons.remove,
+                                                color: Colors.black87,
+                                                size: 20,
+                                              ),
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            width: 40,
+                                            child: Text(
+                                              '$qty',
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                          GestureDetector(
+                                            onTap: () => setState(
+                                              () =>
+                                                  widget.onAdd(item['product']),
+                                            ),
+                                            child: Container(
+                                              width: 32,
+                                              height: 32,
+                                              alignment: Alignment.center,
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF667EEA),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              child: const Icon(
+                                                Icons.add,
+                                                color: Colors.white,
+                                                size: 20,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 2,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            'Subtotal',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            CurrencyFormatter.format(subtotal),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      bottomNavigationBar: cart.isEmpty
+          ? null
+          : SafeArea(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 14.0,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    top: BorderSide(color: Colors.grey[200]!, width: 1),
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Total:',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          CurrencyFormatter.format(cartTotal),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF667EEA),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: widget.onCompleteSale,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF667EEA),
+                        minimumSize: const Size(double.infinity, 56),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: const Text(
+                        'Complete Sale',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 }
