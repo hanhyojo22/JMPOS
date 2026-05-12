@@ -101,11 +101,13 @@ class _LoginPageState extends State<LoginPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         // Logo
-                        const Icon(
-                          Icons.point_of_sale,
-                          size: 80,
-                          color: Color(0xFF667eea),
+                        Image.asset(
+                          'lib/assets/cashiericonnobg.png',
+                          height: 120,
+                          width: 200,
+                          fit: BoxFit.contain,
                         ),
+
                         const SizedBox(height: 16),
                         const Text(
                           'POS App',

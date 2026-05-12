@@ -1,11 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
 
 class SalesPage extends StatefulWidget {
-  const SalesPage({super.key});
+  final int initialTab;
+
+  const SalesPage({super.key, this.initialTab = 0});
 
   @override
   State<SalesPage> createState() => _SalesPageState();
@@ -22,7 +25,13 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+      length: 2,
+
+      vsync: this,
+
+      initialIndex: widget.initialTab,
+    );
     _tabController.addListener(() {
       if (_tabController.index == 1) loadSalesHistory();
     });
@@ -48,6 +57,7 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
               'title': p['product_name'],
               'price': p['price'],
               'stock': p['stock_quantity'],
+              'barcode': p['barcode'] ?? '',
               'imagePath': p['image_url'] ?? '',
             },
           )
@@ -285,6 +295,30 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
     ).then((_) => setState(() {}));
   }
 
+  Future<void> scanBarcode() async {
+    await Navigator.push(
+      context,
+
+      MaterialPageRoute(
+        builder: (_) => BarcodeScannerPage(
+          onDetect: (barcode) {
+            final product = allProducts.firstWhere((p) {
+              return p['barcode'].toString() == barcode;
+            }, orElse: () => {});
+
+            if (product.isNotEmpty) {
+              addToCart(product);
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Product not found')),
+              );
+            }
+          },
+        ),
+      ),
+    );
+  }
+
   Widget _buildCartIcon() {
     return GestureDetector(
       onTap: openCartPage,
@@ -384,15 +418,37 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
                           decoration: InputDecoration(
                             hintText: 'Search products...',
                             prefixIcon: const Icon(Icons.search),
-                            suffixIcon: searchQuery.isNotEmpty
-                                ? IconButton(
+                            suffixIcon: Row(
+                              mainAxisSize: MainAxisSize.min,
+
+                              children: [
+                                if (searchQuery.isNotEmpty)
+                                  IconButton(
                                     icon: const Icon(Icons.clear),
+
                                     onPressed: () {
-                                      searchController.clear();
-                                      setState(() => searchQuery = '');
+                                      Navigator.push(
+                                        context,
+
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const SalesPage(initialTab: 1),
+                                        ),
+                                      );
                                     },
-                                  )
-                                : null,
+                                  ),
+
+                                IconButton(
+                                  onPressed: scanBarcode,
+
+                                  icon: const Icon(
+                                    Icons.qr_code_scanner,
+
+                                    color: Color(0xFF667EEA),
+                                  ),
+                                ),
+                              ],
+                            ),
                             filled: true,
                             fillColor: Colors.white,
                             border: OutlineInputBorder(
@@ -859,6 +915,56 @@ class CartPage extends StatefulWidget {
 
   @override
   State<CartPage> createState() => _CartPageState();
+}
+
+class BarcodeScannerPage extends StatefulWidget {
+  final Function(String barcode) onDetect;
+
+  const BarcodeScannerPage({super.key, required this.onDetect});
+
+  @override
+  State<BarcodeScannerPage> createState() => _BarcodeScannerPageState();
+}
+
+class _BarcodeScannerPageState extends State<BarcodeScannerPage> {
+  bool _isScanned = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+
+        foregroundColor: Colors.white,
+
+        title: const Text('Scan Barcode'),
+      ),
+
+      body: MobileScanner(
+        onDetect: (capture) {
+          if (_isScanned) return;
+
+          final List<Barcode> barcodes = capture.barcodes;
+
+          for (final barcode in barcodes) {
+            final code = barcode.rawValue;
+
+            if (code != null) {
+              _isScanned = true;
+
+              widget.onDetect(code);
+
+              Navigator.pop(context);
+
+              break;
+            }
+          }
+        },
+      ),
+    );
+  }
 }
 
 class _CartPageState extends State<CartPage> {

@@ -72,10 +72,10 @@ class DatabaseHelper {
       )
     ''');
 
-    // Insert default admin user (password: Franil123)
+    // Insert default admin user (password: jmsolution)
     await db.insert('users', {
       'username': 'admin',
-      'password_hash': _hashPassword('Franil123'),
+      'password_hash': _hashPassword('jmsolution'),
       'full_name': 'Juan dela Cruz',
       'email': 'admin@posapp.com',
       'role': 'admin',
