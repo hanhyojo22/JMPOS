@@ -439,36 +439,54 @@ class _AddProductsPageState extends State<AddProductsPage>
                       const SizedBox(height: 14),
                       // Category dropdown
                       DropdownButtonFormField<String>(
-                        value: _selectedCategory,
+                        initialValue: _selectedCategory,
+
                         items: _categories
                             .map(
                               (c) => DropdownMenuItem(value: c, child: Text(c)),
                             )
                             .toList(),
+
                         decoration: InputDecoration(
                           labelText: 'Category',
+
                           prefixIcon: const Icon(Icons.category_outlined),
+
                           filled: true,
+
                           fillColor: Colors.grey[50],
+
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
+
                             borderSide: BorderSide(color: Colors.grey[200]!),
                           ),
+
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
+
                             borderSide: BorderSide(color: Colors.grey[200]!),
                           ),
+
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
+
                             borderSide: const BorderSide(
                               color: Color(0xFF667EEA),
                               width: 2,
                             ),
                           ),
                         ),
-                        onChanged: (v) => setState(() => _selectedCategory = v),
-                        validator: (v) =>
-                            v == null ? 'Select a category' : null,
+
+                        onChanged: (v) {
+                          setState(() {
+                            _selectedCategory = v;
+                          });
+                        },
+
+                        validator: (v) {
+                          return v == null ? 'Select a category' : null;
+                        },
                       ),
                       const SizedBox(height: 14),
                       _AppTextField(

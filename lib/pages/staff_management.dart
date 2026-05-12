@@ -55,17 +55,18 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
             onPressed: () async {
               Navigator.pop(context);
               final success = await DatabaseHelper.instance.deleteStaff(userId);
-              if (mounted) {
-                if (success) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Staff member deleted')),
-                  );
-                  _refreshStaffList();
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Failed to delete staff')),
-                  );
-                }
+              if (!context.mounted) return;
+
+              if (success) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Staff member deleted')),
+                );
+
+                _refreshStaffList();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Failed to delete staff')),
+                );
               }
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
