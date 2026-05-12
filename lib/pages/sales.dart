@@ -234,7 +234,7 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder(size),
+          errorBuilder: (_, _, _) => _placeholder(size),
         ),
       );
     }
@@ -246,7 +246,7 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder(size),
+          errorBuilder: (_, _, _) => _placeholder(size),
         ),
       );
     }
@@ -602,8 +602,9 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
                                                           c['product']['id'] ==
                                                           product['id'],
                                                     );
-                                                    if (idx != -1)
+                                                    if (idx != -1) {
                                                       removeFromCart(idx);
+                                                    }
                                                   },
                                                   child: Container(
                                                     width: 32,
@@ -863,15 +864,15 @@ class CartPage extends StatefulWidget {
 class _CartPageState extends State<CartPage> {
   final TextEditingController _cashController = TextEditingController();
   bool _completing = false;
-  double _cashAmount = 0;
+  //double _cashAmount = 0;
 
   double get _total => widget.cart.fold(
     0.0,
     (s, i) => s + (i['product']['price'] as num) * (i['quantity'] as int),
   );
 
-  double get _change => _cashAmount - _total;
-  bool get _cashSufficient => _cashAmount >= _total && _cashAmount > 0;
+  // double get _change => _cashAmount - _total;
+  // bool get _cashSufficient => _cashAmount >= _total && _cashAmount > 0;
 
   Widget _buildImage(String? path, {double size = 52}) {
     if (path == null || path.isEmpty) return _placeholder(size);
@@ -884,7 +885,7 @@ class _CartPageState extends State<CartPage> {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder(size),
+          errorBuilder: (_, _, _) => _placeholder(size),
         ),
       );
     }
@@ -907,7 +908,7 @@ class _CartPageState extends State<CartPage> {
 
   void _showPaymentSheet() {
     _cashController.clear();
-    setState(() => _cashAmount = 0);
+    //setState(() => _cashAmount = 0);
 
     showModalBottomSheet(
       context: context,

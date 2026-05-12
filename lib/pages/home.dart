@@ -47,39 +47,52 @@ class _HomePageState extends State<HomePage> {
   Future<void> loadRecentTransactions() async {
     final db = await DatabaseHelper.instance.database;
 
+    // TOTAL SALES
+    final totalResult = await db.rawQuery('''
+
+    SELECT
+      SUM(total) as grand_total,
+      COUNT(*) as total_count
+    FROM sales
+
+  ''');
+
+    // RECENT TRANSACTIONS
     final transactions = await db.rawQuery('''
 
-      SELECT
+    SELECT
 
-        sales.id,
-        sales.product_name,
-        sales.total,
-        sales.created_at,
+      sales.id,
+      sales.product_name,
+      sales.total,
+      sales.created_at,
 
-        products.image_url
+      products.image_url
 
-      FROM sales
+    FROM sales
 
-      LEFT JOIN products
-      ON sales.product_id =
-         products.id
+    LEFT JOIN products
+    ON sales.product_id =
+       products.id
 
-      ORDER BY sales.id DESC
+    ORDER BY sales.id DESC
 
-      LIMIT 10
+    LIMIT 10
 
-    ''');
+  ''');
 
-    double salesTotal = 0;
+    final double salesTotal = totalResult.first['grand_total'] == null
+        ? 0
+        : (totalResult.first['grand_total'] as num).toDouble();
 
-    for (final item in transactions) {
-      salesTotal += (item['total'] as num).toDouble();
-    }
+    final int transactionCount = totalResult.first['total_count'] == null
+        ? 0
+        : (totalResult.first['total_count'] as int);
 
     setState(() {
       totalSales = salesTotal;
 
-      totalTransactions = transactions.length;
+      totalTransactions = transactionCount;
 
       recentTransactions = transactions.map((sale) {
         final createdAt = DateTime.parse(sale['created_at'].toString());
