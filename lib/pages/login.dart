@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'home.dart';
-
-import 'signup.dart';
 import 'package:pos_app/database/database_helper.dart';
 
 class LoginPage extends StatefulWidget {
@@ -41,8 +39,11 @@ class _LoginPageState extends State<LoginPage> {
     if (user != null) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) =>
-              HomePage(title: 'POS Dashboard', username: user['username']),
+          builder: (_) => HomePage(
+            title: 'POS Dashboard',
+            username: user['username'] as String,
+            role: user['role'] as String,
+          ),
         ),
       );
     } else {
@@ -65,73 +66,11 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  Future<void> _showForgotPasswordDialog() async {
-    final forgotEmailController = TextEditingController();
-    final forgotFormKey = GlobalKey<FormState>();
-
-    await showDialog<void>(
+  void _showForgotPasswordDialog() {
+    showDialog<void>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text('Forgot Password'),
-          content: Form(
-            key: forgotFormKey,
-            child: TextFormField(
-              controller: forgotEmailController,
-              decoration: InputDecoration(
-                labelText: 'Email Address',
-                hintText: 'Enter your email',
-                prefixIcon: const Icon(Icons.email_outlined),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              keyboardType: TextInputType.emailAddress,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter your email';
-                }
-                if (!RegExp(
-                  r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                ).hasMatch(value)) {
-                  return 'Please enter a valid email';
-                }
-                return null;
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF667eea),
-              ),
-              onPressed: () {
-                if (forgotFormKey.currentState!.validate()) {
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Password reset link sent to ${forgotEmailController.text.trim()}',
-                      ),
-                    ),
-                  );
-                }
-              },
-              child: const Text('Send', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        );
-      },
+      builder: (_) => const _ForgotPasswordDialog(),
     );
-
-    forgotEmailController.dispose();
   }
 
   @override
@@ -212,6 +151,7 @@ class _LoginPageState extends State<LoginPage> {
                         // Password field
                         TextFormField(
                           controller: _passwordController,
+                          obscureText: _obscurePassword,
                           decoration: InputDecoration(
                             labelText: 'Password',
                             hintText: 'Enter your password',
@@ -232,7 +172,6 @@ class _LoginPageState extends State<LoginPage> {
                             filled: true,
                             fillColor: Colors.grey[50],
                           ),
-                          obscureText: _obscurePassword,
                           validator: (value) {
                             if (value == null || value.isEmpty) {
                               return 'Please enter your password';
@@ -289,34 +228,6 @@ class _LoginPageState extends State<LoginPage> {
                                   ),
                           ),
                         ),
-                        const SizedBox(height: 16),
-
-                        // Sign up link
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              "Don't have an account? ",
-                              style: TextStyle(color: Colors.grey[600]),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => const SignUpPage(),
-                                  ),
-                                );
-                              },
-                              child: const Text(
-                                'Sign Up',
-                                style: TextStyle(
-                                  color: Color(0xFF667eea),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
                       ],
                     ),
                   ),
@@ -326,6 +237,89 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─── Forgot Password Dialog ───────────────────────────────────────────────────
+// Separate StatefulWidget so the controller is tied to its own lifecycle.
+// This prevents the "dependents.isEmpty" error that happens when you dispose
+// a controller that a still-mounted TextFormField is listening to.
+class _ForgotPasswordDialog extends StatefulWidget {
+  const _ForgotPasswordDialog();
+
+  @override
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+  // Controller lives here — disposed in dispose(), never prematurely
+  final _emailController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _emailController.dispose(); // safe: called only after widget is gone
+    super.dispose();
+  }
+
+  void _send() {
+    if (_formKey.currentState!.validate()) {
+      final email = _emailController.text.trim();
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Password reset link sent to $email'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('Forgot Password'),
+      content: Form(
+        key: _formKey,
+        child: TextFormField(
+          controller: _emailController,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          decoration: InputDecoration(
+            labelText: 'Email Address',
+            hintText: 'Enter your email',
+            prefixIcon: const Icon(Icons.email_outlined),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          keyboardType: TextInputType.emailAddress,
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return 'Please enter your email';
+            }
+            if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+              return 'Please enter a valid email';
+            }
+            return null;
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF667eea),
+          ),
+          onPressed: _send,
+          child: const Text('Send', style: TextStyle(color: Colors.white)),
+        ),
+      ],
     );
   }
 }

@@ -4,13 +4,20 @@ import 'products.dart';
 import 'sales.dart';
 import 'reports.dart';
 import 'account_page.dart';
+import 'staff_management.dart';
 import 'package:pos_app/utils/greetings.dart';
 import 'package:pos_app/utils/currency.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.title, required this.username});
+  const HomePage({
+    super.key,
+    required this.title,
+    required this.username,
+    required this.role,
+  });
   final String username;
   final String title;
+  final String role;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -69,7 +76,17 @@ class _HomePageState extends State<HomePage> {
       case 3:
         return const SalesPage();
       case 4:
-        return const ReportsPage();
+        // Admin-only: Reports or Staff Management depending on role
+        if (widget.role == 'admin') {
+          return const ReportsPage();
+        }
+        return const SalesPage(); // Staff sees Sales instead
+      case 5:
+        // Admin-only: Staff Management
+        if (widget.role == 'admin') {
+          return const StaffManagementPage();
+        }
+        break;
     }
 
     return SingleChildScrollView(
@@ -326,7 +343,29 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(Greetings.getGreeting()),
+        title: Row(
+          children: [
+            Text(Greetings.getGreeting()),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: widget.role == 'admin'
+                    ? Colors.red.withValues(alpha: 0.3)
+                    : Colors.blue.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                widget.role.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: widget.role == 'admin' ? Colors.red[700] : Colors.blue[700],
+                ),
+              ),
+            ),
+          ],
+        ),
         actions: [
           // ── Tappable account icon ──────────────────────────────
           GestureDetector(
@@ -356,32 +395,41 @@ class _HomePageState extends State<HomePage> {
         shadowColor: Colors.black.withValues(alpha: 0.1),
         indicatorColor: const Color(0xFF667EEA).withValues(alpha: 0.2),
         labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home),
             label: 'Home',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.inventory_2_outlined),
             selectedIcon: Icon(Icons.inventory_2),
             label: 'Inventory',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.add_circle_outline, size: 32),
             selectedIcon: Icon(Icons.add_circle, size: 32),
             label: 'Add',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),
             selectedIcon: Icon(Icons.bar_chart),
             label: 'Sales',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.book_outlined),
-            selectedIcon: Icon(Icons.book),
-            label: 'Reports',
-          ),
+          // Reports - Admin only
+          if (widget.role == 'admin')
+            const NavigationDestination(
+              icon: Icon(Icons.book_outlined),
+              selectedIcon: Icon(Icons.book),
+              label: 'Reports',
+            ),
+          // Staff Management - Admin only
+          if (widget.role == 'admin')
+            const NavigationDestination(
+              icon: Icon(Icons.people_outlined),
+              selectedIcon: Icon(Icons.people),
+              label: 'Staff',
+            ),
         ],
       ),
     );

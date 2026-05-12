@@ -224,7 +224,9 @@ class _AccountPageState extends State<AccountPage>
                             trailing: Switch(
                               value: false,
                               onChanged: (_) {},
-                              activeColor: const Color(0xFF43B89C),
+                              activeThumbColor: const Color(
+                                0xFF43B89C,
+                              ), // new property
                             ),
                           ),
                         ],

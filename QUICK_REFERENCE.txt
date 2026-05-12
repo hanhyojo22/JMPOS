@@ -1,0 +1,184 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    ROLE-BASED ACCESS CONTROL - QUICK REFERENCE
+═══════════════════════════════════════════════════════════════════════════════
+
+DEFAULT ADMIN ACCOUNT:
+  Username: admin
+  Password: jmsolution123
+
+═══════════════════════════════════════════════════════════════════════════════
+                                ADMIN MENU
+═══════════════════════════════════════════════════════════════════════════════
+
+Navigation Items (6 Total):
+  1. 🏠 Home              - Dashboard & overview
+  2. 📦 Inventory         - View & manage products
+  3. ➕ Add Products      - Add new items
+  4. 📊 Sales             - Process transactions
+  5. 📈 Reports           - View analytics [ADMIN ONLY]
+  6. 👥 Staff             - Manage team [ADMIN ONLY]
+
+Staff Management Actions:
+  ✓ Create new staff member
+  ✓ Edit staff info (name, email)
+  ✓ Reset staff password
+  ✓ Delete staff member
+  ✓ View all staff with details
+
+═══════════════════════════════════════════════════════════════════════════════
+                                STAFF MENU
+═══════════════════════════════════════════════════════════════════════════════
+
+Navigation Items (4 Total):
+  1. 🏠 Home              - Dashboard & overview
+  2. 📦 Inventory         - View products
+  3. ➕ Add Products      - Add items
+  4. 📊 Sales             - Process transactions
+
+Restrictions:
+  ✗ Cannot access Reports
+  ✗ Cannot access Staff Management
+  ✗ Cannot manage other users
+  ✓ Can view own account info
+  ✓ Can change own password
+
+═══════════════════════════════════════════════════════════════════════════════
+                          STEP-BY-STEP: CREATE STAFF
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Login as admin
+2. Go to Staff tab (bottom right)
+3. Tap + button (floating action button)
+4. Fill in form:
+   - Full Name: (employee name)
+   - Username: (unique login - 3+ chars)
+   - Email: (valid email format)
+   - Password: (6+ characters)
+5. Tap "Create" button
+6. New staff can login with credentials
+
+═══════════════════════════════════════════════════════════════════════════════
+                          STEP-BY-STEP: EDIT STAFF
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Go to Staff tab
+2. Find staff member card
+3. Tap menu (⋮) button on card
+4. Tap "Edit"
+5. Update name and/or email
+6. Tap "Update" button
+
+═══════════════════════════════════════════════════════════════════════════════
+                      STEP-BY-STEP: RESET STAFF PASSWORD
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Go to Staff tab
+2. Find staff member card
+3. Tap menu (⋮) button on card
+4. Tap "Reset Password"
+5. Enter new password (6+ chars)
+6. Tap "Reset" button
+7. Inform staff member of new password
+
+═══════════════════════════════════════════════════════════════════════════════
+                          STEP-BY-STEP: DELETE STAFF
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Go to Staff tab
+2. Find staff member card
+3. Tap menu (⋮) button on card
+4. Tap "Delete"
+5. Confirm deletion
+6. Staff member access immediately revoked
+
+═══════════════════════════════════════════════════════════════════════════════
+                              ROLE INDICATORS
+═══════════════════════════════════════════════════════════════════════════════
+
+AppBar Badge:
+  [ADMIN]  - Red badge = You have admin privileges
+  [STAFF]  - Blue badge = You have staff privileges
+
+═══════════════════════════════════════════════════════════════════════════════
+                            VALIDATION RULES
+═══════════════════════════════════════════════════════════════════════════════
+
+Username:
+  ✓ Minimum 3 characters
+  ✓ Must be unique (no duplicates)
+  ✓ Case-insensitive for login
+
+Password:
+  ✓ Minimum 6 characters
+  ✓ Encrypted using SHA256
+  ✓ Cannot be empty
+
+Email:
+  ✓ Must be valid format (example@domain.com)
+  ✓ Required field
+
+Full Name:
+  ✓ Cannot be empty
+  ✓ Appears in staff list
+
+═══════════════════════════════════════════════════════════════════════════════
+                            SECURITY FEATURES
+═══════════════════════════════════════════════════════════════════════════════
+
+✓ Passwords hashed with SHA256
+✓ Unique usernames enforced
+✓ Role-based access control
+✓ Admin-only features hidden from staff
+✓ Session-based authentication
+✓ Email validation
+✓ Password strength requirements
+
+═══════════════════════════════════════════════════════════════════════════════
+                          TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════════
+
+Can't see Staff tab?
+  → Verify you're logged in as admin
+  → Check role badge shows "ADMIN"
+
+Staff can't login?
+  → Verify username is correct
+  → Use Reset Password to create new password
+
+Creating staff fails?
+  → Username must be unique
+  → Password must be 6+ characters
+  → Email must be valid format
+
+═══════════════════════════════════════════════════════════════════════════════
+                          DOCUMENTATION FILES
+═══════════════════════════════════════════════════════════════════════════════
+
+STAFF_MANAGEMENT_GUIDE.md     - User guide with examples
+ROLE_BASED_FEATURES.md        - Technical documentation
+IMPLEMENTATION_SUMMARY.md     - Development overview
+VISUAL_REFERENCE.md           - UI mockups and layouts
+QUICK_REFERENCE.txt           - This file
+
+═══════════════════════════════════════════════════════════════════════════════
+                            FILES MODIFIED
+═══════════════════════════════════════════════════════════════════════════════
+
+Created:
+  • lib/pages/staff_management.dart    - Staff management UI
+  • ROLE_BASED_FEATURES.md             - Tech docs
+  • STAFF_MANAGEMENT_GUIDE.md          - User guide
+  • IMPLEMENTATION_SUMMARY.md          - Dev summary
+  • VISUAL_REFERENCE.md                - UI reference
+  • QUICK_REFERENCE.txt                - This file
+
+Modified:
+  • lib/database/database_helper.dart  - Added staff methods
+  • lib/pages/home.dart                - Role-based navigation
+  • lib/pages/login.dart               - Pass role to home
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Ready to use! Login as admin and start managing staff.
+
+═══════════════════════════════════════════════════════════════════════════════

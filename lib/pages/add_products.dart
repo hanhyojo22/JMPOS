@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../database/database_helper.dart';
 
 class AddProductsPage extends StatefulWidget {
   const AddProductsPage({super.key});
@@ -16,6 +17,7 @@ class _AddProductsPageState extends State<AddProductsPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _barcodeController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _costPriceController = TextEditingController();
   final TextEditingController _sellingPriceController = TextEditingController();
@@ -69,10 +71,61 @@ class _AddProductsPageState extends State<AddProductsPage> {
     return null;
   }
 
-  void _saveProduct() {
-    if (_formKey.currentState?.validate() ?? false) {
+  Future<void> _saveProduct() async {
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+
+    final barcode = _barcodeController.text.trim();
+    final productName = _nameController.text.trim();
+    final category = _selectedCategory;
+    final description = _descriptionController.text.trim();
+    final costPrice = double.parse(_costPriceController.text);
+    final sellingPrice = double.parse(_sellingPriceController.text);
+    final initialStock = int.parse(_initialStockController.text);
+    final quantityAdded = int.parse(_quantityAddedController.text);
+    final stockQuantity = initialStock + quantityAdded;
+    final imageUrl = _pickedImage?.path;
+
+    try {
+      final newId = await DatabaseHelper.instance.addProduct(
+        barcode: barcode,
+        productName: productName,
+        category: category,
+        description: description.isEmpty ? null : description,
+        price: sellingPrice,
+        costPrice: costPrice,
+        stockQuantity: stockQuantity,
+        imageUrl: imageUrl,
+      );
+
+      if (!mounted) return;
+
+      if (newId > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Product saved successfully')),
+        );
+        _formKey.currentState?.reset();
+        setState(() {
+          _pickedImage = null;
+          _selectedCategory = null;
+        });
+        _barcodeController.clear();
+        _nameController.clear();
+        _descriptionController.clear();
+        _costPriceController.clear();
+        _sellingPriceController.clear();
+        _initialStockController.clear();
+        _quantityAddedController.clear();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to save product')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Product details saved successfully')),
+        SnackBar(content: Text('Error saving product: $e')),
       );
     }
   }
@@ -168,6 +221,20 @@ class _AddProductsPageState extends State<AddProductsPage> {
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Enter product name';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _barcodeController,
+                decoration: const InputDecoration(
+                  labelText: 'Barcode / SKU',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Enter a barcode or SKU';
                   }
                   return null;
                 },
@@ -306,6 +373,7 @@ class _AddProductsPageState extends State<AddProductsPage> {
   @override
   void dispose() {
     _nameController.dispose();
+    _barcodeController.dispose();
     _descriptionController.dispose();
     _costPriceController.dispose();
     _sellingPriceController.dispose();
