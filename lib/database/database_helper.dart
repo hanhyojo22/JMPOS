@@ -50,8 +50,12 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE sales (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        total_amount REAL,
-        created_at TEXT
+        product_id INTEGER NOT NULL,
+        product_name TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        price REAL NOT NULL,
+        total REAL NOT NULL,
+        created_at TEXT NOT NULL
       )
     ''');
 
@@ -87,9 +91,9 @@ class DatabaseHelper {
 
   Future<void> _ensureProductSchema(Database db) async {
     final columns = await db.rawQuery('PRAGMA table_info(products)');
-    final hasDescription = columns
-        .cast<Map<String, Object?>>()
-        .any((column) => column['name'] == 'description');
+    final hasDescription = columns.cast<Map<String, Object?>>().any(
+      (column) => column['name'] == 'description',
+    );
 
     if (!hasDescription) {
       await db.execute('ALTER TABLE products ADD COLUMN description TEXT');

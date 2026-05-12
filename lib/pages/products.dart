@@ -89,7 +89,7 @@ class _ProductsPageState extends State<ProductsPage> {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder(size),
+          errorBuilder: (_, _, _) => _placeholder(size),
         ),
       );
     }
@@ -105,7 +105,7 @@ class _ProductsPageState extends State<ProductsPage> {
           fit: BoxFit.cover,
           loadingBuilder: (_, child, progress) =>
               progress == null ? child : _loading_(size),
-          errorBuilder: (_, __, ___) => _placeholder(size),
+          errorBuilder: (_, _, _) => _placeholder(size),
         ),
       );
     }
@@ -119,7 +119,7 @@ class _ProductsPageState extends State<ProductsPage> {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder(size),
+          errorBuilder: (_, _, _) => _placeholder(size),
         ),
       );
     }
