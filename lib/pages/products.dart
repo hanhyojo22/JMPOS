@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'package:pos_app/database/database_helper.dart';
+import 'package:pos_app/pages/edit_product_page.dart';
 
 class ProductsPage extends StatefulWidget {
   const ProductsPage({super.key});
@@ -363,9 +364,23 @@ class _ProductsPageState extends State<ProductsPage> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  const Icon(
-                                    Icons.chevron_right,
-                                    color: Colors.black26,
+                                  InkWell(
+                                    onTap: () async {
+                                      final updated = await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              EditProductPage(product: product),
+                                        ),
+                                      );
+                                      if (updated == true) {
+                                        _loadProducts(); // refresh list after editing
+                                      }
+                                    },
+                                    child: const Icon(
+                                      Icons.chevron_right,
+                                      color: Colors.black26,
+                                    ),
                                   ),
                                 ],
                               ),

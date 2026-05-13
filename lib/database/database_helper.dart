@@ -339,4 +339,15 @@ class DatabaseHelper {
     );
     return result > 0;
   }
+
+  Future<bool> barcodeExists(String barcode) async {
+    final db = await database;
+    final result = await db.query(
+      'products',
+      where: 'barcode = ?',
+      whereArgs: [barcode.trim()],
+      limit: 1,
+    );
+    return result.isNotEmpty;
+  }
 }

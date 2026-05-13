@@ -21,6 +21,7 @@ class MyApp extends StatelessWidget {
           foregroundColor: Colors.black,
         ),
       ),
+
       home: const LoginPage(),
     );
   }

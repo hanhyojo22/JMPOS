@@ -31,477 +31,430 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
   double totalSales = 0;
-
   int totalTransactions = 0;
-
   List<Map<String, dynamic>> recentTransactions = [];
+  bool _loadingHome = true;
 
   @override
   void initState() {
     super.initState();
-
     loadRecentTransactions();
   }
 
-  // LOAD RECENT TRANSACTIONS
   Future<void> loadRecentTransactions() async {
-    final db = await DatabaseHelper.instance.database;
+    setState(() => _loadingHome = true);
+    try {
+      final db = await DatabaseHelper.instance.database;
 
-    // TOTAL SALES
-    final totalResult = await db.rawQuery('''
+      // ── Today's range in LOCAL time ──────────────────────────────────────
+      // Build today's date boundaries in local time and convert to ISO strings
+      // so the comparison works correctly regardless of timezone.
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final todayEnd = todayStart.add(const Duration(days: 1));
 
-    SELECT
-      SUM(total) as grand_total,
-      COUNT(*) as total_count
-    FROM sales
+      // TODAY TOTAL SALES — compare ISO strings stored in the DB
+      final totalResult = await db.rawQuery(
+        '''
+        SELECT
+          COALESCE(SUM(total), 0)  AS grand_total,
+          COUNT(*)                 AS total_count
+        FROM sales
+        WHERE created_at >= ? AND created_at < ?
+      ''',
+        [todayStart.toIso8601String(), todayEnd.toIso8601String()],
+      );
 
-  ''');
+      // RECENT TRANSACTIONS — last 10 across all time
+      final transactions = await db.rawQuery('''
+        SELECT
+          sales.id,
+          sales.product_name,
+          sales.total,
+          sales.quantity,
+          sales.created_at,
+          products.image_url
+        FROM sales
+        LEFT JOIN products ON sales.product_id = products.id
+        ORDER BY sales.created_at DESC
+        LIMIT 10
+      ''');
 
-    // RECENT TRANSACTIONS
-    final transactions = await db.rawQuery('''
+      final double salesTotal =
+          (totalResult.first['grand_total'] as num?)?.toDouble() ?? 0.0;
+      final int transactionCount =
+          (totalResult.first['total_count'] as num?)?.toInt() ?? 0;
 
-    SELECT
+      setState(() {
+        totalSales = salesTotal;
+        totalTransactions = transactionCount;
 
-      sales.id,
-      sales.product_name,
-      sales.total,
-      sales.created_at,
+        recentTransactions = transactions.map((sale) {
+          DateTime? createdAt;
+          try {
+            createdAt = DateTime.parse(sale['created_at'].toString()).toLocal();
+          } catch (_) {}
 
-      products.image_url
+          // Format: "Today • 10:23 AM" or "May 13 • 2:45 PM"
+          String subtitle = '';
+          if (createdAt != null) {
+            final saleDate = DateTime(
+              createdAt.year,
+              createdAt.month,
+              createdAt.day,
+            );
+            final h = createdAt.hour % 12 == 0 ? 12 : createdAt.hour % 12;
+            final m = createdAt.minute.toString().padLeft(2, '0');
+            final period = createdAt.hour >= 12 ? 'PM' : 'AM';
+            final timeStr = '$h:$m $period';
 
-    FROM sales
+            if (saleDate == todayStart) {
+              subtitle = 'Today • $timeStr';
+            } else if (saleDate ==
+                todayStart.subtract(const Duration(days: 1))) {
+              subtitle = 'Yesterday • $timeStr';
+            } else {
+              const months = [
+                'Jan',
+                'Feb',
+                'Mar',
+                'Apr',
+                'May',
+                'Jun',
+                'Jul',
+                'Aug',
+                'Sep',
+                'Oct',
+                'Nov',
+                'Dec',
+              ];
+              subtitle =
+                  '${months[createdAt.month - 1]} ${createdAt.day} • $timeStr';
+            }
+          }
 
-    LEFT JOIN products
-    ON sales.product_id =
-       products.id
+          return {
+            'title': sale['product_name'] ?? 'Unknown',
+            'subtitle': subtitle,
+            'amount': (sale['total'] as num?)?.toDouble() ?? 0.0,
+            'quantity': sale['quantity'] ?? 0,
+            'imagePath': sale['image_url'] ?? '',
+          };
+        }).toList();
 
-    ORDER BY sales.id DESC
-
-    LIMIT 10
-
-  ''');
-
-    final double salesTotal = totalResult.first['grand_total'] == null
-        ? 0
-        : (totalResult.first['grand_total'] as num).toDouble();
-
-    final int transactionCount = totalResult.first['total_count'] == null
-        ? 0
-        : (totalResult.first['total_count'] as int);
-
-    setState(() {
-      totalSales = salesTotal;
-
-      totalTransactions = transactionCount;
-
-      recentTransactions = transactions.map((sale) {
-        final createdAt = DateTime.parse(sale['created_at'].toString());
-
-        return {
-          'title': sale['product_name'],
-
-          'subtitle':
-              '${createdAt.month}/${createdAt.day}/${createdAt.year} • '
-              '${createdAt.hour}:${createdAt.minute.toString().padLeft(2, '0')}',
-
-          'amount': sale['total'],
-
-          'imagePath': sale['image_url'] ?? '',
-        };
-      }).toList();
-    });
+        _loadingHome = false;
+      });
+    } catch (e) {
+      debugPrint('loadRecentTransactions error: $e');
+      setState(() => _loadingHome = false);
+    }
   }
 
   void _openAccount() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => AccountPage(username: widget.username)),
-    );
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => AccountPage(username: widget.username),
+          ),
+        )
+        .then((_) => loadRecentTransactions());
   }
+
+  Widget _buildProductImage(String imagePath) {
+    if (imagePath.isEmpty) {
+      return Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(
+          Icons.shopping_bag_outlined,
+          color: Colors.grey.shade400,
+          size: 26,
+        ),
+      );
+    }
+    final file = File(imagePath);
+    if (file.existsSync()) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.file(
+          file,
+          width: 56,
+          height: 56,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _imageFallback(),
+        ),
+      );
+    }
+    return _imageFallback();
+  }
+
+  Widget _imageFallback() => Container(
+    width: 56,
+    height: 56,
+    decoration: BoxDecoration(
+      color: Colors.grey.shade100,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Icon(
+      Icons.shopping_bag_outlined,
+      color: Colors.grey.shade400,
+      size: 26,
+    ),
+  );
 
   Widget _buildPageContent() {
     switch (_selectedIndex) {
       case 1:
         return const ProductsPage();
-
       case 2:
         return const AddProductsPage();
-
       case 3:
         return const SalesPage();
-
       case 4:
-        if (widget.role == 'admin') {
-          return const ReportsPage();
-        }
-
+        if (widget.role == 'admin') return const ReportsPage();
         return const SalesPage();
-
       case 5:
-        if (widget.role == 'admin') {
-          return const StaffManagementPage();
-        }
-
+        if (widget.role == 'admin') return const StaffManagementPage();
         break;
     }
 
+    // ── Home tab ─────────────────────────────────────────────────────────────
     return RefreshIndicator(
       onRefresh: loadRecentTransactions,
-
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-
           children: [
-            // DASHBOARD CARD
+            // ── Revenue card ─────────────────────────────────────
             Container(
               margin: const EdgeInsets.all(16),
-
               padding: const EdgeInsets.all(24),
-
               width: double.infinity,
-
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-
                   begin: Alignment.topLeft,
-
                   end: Alignment.bottomRight,
                 ),
-
                 borderRadius: BorderRadius.circular(28),
-
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.12),
-
+                    color: const Color(0xFF667EEA).withValues(alpha: 0.35),
                     blurRadius: 20,
-
                     offset: const Offset(0, 8),
                   ),
                 ],
               ),
-
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-                    crossAxisAlignment: CrossAxisAlignment.start,
-
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-
-                        children: [
-                          const Text(
-                            'Today\'s Revenue',
-
-                            style: TextStyle(
-                              color: Colors.white,
-
-                              fontSize: 16,
-
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-
-                          const SizedBox(height: 4),
-
-                          Text(
-                            Greetings.getTodayDate(),
-
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
-
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
+              child: _loadingHome
+                  ? const SizedBox(
+                      height: 120,
+                      child: Center(
+                        child: CircularProgressIndicator(color: Colors.white),
                       ),
-
-                      Container(
-                        padding: const EdgeInsets.all(12),
-
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-
-                          shape: BoxShape.circle,
-                        ),
-
-                        child: const Icon(
-                          Icons.trending_up,
-
-                          color: Colors.white,
-
-                          size: 28,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  Text(
-                    CurrencyFormatter.format(totalSales),
-
-                    style: const TextStyle(
-                      color: Colors.white,
-
-                      fontSize: 36,
-
-                      fontWeight: FontWeight.w800,
-
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 16,
-
-                            horizontal: 18,
-                          ),
-
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.15),
-
-                            borderRadius: BorderRadius.circular(20),
-
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.2),
-
-                              width: 1,
-                            ),
-                          ),
-
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.receipt_long,
-
-                                    color: Colors.white.withValues(alpha: 0.9),
-
-                                    size: 18,
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  "Today's Revenue",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
                                   ),
-
-                                  const SizedBox(width: 6),
-
-                                  Text(
-                                    'Transactions',
-
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.9,
-                                      ),
-
-                                      fontSize: 12,
-
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-
-                              const SizedBox(height: 8),
-
-                              Text(
-                                '$totalTransactions',
-
-                                style: const TextStyle(
-                                  color: Colors.white,
-
-                                  fontSize: 20,
-
-                                  fontWeight: FontWeight.w700,
                                 ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  Greetings.getTodayDate(),
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.75),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.2),
+                                shape: BoxShape.circle,
                               ),
-                            ],
+                              child: const Icon(
+                                Icons.trending_up,
+                                color: Colors.white,
+                                size: 26,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          CurrencyFormatter.format(totalSales),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 36,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
                           ),
                         ),
-                      ),
-
-                      const SizedBox(width: 16),
-
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 16,
-
-                            horizontal: 18,
-                          ),
-
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.15),
-
-                            borderRadius: BorderRadius.circular(20),
-
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.2),
-
-                              width: 1,
-                            ),
-                          ),
-
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.inventory_2,
-
-                                    color: Colors.white.withValues(alpha: 0.9),
-
-                                    size: 18,
-                                  ),
-
-                                  const SizedBox(width: 6),
-
-                                  Text(
-                                    'Avg. Order',
-
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.9,
-                                      ),
-
-                                      fontSize: 12,
-
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
+                        const SizedBox(height: 20),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _StatPill(
+                                icon: Icons.receipt_long,
+                                label: 'Transactions',
+                                value: '$totalTransactions',
                               ),
-
-                              const SizedBox(height: 8),
-
-                              Text(
-                                CurrencyFormatter.format(
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: _StatPill(
+                                icon: Icons.calculate_outlined,
+                                label: 'Avg. Order',
+                                value: CurrencyFormatter.format(
                                   totalTransactions == 0
                                       ? 0
                                       : totalSales / totalTransactions,
                                 ),
-
-                                style: const TextStyle(
-                                  color: Colors.white,
-
-                                  fontSize: 20,
-
-                                  fontWeight: FontWeight.w700,
-                                ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                      ],
+                    ),
             ),
 
-            // RECENT TRANSACTIONS HEADER
+            // ── Recent Transactions header ─────────────────────────
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
                 children: [
                   const Text(
                     'Recent Transactions',
-
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
-
                   TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _selectedIndex = 3;
-                      });
-                    },
-
+                    onPressed: () => setState(() => _selectedIndex = 3),
                     child: const Text('View all'),
                   ),
                 ],
               ),
             ),
 
-            // TRANSACTION LIST
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-
-              child: Column(
-                children: recentTransactions.map((transaction) {
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-
-                    child: ListTile(
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-
-                        child: transaction['imagePath'] != ''
-                            ? Image.file(
-                                File(transaction['imagePath']),
-
-                                width: 56,
-
-                                height: 56,
-
-                                fit: BoxFit.cover,
-
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    width: 56,
-
-                                    height: 56,
-
-                                    color: Colors.grey.shade200,
-
-                                    child: const Icon(Icons.broken_image),
-                                  );
-                                },
-                              )
-                            : Container(
-                                width: 56,
-
-                                height: 56,
-
-                                color: Colors.grey.shade200,
-
-                                child: const Icon(Icons.shopping_bag),
+            // ── Transaction list ───────────────────────────────────
+            if (_loadingHome)
+              const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (recentTransactions.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(32),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.receipt_long_outlined,
+                        size: 56,
+                        color: Colors.grey[300],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'No transactions today',
+                        style: TextStyle(fontSize: 15, color: Colors.grey[500]),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Completed sales will appear here',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  children: recentTransactions.map((t) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 6,
+                        ),
+                        leading: _buildProductImage(t['imagePath'] as String),
+                        title: Text(
+                          t['title'] as String,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          t['subtitle'] as String,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              CurrencyFormatter.format(t['amount'] as double),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Color(0xFF667EEA),
                               ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'x${t['quantity']}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[400],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-
-                      title: Text(transaction['title']),
-
-                      subtitle: Text(transaction['subtitle']),
-
-                      trailing: Text(
-                        CurrencyFormatter.format(transaction['amount']),
-
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  );
-                }).toList(),
+                    );
+                  }).toList(),
+                ),
               ),
-            ),
+
+            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -509,14 +462,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _onNavBarTapped(int index) async {
-    setState(() {
-      _selectedIndex = index;
-    });
-
-    // REFRESH HOME
-    if (index == 0) {
-      await loadRecentTransactions();
-    }
+    setState(() => _selectedIndex = index);
+    if (index == 0) await loadRecentTransactions();
   }
 
   @override
@@ -526,28 +473,20 @@ class _HomePageState extends State<HomePage> {
         title: Row(
           children: [
             Text(Greetings.getGreeting()),
-
             const SizedBox(width: 8),
-
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: widget.role == 'admin'
-                    ? Colors.red.withValues(alpha: 0.3)
-                    : Colors.blue.withValues(alpha: 0.3),
-
+                    ? Colors.red.withValues(alpha: 0.15)
+                    : Colors.blue.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
-
               child: Text(
                 widget.role.toUpperCase(),
-
                 style: TextStyle(
-                  fontSize: 12,
-
+                  fontSize: 11,
                   fontWeight: FontWeight.bold,
-
                   color: widget.role == 'admin'
                       ? Colors.red[700]
                       : Colors.blue[700],
@@ -556,105 +495,123 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
         ),
-
         actions: [
           GestureDetector(
             onTap: _openAccount,
-
             child: Container(
               margin: const EdgeInsets.only(right: 16),
-
               child: const Icon(Icons.account_circle, size: 32),
             ),
           ),
         ],
       ),
-
       body: _buildPageContent(),
-
       floatingActionButton: _selectedIndex == 0
           ? FloatingActionButton(
-              onPressed: () {
-                setState(() {
-                  _selectedIndex = 3;
-                });
-              },
-
+              onPressed: () => setState(() => _selectedIndex = 3),
               backgroundColor: const Color(0xFF667EEA),
-
               tooltip: 'New Sales',
-
               child: const Icon(Icons.add, color: Colors.white),
             )
           : null,
-
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-
         onDestinationSelected: _onNavBarTapped,
-
         backgroundColor: Colors.white,
-
         elevation: 8,
-
         shadowColor: Colors.black.withValues(alpha: 0.1),
-
         indicatorColor: const Color(0xFF667EEA).withValues(alpha: 0.2),
-
         labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-
         destinations: [
           const NavigationDestination(
             icon: Icon(Icons.home_outlined),
-
             selectedIcon: Icon(Icons.home),
-
             label: 'Home',
           ),
-
           const NavigationDestination(
             icon: Icon(Icons.inventory_2_outlined),
-
             selectedIcon: Icon(Icons.inventory_2),
-
             label: 'Inventory',
           ),
-
           const NavigationDestination(
             icon: Icon(Icons.add_circle_outline, size: 32),
-
             selectedIcon: Icon(Icons.add_circle, size: 32),
-
             label: 'Add',
           ),
-
           const NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),
-
             selectedIcon: Icon(Icons.bar_chart),
-
             label: 'Sales',
           ),
-
           if (widget.role == 'admin')
             const NavigationDestination(
               icon: Icon(Icons.book_outlined),
-
               selectedIcon: Icon(Icons.book),
-
               label: 'Reports',
             ),
-
           if (widget.role == 'admin')
             const NavigationDestination(
               icon: Icon(Icons.people_outlined),
-
               selectedIcon: Icon(Icons.people),
-
               label: 'Staff',
             ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Stat Pill ────────────────────────────────────────────────────────────────
+class _StatPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _StatPill({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.2),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: Colors.white.withValues(alpha: 0.8), size: 16),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.8),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
     );
