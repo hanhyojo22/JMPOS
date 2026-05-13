@@ -366,6 +366,14 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
+
+      floatingActionButton: FloatingActionButton(
+        onPressed: scanBarcode,
+        backgroundColor: const Color(0xFF667EEA),
+        elevation: 3,
+        child: const Icon(Icons.qr_code_scanner, color: Colors.white),
+      ),
+
       body: SafeArea(
         child: Column(
           children: [
@@ -418,37 +426,15 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
                           decoration: InputDecoration(
                             hintText: 'Search products...',
                             prefixIcon: const Icon(Icons.search),
-                            suffixIcon: Row(
-                              mainAxisSize: MainAxisSize.min,
-
-                              children: [
-                                if (searchQuery.isNotEmpty)
-                                  IconButton(
+                            suffixIcon: searchQuery.isNotEmpty
+                                ? IconButton(
                                     icon: const Icon(Icons.clear),
-
                                     onPressed: () {
-                                      Navigator.push(
-                                        context,
-
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              const SalesPage(initialTab: 1),
-                                        ),
-                                      );
+                                      searchController.clear();
+                                      setState(() => searchQuery = '');
                                     },
-                                  ),
-
-                                IconButton(
-                                  onPressed: scanBarcode,
-
-                                  icon: const Icon(
-                                    Icons.qr_code_scanner,
-
-                                    color: Color(0xFF667EEA),
-                                  ),
-                                ),
-                              ],
-                            ),
+                                  )
+                                : null,
                             filled: true,
                             fillColor: Colors.white,
                             border: OutlineInputBorder(
@@ -936,32 +922,109 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage> {
 
       appBar: AppBar(
         backgroundColor: Colors.black,
-
         foregroundColor: Colors.white,
-
         title: const Text('Scan Barcode'),
+        elevation: 0,
       ),
 
-      body: MobileScanner(
-        onDetect: (capture) {
-          if (_isScanned) return;
+      body: Stack(
+        children: [
+          // Camera
+          MobileScanner(
+            onDetect: (capture) {
+              if (_isScanned) return;
 
-          final List<Barcode> barcodes = capture.barcodes;
+              for (final barcode in capture.barcodes) {
+                final code = barcode.rawValue;
 
-          for (final barcode in barcodes) {
-            final code = barcode.rawValue;
+                if (code != null) {
+                  _isScanned = true;
 
-            if (code != null) {
-              _isScanned = true;
+                  widget.onDetect(code);
 
-              widget.onDetect(code);
+                  Navigator.pop(context);
 
-              Navigator.pop(context);
+                  break;
+                }
+              }
+            },
+          ),
 
-              break;
-            }
-          }
-        },
+          // Scanner Frame
+          Center(
+            child: Container(
+              width: 240,
+              height: 240,
+              decoration: BoxDecoration(
+                border: Border.all(color: const Color(0xFF667EEA), width: 2.5),
+                borderRadius: BorderRadius.circular(16),
+              ),
+
+              child: Stack(
+                children: [
+                  // Corner accents
+                  for (final alignment in [
+                    Alignment.topLeft,
+                    Alignment.topRight,
+                    Alignment.bottomLeft,
+                    Alignment.bottomRight,
+                  ])
+                    Align(
+                      alignment: alignment,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          border: Border(
+                            top: alignment.y < 0
+                                ? const BorderSide(
+                                    color: Color(0xFF667EEA),
+                                    width: 4,
+                                  )
+                                : BorderSide.none,
+
+                            bottom: alignment.y > 0
+                                ? const BorderSide(
+                                    color: Color(0xFF667EEA),
+                                    width: 4,
+                                  )
+                                : BorderSide.none,
+
+                            left: alignment.x < 0
+                                ? const BorderSide(
+                                    color: Color(0xFF667EEA),
+                                    width: 4,
+                                  )
+                                : BorderSide.none,
+
+                            right: alignment.x > 0
+                                ? const BorderSide(
+                                    color: Color(0xFF667EEA),
+                                    width: 4,
+                                  )
+                                : BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // Bottom Text
+          const Positioned(
+            bottom: 60,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Text(
+                'Align barcode within the frame',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

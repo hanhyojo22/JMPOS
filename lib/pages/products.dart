@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/pages/edit_product_page.dart';
+import 'package:flutter/services.dart';
 
 class ProductsPage extends StatefulWidget {
   const ProductsPage({super.key});
@@ -17,6 +18,10 @@ class _ProductsPageState extends State<ProductsPage> {
   List<Map<String, dynamic>> _allProducts = [];
   bool _loading = true;
   String? _error;
+
+  // Sorting
+  String _sortBy = 'name'; // name, price, stock
+  bool _isAscending = true;
 
   @override
   void initState() {
@@ -37,11 +42,13 @@ class _ProductsPageState extends State<ProductsPage> {
     });
     try {
       final products = await DatabaseHelper.instance.getProducts();
+      if (!mounted) return;
       setState(() {
         _allProducts = products;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = 'Failed to load products: $e';
         _loading = false;
@@ -51,51 +58,151 @@ class _ProductsPageState extends State<ProductsPage> {
 
   List<Map<String, dynamic>> get _filteredProducts {
     final query = _searchQuery.trim().toLowerCase();
-    if (query.isEmpty) return _allProducts;
-    return _allProducts.where((p) {
+
+    List<Map<String, dynamic>> list = _allProducts.where((p) {
       final name = (p['product_name'] as String? ?? '').toLowerCase();
       final category = (p['category'] as String? ?? '').toLowerCase();
       return name.contains(query) || category.contains(query);
     }).toList();
+
+    list.sort((a, b) {
+      switch (_sortBy) {
+        case 'price':
+          final priceA = (a['price'] as num?)?.toDouble() ?? 0;
+          final priceB = (b['price'] as num?)?.toDouble() ?? 0;
+          return _isAscending
+              ? priceA.compareTo(priceB)
+              : priceB.compareTo(priceA);
+        case 'stock':
+          final stockA = (a['stock_quantity'] as int?) ?? 0;
+          final stockB = (b['stock_quantity'] as int?) ?? 0;
+          return _isAscending
+              ? stockA.compareTo(stockB)
+              : stockB.compareTo(stockA);
+        case 'name':
+        default:
+          final nameA = (a['product_name'] as String? ?? '').toLowerCase();
+          final nameB = (b['product_name'] as String? ?? '').toLowerCase();
+          return _isAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
+      }
+    });
+
+    return list;
   }
 
-  String _getStockStatus(int stock) {
-    if (stock == 0) return 'Out of Stock';
-    if (stock <= 10) return 'Low Stock';
-    return 'In Stock';
+  String get _currentSortText {
+    String order = _isAscending ? '↑ Ascending' : '↓ Descending';
+    switch (_sortBy) {
+      case 'price':
+        return 'Price $order';
+      case 'stock':
+        return 'Stock $order';
+      default:
+        return 'Name $order';
+    }
   }
 
-  Color _getStockColor(int stock) {
-    if (stock == 0) return Colors.red;
-    if (stock <= 10) return Colors.orange;
-    return Colors.green;
+  void _showSortBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Text(
+                'Sort Products',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              _SortOptionTile(
+                title: 'Name',
+                subtitle: 'Alphabetical order',
+                icon: Icons.sort_by_alpha_rounded,
+                isSelected: _sortBy == 'name',
+                isDescending: !_isAscending,
+                onTap: () {
+                  setState(() {
+                    if (_sortBy == 'name') {
+                      _isAscending = !_isAscending;
+                    } else {
+                      _sortBy = 'name';
+                      _isAscending = true;
+                    }
+                  });
+                  Navigator.pop(context);
+                },
+              ),
+              _SortOptionTile(
+                title: 'Price',
+                subtitle: 'Lowest to highest',
+                icon: Icons.attach_money_rounded,
+                isSelected: _sortBy == 'price',
+                isDescending: !_isAscending,
+                onTap: () {
+                  setState(() {
+                    if (_sortBy == 'price') {
+                      _isAscending = !_isAscending;
+                    } else {
+                      _sortBy = 'price';
+                      _isAscending = true;
+                    }
+                  });
+                  Navigator.pop(context);
+                },
+              ),
+              _SortOptionTile(
+                title: 'Stock',
+                subtitle: 'Quantity available',
+                icon: Icons.inventory_2_rounded,
+                isSelected: _sortBy == 'stock',
+                isDescending: !_isAscending,
+                onTap: () {
+                  setState(() {
+                    if (_sortBy == 'stock') {
+                      _isAscending = !_isAscending;
+                    } else {
+                      _sortBy = 'stock';
+                      _isAscending = true;
+                    }
+                  });
+                  Navigator.pop(context);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
-  // Builds image from the file path saved by image_picker
   Widget _buildProductImage(String? imagePath) {
     const double size = 80;
-
-    // No image saved
     if (imagePath == null || imagePath.trim().isEmpty) {
       return _placeholder(size);
     }
-
-    // Local file path from image_picker (most common case)
     final file = File(imagePath);
     if (file.existsSync()) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: Image.file(
-          file,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _placeholder(size),
-        ),
+        child: Image.file(file, width: size, height: size, fit: BoxFit.cover),
       );
     }
-
-    // Fallback: network URL
     if (imagePath.startsWith('http')) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(16),
@@ -104,27 +211,9 @@ class _ProductsPageState extends State<ProductsPage> {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          loadingBuilder: (_, child, progress) =>
-              progress == null ? child : _loading_(size),
-          errorBuilder: (_, _, _) => _placeholder(size),
         ),
       );
     }
-
-    // Fallback: asset path
-    if (imagePath.startsWith('assets/') || imagePath.startsWith('lib/')) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Image.asset(
-          imagePath,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _placeholder(size),
-        ),
-      );
-    }
-
     return _placeholder(size);
   }
 
@@ -144,24 +233,6 @@ class _ProductsPageState extends State<ProductsPage> {
     );
   }
 
-  Widget _loading_(double size) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: const Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -169,12 +240,9 @@ class _ProductsPageState extends State<ProductsPage> {
       body: SafeArea(
         child: Column(
           children: [
-            // ── Header ────────────────────────────────────────────
+            // Header
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16.0,
-                vertical: 16.0,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -192,7 +260,7 @@ class _ProductsPageState extends State<ProductsPage> {
                       Text(
                         _loading
                             ? 'Loading...'
-                            : '${_allProducts.length} item${_allProducts.length != 1 ? 's' : ''} in inventory',
+                            : '${_allProducts.length} items',
                         style: const TextStyle(
                           fontSize: 14,
                           color: Colors.black54,
@@ -209,23 +277,20 @@ class _ProductsPageState extends State<ProductsPage> {
                       ),
                       const SizedBox(width: 8),
                       _HeaderBtn(
-                        icon: Icons.filter_list,
-                        onTap: () {},
-                        tooltip: 'Filter',
+                        icon: Icons.sort_rounded,
+                        onTap: _showSortBottomSheet,
+                        tooltip: 'Sort',
                       ),
                     ],
                   ),
                 ],
               ),
             ),
-
-            // ── Search ────────────────────────────────────────────
+            // Search
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: TextField(
                 controller: _searchController,
-                textInputAction: TextInputAction.search,
-                autocorrect: false,
                 onChanged: (v) => setState(() => _searchQuery = v),
                 decoration: InputDecoration(
                   hintText: 'Search products...',
@@ -242,19 +307,28 @@ class _ProductsPageState extends State<ProductsPage> {
                   filled: true,
                   fillColor: Colors.white,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14.0),
+                    borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 14.0,
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
 
-            // ── Content ───────────────────────────────────────────
+            // Current Sort
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Sorted by: $_currentSortText',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // List
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -265,11 +339,10 @@ class _ProductsPageState extends State<ProductsPage> {
                   : RefreshIndicator(
                       onRefresh: _loadProducts,
                       child: ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
                         itemCount: _filteredProducts.length,
                         itemBuilder: (context, index) {
                           final product = _filteredProducts[index];
-
                           final name =
                               product['product_name'] as String? ?? 'Unknown';
                           final price =
@@ -277,112 +350,129 @@ class _ProductsPageState extends State<ProductsPage> {
                           final stock =
                               (product['stock_quantity'] as int?) ?? 0;
                           final category = product['category'] as String?;
-                          final description = product['description'] as String?;
-
-                          // This is the full file path saved by image_picker
                           final imagePath = product['image_url'] as String?;
 
                           final status = _getStockStatus(stock);
                           final statusColor = _getStockColor(stock);
 
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 14.0),
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18.0),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(14.0),
-                              child: Row(
-                                children: [
-                                  // Image from device file path
-                                  _buildProductImage(imagePath),
-                                  const SizedBox(width: 14),
-
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          name,
-                                          style: const TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
+                          return Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(18),
+                              onTap: () async {
+                                HapticFeedback.lightImpact();
+                                final updated = await Navigator.push(
+                                  context,
+                                  PageRouteBuilder(
+                                    transitionDuration: const Duration(
+                                      milliseconds: 280,
+                                    ),
+                                    pageBuilder: (_, animation, _) =>
+                                        FadeTransition(
+                                          opacity: animation,
+                                          child: EditProductPage(
+                                            product: product,
                                           ),
                                         ),
-                                        if (category != null &&
-                                            category.isNotEmpty) ...[
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            category,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[500],
-                                            ),
-                                          ),
-                                        ],
-                                        if (description != null &&
-                                            description.isNotEmpty) ...[
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            description,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[400],
-                                            ),
-                                          ),
-                                        ],
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          CurrencyFormatter.format(price),
-                                          style: TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w700,
-                                            color: Colors.blue.shade700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Wrap(
-                                          runSpacing: 6,
-                                          spacing: 8,
+                                  ),
+                                );
+                                if (updated == true) _loadProducts();
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                margin: const EdgeInsets.only(bottom: 14),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(18),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.04,
+                                      ),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(14),
+                                  child: Row(
+                                    children: [
+                                      Hero(
+                                        tag: 'product_${product['id']}',
+                                        child: _buildProductImage(imagePath),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
-                                            _Badge(
-                                              label: status,
-                                              color: statusColor,
+                                            Text(
+                                              name,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                             ),
-                                            _Badge(
-                                              label: 'Stock: $stock',
-                                              color: Colors.grey.shade600,
-                                              bgColor: Colors.grey.shade200,
+                                            if (category != null &&
+                                                category.isNotEmpty)
+                                              Text(
+                                                category,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[500],
+                                                ),
+                                              ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              CurrencyFormatter.format(price),
+                                              style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.blue.shade700,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 10),
+                                            Row(
+                                              children: [
+                                                _Badge(
+                                                  label: status,
+                                                  color: statusColor,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                _Badge(
+                                                  label: '$stock pcs',
+                                                  color: Colors.grey.shade700,
+                                                  bgColor: Colors.grey.shade200,
+                                                ),
+                                              ],
                                             ),
                                           ],
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  InkWell(
-                                    onTap: () async {
-                                      final updated = await Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              EditProductPage(product: product),
+                                      ),
+                                      Container(
+                                        width: 38,
+                                        height: 38,
+                                        decoration: BoxDecoration(
+                                          color: const Color(
+                                            0xFF667EEA,
+                                          ).withValues(alpha: 0.08),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
-                                      );
-                                      if (updated == true) {
-                                        _loadProducts(); // refresh list after editing
-                                      }
-                                    },
-                                    child: const Icon(
-                                      Icons.chevron_right,
-                                      color: Colors.black26,
-                                    ),
+                                        child: const Icon(
+                                          Icons.edit_outlined,
+                                          color: Color(0xFF667EEA),
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           );
@@ -395,9 +485,22 @@ class _ProductsPageState extends State<ProductsPage> {
       ),
     );
   }
+
+  String _getStockStatus(int stock) {
+    if (stock == 0) return 'Out of Stock';
+    if (stock <= 10) return 'Low Stock';
+    return 'In Stock';
+  }
+
+  Color _getStockColor(int stock) {
+    if (stock == 0) return Colors.red;
+    if (stock <= 10) return Colors.orange;
+    return Colors.green;
+  }
 }
 
-// ─── Header Button ────────────────────────────────────────────────────────────
+// ==================== HELPER WIDGETS ====================
+
 class _HeaderBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
@@ -428,7 +531,6 @@ class _HeaderBtn extends StatelessWidget {
   }
 }
 
-// ─── Badge ────────────────────────────────────────────────────────────────────
 class _Badge extends StatelessWidget {
   final String label;
   final Color color;
@@ -456,7 +558,94 @@ class _Badge extends StatelessWidget {
   }
 }
 
-// ─── Empty State ──────────────────────────────────────────────────────────────
+// Modern Sort Option Tile
+class _SortOptionTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool isSelected;
+  final bool isDescending;
+  final VoidCallback onTap;
+
+  const _SortOptionTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.isSelected,
+    required this.isDescending,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool active = isSelected || isDescending;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: active
+              ? const Color(0xFF667EEA).withValues(alpha: 0.08)
+              : Colors.grey[50],
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: active ? const Color(0xFF667EEA) : Colors.grey.shade200,
+            width: active ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: active
+                    ? const Color(0xFF667EEA).withValues(alpha: 0.1)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                color: active ? const Color(0xFF667EEA) : Colors.grey[600],
+                size: 26,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: active ? FontWeight.bold : FontWeight.w600,
+                      color: active ? const Color(0xFF667EEA) : Colors.black87,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+            if (active)
+              Icon(
+                isDescending
+                    ? Icons.arrow_downward_rounded
+                    : Icons.arrow_upward_rounded,
+                color: const Color(0xFF667EEA),
+                size: 24,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _EmptyState extends StatelessWidget {
   final String searchQuery;
   const _EmptyState({required this.searchQuery});
@@ -477,23 +666,13 @@ class _EmptyState extends StatelessWidget {
             searchQuery.isEmpty
                 ? 'No products yet'
                 : 'No results for "$searchQuery"',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
           ),
-          if (searchQuery.isEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Add products using the Add tab',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade400),
-            ),
-          ],
         ],
       ),
     );
   }
 }
 
-// ─── Error State ──────────────────────────────────────────────────────────────
 class _ErrorState extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
@@ -514,23 +693,12 @@ class _ErrorState extends StatelessWidget {
               color: Colors.red.shade300,
             ),
             const SizedBox(height: 16),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-            ),
+            Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 20),
             ElevatedButton.icon(
               onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded),
+              icon: const Icon(Icons.refresh),
               label: const Text('Retry'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF667EEA),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
             ),
           ],
         ),

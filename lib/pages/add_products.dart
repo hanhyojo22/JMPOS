@@ -200,6 +200,7 @@ class _AddProductsPageState extends State<AddProductsPage>
             _barcodeController.text = barcode;
 
             if (await DatabaseHelper.instance.barcodeExists(barcode)) {
+              if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: const Text(
@@ -225,6 +226,7 @@ class _AddProductsPageState extends State<AddProductsPage>
 
     final barcode = _barcodeController.text.trim();
     if (await DatabaseHelper.instance.barcodeExists(barcode)) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Row(
