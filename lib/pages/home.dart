@@ -1,5 +1,5 @@
 import 'dart:io';
-
+import 'history_page.dart';
 import 'package:flutter/material.dart';
 import 'add_products.dart';
 import 'products.dart';
@@ -10,6 +10,8 @@ import 'staff_management.dart';
 import 'package:pos_app/utils/greetings.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'edit_product_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -29,7 +31,10 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
-
+  String? salesScannedBarcode;
+  String? productsScannedBarcode;
+  String? addProductBarcode;
+  Map<String, dynamic>? selectedProduct;
   double totalSales = 0;
   int totalTransactions = 0;
   List<Map<String, dynamic>> recentTransactions = [];
@@ -46,14 +51,10 @@ class _HomePageState extends State<HomePage> {
     try {
       final db = await DatabaseHelper.instance.database;
 
-      // ── Today's range in LOCAL time ──────────────────────────────────────
-      // Build today's date boundaries in local time and convert to ISO strings
-      // so the comparison works correctly regardless of timezone.
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
       final todayEnd = todayStart.add(const Duration(days: 1));
 
-      // TODAY TOTAL SALES — compare ISO strings stored in the DB
       final totalResult = await db.rawQuery(
         '''
         SELECT
@@ -65,7 +66,6 @@ class _HomePageState extends State<HomePage> {
         [todayStart.toIso8601String(), todayEnd.toIso8601String()],
       );
 
-      // RECENT TRANSACTIONS — last 10 across all time
       final transactions = await db.rawQuery('''
         SELECT
           sales.id,
@@ -95,7 +95,6 @@ class _HomePageState extends State<HomePage> {
             createdAt = DateTime.parse(sale['created_at'].toString()).toLocal();
           } catch (_) {}
 
-          // Format: "Today • 10:23 AM" or "May 13 • 2:45 PM"
           String subtitle = '';
           if (createdAt != null) {
             final saleDate = DateTime(
@@ -160,6 +159,61 @@ class _HomePageState extends State<HomePage> {
         .then((_) => loadRecentTransactions());
   }
 
+  // ── Step 1: open scanner  Step 2: if barcode captured → open SalesPage ──────
+  Future<void> _openScannerAction() async {
+    String? scannedBarcode;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _QuickScannerPage(
+          onDetect: (code) {
+            scannedBarcode = code;
+          },
+        ),
+      ),
+    );
+
+    if (!mounted || scannedBarcode == null) {
+      return;
+    }
+
+    // PRODUCTS PAGE
+    if (_selectedIndex == 1) {
+      setState(() {
+        productsScannedBarcode = scannedBarcode;
+      });
+
+      return;
+    }
+
+    // ADD PRODUCT PAGE
+    if (_selectedIndex == 2) {
+      setState(() {
+        addProductBarcode = scannedBarcode;
+      });
+
+      return;
+    }
+
+    // EDIT PRODUCT PAGE
+    if (_selectedIndex == 8) {
+      setState(() {
+        addProductBarcode = scannedBarcode;
+      });
+
+      return;
+    }
+
+    // ALL OTHER PAGES
+    // → ADD TO SALES CART
+    setState(() {
+      salesScannedBarcode = scannedBarcode;
+
+      _selectedIndex = 3;
+    });
+  }
+
   Widget _buildProductImage(String imagePath) {
     if (imagePath.isEmpty) {
       return Container(
@@ -209,17 +263,67 @@ class _HomePageState extends State<HomePage> {
   Widget _buildPageContent() {
     switch (_selectedIndex) {
       case 1:
-        return const ProductsPage();
+        return ProductsPage(
+          scannedBarcode: productsScannedBarcode,
+
+          onEditProduct: (product) {
+            setState(() {
+              selectedProduct = product;
+              _selectedIndex = 8;
+            });
+          },
+        );
+
       case 2:
-        return const AddProductsPage();
+        return AddProductsPage(initialBarcode: addProductBarcode);
+
       case 3:
-        return const SalesPage();
+        return SalesPage(
+          initialBarcode: salesScannedBarcode,
+
+          openCartDirectly: salesScannedBarcode != null,
+        );
+
       case 4:
-        if (widget.role == 'admin') return const ReportsPage();
+        if (widget.role == 'admin') {
+          return const ReportsPage();
+        }
         return const SalesPage();
+
       case 5:
-        if (widget.role == 'admin') return const StaffManagementPage();
+        if (widget.role == 'admin') {
+          return const StaffManagementPage();
+        }
         break;
+
+      case 6:
+        return const HistoryPage();
+
+      case 7:
+        return const Center(child: Text('Settings Page'));
+      case 8:
+        if (selectedProduct == null) {
+          return const Center(child: Text('No product selected'));
+        }
+
+        return EditProductPage(
+          key: ValueKey(selectedProduct!['id']),
+
+          product: selectedProduct!,
+
+          onBack: () {
+            setState(() {
+              _selectedIndex = 1;
+            });
+          },
+
+          onSaved: () {
+            setState(() {
+              productsScannedBarcode = null;
+              _selectedIndex = 1;
+            });
+          },
+        );
     }
 
     // ── Home tab ─────────────────────────────────────────────────────────────
@@ -230,7 +334,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Revenue card ─────────────────────────────────────
+            // ── Revenue card ──────────────────────────────────────
             Container(
               margin: const EdgeInsets.all(16),
               padding: const EdgeInsets.all(24),
@@ -337,7 +441,7 @@ class _HomePageState extends State<HomePage> {
                     ),
             ),
 
-            // ── Recent Transactions header ─────────────────────────
+            // ── Recent Transactions header ────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: Row(
@@ -355,7 +459,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-            // ── Transaction list ───────────────────────────────────
+            // ── Transaction list ─────────────────────────────────
             if (_loadingHome)
               const Padding(
                 padding: EdgeInsets.all(32),
@@ -466,10 +570,91 @@ class _HomePageState extends State<HomePage> {
     if (index == 0) await loadRecentTransactions();
   }
 
+  Widget _drawerItem({
+    required IconData icon,
+    required String title,
+    required int index,
+  }) {
+    final bool active = _selectedIndex == index;
+
+    return ListTile(
+      leading: Icon(
+        icon,
+        color: active ? const Color(0xFF667EEA) : Colors.grey,
+      ),
+
+      title: Text(
+        title,
+
+        style: TextStyle(
+          fontWeight: active ? FontWeight.bold : FontWeight.w500,
+
+          color: active ? const Color(0xFF667EEA) : Colors.black87,
+        ),
+      ),
+
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+
+      selected: active,
+
+      onTap: () {
+        Navigator.pop(context);
+
+        setState(() {
+          _selectedIndex = index;
+        });
+
+        if (index == 0) {
+          loadRecentTransactions();
+        }
+      },
+    );
+  }
+
+  Widget _scannerFab({Offset offset = Offset.zero}) => GestureDetector(
+    onTap: _openScannerAction,
+    child: Transform.translate(
+      offset: offset,
+      child: Container(
+        width: 68,
+        height: 68,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF667EEA).withValues(alpha: 0.45),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: const Icon(
+          Icons.qr_code_scanner_rounded,
+          color: Colors.white,
+          size: 32,
+        ),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu_rounded),
+
+            onPressed: () {
+              Scaffold.of(context).openDrawer();
+            },
+          ),
+        ),
         title: Row(
           children: [
             Text(Greetings.getGreeting()),
@@ -495,67 +680,298 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
         ),
-        actions: [
-          GestureDetector(
-            onTap: _openAccount,
-            child: Container(
-              margin: const EdgeInsets.only(right: 16),
-              child: const Icon(Icons.account_circle, size: 32),
+      ),
+      drawer: Drawer(
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.horizontal(right: Radius.circular(24)),
+        ),
+
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 60, 20, 24),
+
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: Colors.white,
+
+                    child: Icon(
+                      Icons.person,
+                      color: Color(0xFF667EEA),
+                      size: 30,
+                    ),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  Text(
+                    widget.username,
+
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  Text(
+                    widget.role.toUpperCase(),
+
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+
+                children: [
+                  _drawerItem(
+                    icon: Icons.home_rounded,
+                    title: 'Home',
+                    index: 0,
+                  ),
+                  if (widget.role == 'admin')
+                    _drawerItem(
+                      icon: Icons.add_box_rounded,
+                      title: 'Add Product',
+                      index: 2,
+                    ),
+                  _drawerItem(
+                    icon: Icons.history_rounded,
+                    title: 'History',
+                    index: 6,
+                  ),
+
+                  _drawerItem(
+                    icon: Icons.settings_rounded,
+                    title: 'Settings',
+                    index: 7,
+                  ),
+
+                  if (widget.role == 'admin')
+                    _drawerItem(
+                      icon: Icons.group_rounded,
+                      title: 'Staff',
+                      index: 5,
+                    ),
+
+                  const Divider(),
+
+                  ListTile(
+                    leading: const Icon(Icons.person),
+
+                    title: const Text('Account'),
+
+                    onTap: () {
+                      Navigator.pop(context);
+                      _openAccount();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
       body: _buildPageContent(),
-      floatingActionButton: _selectedIndex == 0
-          ? FloatingActionButton(
-              onPressed: () => setState(() => _selectedIndex = 3),
-              backgroundColor: const Color(0xFF667EEA),
-              tooltip: 'New Sales',
-              child: const Icon(Icons.add, color: Colors.white),
-            )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _onNavBarTapped,
-        backgroundColor: Colors.white,
-        elevation: 8,
-        shadowColor: Colors.black.withValues(alpha: 0.1),
-        indicatorColor: const Color(0xFF667EEA).withValues(alpha: 0.2),
-        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-        destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Home',
+
+      bottomNavigationBar: SafeArea(
+        top: false,
+
+        child: Container(
+          height: 82,
+          margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+
+          decoration: BoxDecoration(
+            color: Colors.white,
+
+            borderRadius: BorderRadius.circular(26),
+
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+
+                blurRadius: 20,
+
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.inventory_2_outlined),
-            selectedIcon: Icon(Icons.inventory_2),
-            label: 'Inventory',
+
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+
+            children: [
+              _NavItem(
+                icon: Icons.home_rounded,
+                label: 'Home',
+                selected: _selectedIndex == 0,
+                onTap: () => _onNavBarTapped(0),
+              ),
+
+              _NavItem(
+                icon: Icons.inventory_2_rounded,
+                label: 'Products',
+                selected: _selectedIndex == 1,
+                onTap: () => _onNavBarTapped(1),
+              ),
+
+              _scannerFab(offset: const Offset(0, -18)),
+
+              _NavItem(
+                icon: Icons.point_of_sale_rounded,
+                label: 'Sales',
+                selected: _selectedIndex == 3,
+                onTap: () => _onNavBarTapped(3),
+              ),
+
+              if (widget.role == 'admin')
+                _NavItem(
+                  icon: Icons.bar_chart_rounded,
+                  label: 'Reports',
+                  selected: _selectedIndex == 4,
+                  onTap: () => _onNavBarTapped(4),
+                ),
+            ],
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.add_circle_outline, size: 32),
-            selectedIcon: Icon(Icons.add_circle, size: 32),
-            label: 'Add',
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Quick Scanner Page ───────────────────────────────────────────────────────
+// Lightweight scanner that captures ONE barcode and pops.
+// Product lookup is handled inside SalesPage, not here.
+class _QuickScannerPage extends StatefulWidget {
+  final void Function(String barcode) onDetect;
+  const _QuickScannerPage({required this.onDetect});
+
+  @override
+  State<_QuickScannerPage> createState() => _QuickScannerPageState();
+}
+
+class _QuickScannerPageState extends State<_QuickScannerPage> {
+  bool _scanned = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: const Text('Scan Product'),
+        elevation: 0,
+      ),
+      body: Stack(
+        children: [
+          // Live camera feed
+          MobileScanner(
+            onDetect: (capture) {
+              if (_scanned) return;
+              for (final barcode in capture.barcodes) {
+                final code = barcode.rawValue;
+                if (code != null) {
+                  _scanned = true;
+                  widget.onDetect(code);
+                  Navigator.pop(context);
+                  break;
+                }
+              }
+            },
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: 'Sales',
-          ),
-          if (widget.role == 'admin')
-            const NavigationDestination(
-              icon: Icon(Icons.book_outlined),
-              selectedIcon: Icon(Icons.book),
-              label: 'Reports',
+
+          // Viewfinder frame
+          Center(
+            child: Container(
+              width: 240,
+              height: 240,
+              decoration: BoxDecoration(
+                border: Border.all(color: const Color(0xFF667EEA), width: 2.5),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Stack(
+                children: [
+                  for (final al in [
+                    Alignment.topLeft,
+                    Alignment.topRight,
+                    Alignment.bottomLeft,
+                    Alignment.bottomRight,
+                  ])
+                    Align(
+                      alignment: al,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          border: Border(
+                            top: al.y < 0
+                                ? const BorderSide(
+                                    color: Color(0xFF667EEA),
+                                    width: 4,
+                                  )
+                                : BorderSide.none,
+                            bottom: al.y > 0
+                                ? const BorderSide(
+                                    color: Color(0xFF667EEA),
+                                    width: 4,
+                                  )
+                                : BorderSide.none,
+                            left: al.x < 0
+                                ? const BorderSide(
+                                    color: Color(0xFF667EEA),
+                                    width: 4,
+                                  )
+                                : BorderSide.none,
+                            right: al.x > 0
+                                ? const BorderSide(
+                                    color: Color(0xFF667EEA),
+                                    width: 4,
+                                  )
+                                : BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          if (widget.role == 'admin')
-            const NavigationDestination(
-              icon: Icon(Icons.people_outlined),
-              selectedIcon: Icon(Icons.people),
-              label: 'Staff',
+          ),
+
+          const Positioned(
+            bottom: 60,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Text(
+                'Align barcode within the frame',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
             ),
+          ),
         ],
       ),
     );
@@ -581,10 +997,7 @@ class _StatPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.2),
-          width: 1,
-        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -613,6 +1026,51 @@ class _StatPill extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Nav Item ─────────────────────────────────────────────────────────────────
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = selected
+        ? const Color(0xFF667EEA)
+        : Colors.grey.shade500;
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 62,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: selected ? 26 : 24),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

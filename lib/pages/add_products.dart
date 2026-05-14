@@ -8,8 +8,9 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../database/database_helper.dart';
 
 class AddProductsPage extends StatefulWidget {
-  const AddProductsPage({super.key});
+  final String? initialBarcode;
 
+  const AddProductsPage({super.key, this.initialBarcode});
   @override
   State<AddProductsPage> createState() => _AddProductsPageState();
 }
@@ -77,15 +78,24 @@ class _AddProductsPageState extends State<AddProductsPage>
   @override
   void initState() {
     super.initState();
+
+    // AUTO-FILL BARCODE FROM SCANNER
+    if (widget.initialBarcode != null) {
+      _barcodeController.text = widget.initialBarcode!;
+    }
+
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
+
     _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
+
     _slideAnim = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero)
         .animate(
           CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
         );
+
     _animController.forward();
   }
 
@@ -500,55 +510,13 @@ class _AddProductsPageState extends State<AddProductsPage>
 
                     const SizedBox(height: 14),
 
-                    TextFormField(
-                      controller: _barcodeController,
+                    _TF(
+                      controller: _nameController,
+                      label: 'Barcode / SKU',
+                      hint: '8851234567890',
+                      icon: Icons.qr_code_2_outlined,
                       validator: (v) =>
                           v == null || v.trim().isEmpty ? 'Required' : null,
-                      decoration: InputDecoration(
-                        labelText: 'Barcode / SKU',
-                        hintText: '8851234567890',
-                        prefixIcon: const Icon(
-                          Icons.qr_code_rounded,
-                          color: Color(0xFF8A8A8A),
-                          size: 20,
-                        ),
-                        suffixIcon: IconButton(
-                          onPressed: _scanBarcode,
-                          icon: const Icon(
-                            Icons.qr_code_scanner,
-                            color: Color(0xFF667EEA),
-                          ),
-                          tooltip: 'Scan barcode',
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey[50],
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey[200]!),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey[200]!),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFF667EEA),
-                            width: 2,
-                          ),
-                        ),
-                        errorBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Colors.red),
-                        ),
-                        focusedErrorBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Colors.red,
-                            width: 2,
-                          ),
-                        ),
-                      ),
                     ),
 
                     const SizedBox(height: 14),
