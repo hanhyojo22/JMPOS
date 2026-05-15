@@ -12,6 +12,7 @@ import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'edit_product_page.dart';
+import 'setting_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -31,6 +32,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final List<Map<String, dynamic>> sharedCart = [];
+  String? addProductScannedBarcode;
   int _selectedIndex = 0;
   String? salesScannedBarcode;
   String? productsScannedBarcode;
@@ -276,7 +278,10 @@ class _HomePageState extends State<HomePage> {
         );
 
       case 2:
-        return AddProductsPage(initialBarcode: addProductBarcode);
+        return AddProductsPage(
+          key: ValueKey(addProductBarcode),
+          initialBarcode: addProductBarcode,
+        );
 
       case 3:
         return SalesPage(
@@ -309,7 +314,7 @@ class _HomePageState extends State<HomePage> {
         return const HistoryPage();
 
       case 7:
-        return const Center(child: Text('Settings Page'));
+        return const SettingsPage();
       case 8:
         if (selectedProduct == null) {
           return const Center(child: Text('No product selected'));

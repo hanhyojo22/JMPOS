@@ -81,7 +81,37 @@ class _AddProductsPageState extends State<AddProductsPage>
 
     // AUTO-FILL BARCODE FROM SCANNER
     if (widget.initialBarcode != null) {
-      _barcodeController.text = widget.initialBarcode!;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final barcode = widget.initialBarcode!;
+
+        final exists = await DatabaseHelper.instance.barcodeExists(barcode);
+
+        if (!mounted) return;
+
+        if (exists) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.white),
+                  SizedBox(width: 8),
+                  Expanded(child: Text('Barcode already exists in database')),
+                ],
+              ),
+              backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+
+          // CLEAR FIELD
+          _barcodeController.clear();
+
+          return;
+        }
+
+        // ONLY SAVE IF NOT DUPLICATE
+        _barcodeController.text = barcode;
+      });
     }
 
     _animController = AnimationController(
@@ -484,9 +514,8 @@ class _AddProductsPageState extends State<AddProductsPage>
                     ),
 
                     const SizedBox(height: 14),
-
                     _TF(
-                      controller: _nameController,
+                      controller: _barcodeController,
                       label: 'Barcode / SKU',
                       hint: '8851234567890',
                       icon: Icons.qr_code_2_outlined,
@@ -494,6 +523,20 @@ class _AddProductsPageState extends State<AddProductsPage>
                           v == null || v.trim().isEmpty ? 'Required' : null,
                     ),
 
+                    // TextFormField(
+                    //   controller: _barcodeController,
+                    //   validator: (v) =>
+                    //       v == null || v.trim().isEmpty ? 'Required' : null,
+                    //   decoration: InputDecoration(
+                    //     labelText: 'Barcode / SKU',
+                    //     hintText: '8851234567890',
+
+                    //     prefixIcon: const Icon(
+                    //       Icons.qr_code_2_outlined,
+                    //       size: 20,
+                    //     ),
+                    //   ),
+                    // ),
                     const SizedBox(height: 14),
 
                     DropdownButtonFormField<String>(

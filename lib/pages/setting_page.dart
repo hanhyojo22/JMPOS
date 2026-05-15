@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pos_app/main.dart';
 
 // ─── Settings Page ────────────────────────────────────────────────────────────
 class SettingsPage extends StatefulWidget {
@@ -93,6 +94,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         trailing: _buildToggle(_darkMode, (v) {
                           HapticFeedback.lightImpact();
                           setState(() => _darkMode = v);
+
+                          MyApp.of(context)?.toggleTheme(v);
                         }),
                       ),
                       _SettingsRow(
