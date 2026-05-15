@@ -385,10 +385,12 @@ class _EditProductPageState extends State<EditProductPage>
                                     ],
                                     onChanged: (_) => setState(() {}),
                                     validator: (v) {
-                                      if (v == null || v.isEmpty)
+                                      if (v == null || v.isEmpty) {
                                         return 'Required';
-                                      if (double.tryParse(v) == null)
+                                      }
+                                      if (double.tryParse(v) == null) {
                                         return 'Invalid';
+                                      }
                                       return null;
                                     },
                                   ),
@@ -413,10 +415,14 @@ class _EditProductPageState extends State<EditProductPage>
                                     ],
                                     onChanged: (_) => setState(() {}),
                                     validator: (v) {
-                                      if (v == null || v.isEmpty)
+                                      if (v == null || v.isEmpty) {
                                         return 'Required';
-                                      if (double.tryParse(v) == null)
+                                      }
+
+                                      if (double.tryParse(v) == null) {
                                         return 'Invalid';
+                                      }
+
                                       return null;
                                     },
                                   ),
@@ -961,7 +967,9 @@ class _EditProductPageState extends State<EditProductPage>
   // ── Dropdown ───────────────────────────────────────────────────────────────
   Widget _buildDropdown() {
     return DropdownButtonFormField<String>(
-      value: _categories.contains(_selectedCategory) ? _selectedCategory : null,
+      initialValue: _categories.contains(_selectedCategory)
+          ? _selectedCategory
+          : null,
       items: _categories
           .map(
             (c) => DropdownMenuItem(

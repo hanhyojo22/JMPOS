@@ -12,9 +12,17 @@ class HistoryPage extends StatefulWidget {
 class _HistoryPageState extends State<HistoryPage> {
   List<Map<String, dynamic>> salesHistory = [];
   bool loading = true;
-
+  static const Color _primary = Color(0xFF5C6BC0);
+  static const Color _surface = Color(0xFFF4F5FF);
+  static const Color _textPrimary = Color(0xFF1A1F36);
+  static const Color _textSecondary = Color(0xFF6B7280);
+  static const Color _success = Color(0xFF10B981);
   String searchQuery = '';
   String selectedFilter = 'All';
+  double get historySalesTotal => salesHistory.fold(
+    0.0,
+    (s, h) => s + ((h['total'] as num?)?.toDouble() ?? 0.0),
+  );
   @override
   void initState() {
     super.initState();
@@ -153,339 +161,275 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: _surface,
 
-      appBar: AppBar(elevation: 0, backgroundColor: Colors.transparent),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // SEARCH
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
 
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
+                child: TextField(
+                  onChanged: (v) {
+                    setState(() {
+                      searchQuery = v;
+                    });
+                  },
+
+                  decoration: InputDecoration(
+                    hintText: 'Search transaction...',
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      color: _textSecondary.withValues(alpha: 0.5),
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+              ),
+            ),
+
+            // STATS
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              child: Row(
+                children: [
+                  _HistoryStat(
+                    label: 'Total Revenue',
+                    value: CurrencyFormatter.format(historySalesTotal),
+                    icon: Icons.account_balance_wallet_outlined,
+                    color: _success,
+                  ),
+
+                  const SizedBox(width: 12),
+
+                  _HistoryStat(
+                    label: 'Transactions',
+                    value: '${salesHistory.length}',
+                    icon: Icons.receipt_long_outlined,
+                    color: _primary,
+                  ),
+                ],
+              ),
+            ),
+            // HEADER
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+              child: Row(
+                children: [
+                  const Text(
+                    'Recent Sales',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: _textPrimary,
+                    ),
+                  ),
+
+                  const Spacer(),
+
+                  Text(
+                    '${filteredHistory.length} records',
+                    style: const TextStyle(fontSize: 13, color: _textSecondary),
+                  ),
+                ],
+              ),
+            ),
+
+            Expanded(
+              child: loading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: _primary),
+                    )
+                  : filteredHistory.isEmpty
+                  ? _buildEmptyHistory()
+                  : RefreshIndicator(
+                      color: _primary,
+                      onRefresh: loadSalesHistory,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                        itemCount: filteredHistory.length,
+                        itemBuilder: (_, i) =>
+                            _buildHistoryCard(filteredHistory[i]),
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHistoryCard(Map<String, dynamic> sale) {
+    final total = (sale['total'] as num?)?.toDouble() ?? 0.0;
+    final qty = sale['quantity'] ?? 0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+
+              decoration: BoxDecoration(
+                color: _success.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(13),
+              ),
+
+              child: const Icon(
+                Icons.receipt_rounded,
+                color: _success,
+                size: 22,
+              ),
+            ),
+
+            const SizedBox(width: 12),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    sale['product'] as String,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: _textPrimary,
+                    ),
+                  ),
+
+                  const SizedBox(height: 3),
+
+                  Text(
+                    '${sale['date']}  •  ${sale['time']}',
+
+                    style: const TextStyle(fontSize: 12, color: _textSecondary),
+                  ),
+                ],
+              ),
+            ),
+
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // TOP STATS
-                // SEARCH
-                // MODERN SEARCH + DATE FILTER
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                Text(
+                  CurrencyFormatter.format(total),
 
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-
-                                borderRadius: BorderRadius.circular(18),
-
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.04),
-
-                                    blurRadius: 10,
-
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-
-                              child: TextField(
-                                decoration: InputDecoration(
-                                  hintText: 'Search transaction...',
-
-                                  prefixIcon: const Icon(Icons.search_rounded),
-
-                                  border: InputBorder.none,
-
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                ),
-
-                                onChanged: (v) {
-                                  setState(() {
-                                    searchQuery = v;
-                                  });
-                                },
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(width: 12),
-
-                          GestureDetector(
-                            onTap: () async {
-                              final pickedDate = await showDatePicker(
-                                context: context,
-
-                                initialDate: DateTime.now(),
-
-                                firstDate: DateTime(2020),
-
-                                lastDate: DateTime(2100),
-                              );
-
-                              if (pickedDate != null) {
-                                final months = [
-                                  'Jan',
-                                  'Feb',
-                                  'Mar',
-                                  'Apr',
-                                  'May',
-                                  'Jun',
-                                  'Jul',
-                                  'Aug',
-                                  'Sep',
-                                  'Oct',
-                                  'Nov',
-                                  'Dec',
-                                ];
-
-                                final selectedDate =
-                                    '${months[pickedDate.month - 1]} ${pickedDate.day}, ${pickedDate.year}';
-
-                                setState(() {
-                                  searchQuery = selectedDate;
-                                });
-                              }
-                            },
-
-                            child: Container(
-                              width: 58,
-                              height: 58,
-
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFF667EEA),
-                                    Color(0xFF764BA2),
-                                  ],
-                                ),
-
-                                borderRadius: BorderRadius.circular(18),
-
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: const Color(
-                                      0xFF667EEA,
-                                    ).withValues(alpha: 0.25),
-
-                                    blurRadius: 12,
-
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-
-                              child: const Icon(
-                                Icons.calendar_month_rounded,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 18),
-
-                      // QUICK DATE FILTERS
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-
-                        child: Row(
-                          children: [
-                            _quickFilterChip('Today'),
-
-                            _quickFilterChip('Yesterday'),
-
-                            _quickFilterChip('This Week'),
-
-                            _quickFilterChip('This Month'),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _StatCard(
-                          label: 'Orders',
-                          value: '${salesHistory.length}',
-                        ),
-                      ),
-
-                      const SizedBox(width: 12),
-
-                      Expanded(
-                        child: _StatCard(
-                          label: 'Revenue',
-                          value: CurrencyFormatter.format(totalSales),
-                        ),
-                      ),
-                    ],
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: _textPrimary,
                   ),
                 ),
 
-                // HISTORY LIST
-                Expanded(
-                  child: salesHistory.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                const SizedBox(height: 4),
 
-                            children: [
-                              Icon(
-                                Icons.receipt_long_outlined,
-                                size: 70,
-                                color: Colors.grey[300],
-                              ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
 
-                              const SizedBox(height: 12),
+                  decoration: BoxDecoration(
+                    color: _success.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
 
-                              Text(
-                                'No transaction history',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'x$qty sold',
 
-                          itemCount: filteredHistory.length,
-
-                          itemBuilder: (context, index) {
-                            final sale = filteredHistory[index];
-
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-
-                              padding: const EdgeInsets.all(16),
-
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-
-                                borderRadius: BorderRadius.circular(18),
-
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.04),
-
-                                    blurRadius: 10,
-
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 52,
-
-                                    height: 52,
-
-                                    decoration: BoxDecoration(
-                                      color: const Color(
-                                        0xFF667EEA,
-                                      ).withValues(alpha: 0.1),
-
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-
-                                    child: const Icon(
-                                      Icons.receipt_long_rounded,
-
-                                      color: Color(0xFF667EEA),
-                                    ),
-                                  ),
-
-                                  const SizedBox(width: 14),
-
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-
-                                      children: [
-                                        Text(
-                                          sale['product'],
-
-                                          maxLines: 1,
-
-                                          overflow: TextOverflow.ellipsis,
-
-                                          style: const TextStyle(
-                                            fontSize: 15,
-
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-
-                                        const SizedBox(height: 4),
-
-                                        Text(
-                                          '${sale['date']} • ${sale['time']}',
-
-                                          style: TextStyle(
-                                            fontSize: 12,
-
-                                            color: Colors.grey[500],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-
-                                    children: [
-                                      Text(
-                                        CurrencyFormatter.format(
-                                          (sale['total'] as num).toDouble(),
-                                        ),
-
-                                        style: const TextStyle(
-                                          fontSize: 15,
-
-                                          fontWeight: FontWeight.bold,
-
-                                          color: Color(0xFF667EEA),
-                                        ),
-                                      ),
-
-                                      const SizedBox(height: 4),
-
-                                      Text(
-                                        'Qty ${sale['quantity']}',
-
-                                        style: TextStyle(
-                                          fontSize: 12,
-
-                                          color: Colors.grey[500],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: _success,
+                    ),
+                  ),
                 ),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyHistory() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+
+            decoration: BoxDecoration(
+              color: _primary.withValues(alpha: 0.07),
+              shape: BoxShape.circle,
+            ),
+
+            child: Icon(
+              Icons.receipt_long_outlined,
+              color: _primary.withValues(alpha: 0.45),
+              size: 38,
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          const Text(
+            'No sales yet',
+
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: _textPrimary,
+            ),
+          ),
+
+          const SizedBox(height: 4),
+
+          const Text(
+            'Completed sales will appear here',
+
+            style: TextStyle(fontSize: 13, color: _textSecondary),
+          ),
+        ],
+      ),
     );
   }
 
@@ -524,47 +468,81 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
+class _HistoryStat extends StatelessWidget {
+  final String label, value;
+  final IconData icon;
+  final Color color;
 
-  const _StatCard({required this.label, required this.value});
+  const _HistoryStat({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(14),
 
-      decoration: BoxDecoration(
-        color: Colors.white,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
 
-        borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
 
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
 
-            blurRadius: 10,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
 
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+              child: Icon(icon, color: color, size: 18),
+            ),
 
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(width: 10),
 
-        children: [
-          Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
 
-          const SizedBox(height: 8),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
 
-          Text(
-            value,
+                  Text(
+                    label,
 
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-        ],
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: _HistoryPageState._textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

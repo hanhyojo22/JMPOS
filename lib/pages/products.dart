@@ -434,7 +434,7 @@ class _ProductsPageState extends State<ProductsPage>
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
         scrollDirection: Axis.horizontal,
         itemCount: _categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (_, i) {
           final cat = _categories[i];
           final selected =
