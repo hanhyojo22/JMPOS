@@ -35,6 +35,7 @@ class _HomePageState extends State<HomePage> {
   String? addProductScannedBarcode;
   int _selectedIndex = 0;
   String? salesScannedBarcode;
+  int _salesBarcodeScanVersion = 0;
   String? productsScannedBarcode;
   String? addProductBarcode;
   Map<String, dynamic>? selectedProduct;
@@ -212,6 +213,7 @@ class _HomePageState extends State<HomePage> {
     // → ADD TO SALES CART
     setState(() {
       salesScannedBarcode = scannedBarcode;
+      _salesBarcodeScanVersion++;
 
       _selectedIndex = 3;
     });
@@ -263,6 +265,121 @@ class _HomePageState extends State<HomePage> {
     ),
   );
 
+  void _showSnack(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _addToSharedCart(Map<String, dynamic> product) {
+    final stock = (product['stock'] as num?)?.toInt() ?? 0;
+    if (stock <= 0) return;
+
+    final index = sharedCart.indexWhere(
+      (item) => item['product']['id'] == product['id'],
+    );
+
+    setState(() {
+      product['stock'] = stock - 1;
+      if (index != -1) {
+        sharedCart[index]['quantity'] += 1;
+      } else {
+        sharedCart.add({'product': product, 'quantity': 1});
+      }
+    });
+  }
+
+  void _removeFromSharedCart(int index) {
+    if (index < 0 || index >= sharedCart.length) return;
+
+    setState(() {
+      sharedCart[index]['product']['stock'] += 1;
+      if (sharedCart[index]['quantity'] > 1) {
+        sharedCart[index]['quantity'] -= 1;
+      } else {
+        sharedCart.removeAt(index);
+      }
+    });
+  }
+
+  void _deleteFromSharedCart(int index) {
+    if (index < 0 || index >= sharedCart.length) return;
+
+    setState(() {
+      final quantity = sharedCart[index]['quantity'] as int;
+      sharedCart[index]['product']['stock'] += quantity;
+      sharedCart.removeAt(index);
+    });
+  }
+
+  Future<bool> _completeSharedSale() async {
+    if (sharedCart.isEmpty) return false;
+
+    final db = await DatabaseHelper.instance.database;
+    try {
+      for (final item in sharedCart) {
+        final product = item['product'];
+        final int quantity = item['quantity'];
+        final double price = (product['price'] as num).toDouble();
+
+        await db.insert('sales', {
+          'product_id': product['id'],
+          'product_name': product['title'],
+          'quantity': quantity,
+          'price': price,
+          'total': price * quantity,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+
+        await db.update(
+          'products',
+          {
+            'stock_quantity': product['stock'],
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [product['id']],
+        );
+      }
+
+      sharedCart.clear();
+      await loadRecentTransactions();
+      if (mounted) setState(() {});
+      _showSnack('Sale completed successfully!');
+      return true;
+    } catch (e) {
+      _showSnack('Error: $e', isError: true);
+      return false;
+    }
+  }
+
+  void _openCartPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CartPage(
+          cart: sharedCart,
+          onAdd: _addToSharedCart,
+          onRemove: _removeFromSharedCart,
+          onDelete: _deleteFromSharedCart,
+          onCompleteSale: () async {
+            final completed = await _completeSharedSale();
+            if (completed && mounted && Navigator.canPop(context)) {
+              Navigator.pop(context);
+            }
+          },
+        ),
+      ),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
   Widget _buildPageContent() {
     switch (_selectedIndex) {
       case 1:
@@ -286,12 +403,15 @@ class _HomePageState extends State<HomePage> {
       case 3:
         return SalesPage(
           key: ValueKey(
-            '${salesScannedBarcode}_${DateTime.now().millisecondsSinceEpoch}',
+            '${salesScannedBarcode ?? 'sales'}_$_salesBarcodeScanVersion',
           ),
 
           cart: sharedCart,
           onBarcodeHandled: () {
             salesScannedBarcode = null;
+          },
+          onCartChanged: () {
+            if (mounted) setState(() {});
           },
           initialBarcode: salesScannedBarcode,
 
@@ -302,7 +422,12 @@ class _HomePageState extends State<HomePage> {
         if (widget.role == 'admin') {
           return const ReportsPage();
         }
-        return SalesPage(cart: sharedCart);
+        return SalesPage(
+          cart: sharedCart,
+          onCartChanged: () {
+            if (mounted) setState(() {});
+          },
+        );
 
       case 5:
         if (widget.role == 'admin') {
@@ -702,23 +827,7 @@ class _HomePageState extends State<HomePage> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.shopping_cart_outlined, size: 28),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CartPage(
-                          cart: sharedCart,
-                          onAdd: (p) {},
-                          onRemove: (i) {},
-                          onDelete: (i) {},
-                          onCompleteSale: () async {},
-                        ),
-                      ),
-                    ).then((_) {
-                      // Refresh badge when returning from cart page
-                      setState(() {});
-                    });
-                  },
+                  onPressed: _openCartPage,
                 ),
 
                 // Improved Badge

@@ -39,11 +39,13 @@ class SalesPage extends StatefulWidget {
   final String? initialBarcode;
   final List<Map<String, dynamic>> cart;
   final VoidCallback? onBarcodeHandled;
+  final VoidCallback? onCartChanged;
   const SalesPage({
     super.key,
     required this.cart,
     this.initialBarcode,
     this.onBarcodeHandled,
+    this.onCartChanged,
     this.openCartDirectly = false,
   });
 
@@ -147,6 +149,7 @@ class _SalesPageState extends State<SalesPage> {
         _cart.add({'product': product, 'quantity': 1});
       }
     });
+    _notifyCartChanged();
 
     _barcodeHandled = true;
     widget.onBarcodeHandled?.call();
@@ -162,6 +165,8 @@ class _SalesPageState extends State<SalesPage> {
   }
 
   // ── Cart ───────────────────────────────────────────────────────────────────
+  void _notifyCartChanged() => widget.onCartChanged?.call();
+
   void _addToCart(Map<String, dynamic> product) {
     if ((product['stock'] as int) <= 0) return;
     final idx = _cart.indexWhere((i) => i['product']['id'] == product['id']);
@@ -173,6 +178,7 @@ class _SalesPageState extends State<SalesPage> {
         _cart.add({'product': product, 'quantity': 1});
       }
     });
+    _notifyCartChanged();
   }
 
   void _removeFromCart(int index) {
@@ -184,6 +190,7 @@ class _SalesPageState extends State<SalesPage> {
         _cart.removeAt(index);
       }
     });
+    _notifyCartChanged();
   }
 
   void _deleteFromCart(int index) {
@@ -192,6 +199,7 @@ class _SalesPageState extends State<SalesPage> {
       _cart[index]['product']['stock'] += qty;
       _cart.removeAt(index);
     });
+    _notifyCartChanged();
   }
 
   Future<void> _completeSale() async {
@@ -223,6 +231,7 @@ class _SalesPageState extends State<SalesPage> {
       _cart.clear();
       await _loadProducts();
       setState(() {});
+      _notifyCartChanged();
       _showSnack('Sale completed successfully!');
     } catch (e) {
       _showSnack('Error: $e', isError: true);
