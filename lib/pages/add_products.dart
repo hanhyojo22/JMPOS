@@ -201,31 +201,6 @@ class _AddProductsPageState extends State<AddProductsPage>
 
   // ── Barcode ───────────────────────────────────────────────────────────────────
 
-  Future<void> _scanBarcode() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BarcodeScannerPage(
-          onDetect: (barcode) async {
-            _barcodeController.text = barcode;
-
-            if (await DatabaseHelper.instance.barcodeExists(barcode)) {
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text(
-                    'This barcode already exists in inventory!',
-                  ),
-                  backgroundColor: Colors.orange[700],
-                ),
-              );
-            }
-          },
-        ),
-      ),
-    );
-  }
-
   // ── Save / Reset ──────────────────────────────────────────────────────────────
 
   Future<void> _saveProduct() async {

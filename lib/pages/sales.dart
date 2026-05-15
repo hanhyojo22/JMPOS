@@ -1,10 +1,39 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
 
+// ─── Stock helpers ────────────────────────────────────────────────────────────
+enum _StockState { inStock, lowStock, outOfStock }
+
+_StockState _toStockState(int stock) {
+  if (stock == 0) return _StockState.outOfStock;
+  if (stock <= 10) return _StockState.lowStock;
+  return _StockState.inStock;
+}
+
+Color _stockDotColor(_StockState s) => switch (s) {
+  _StockState.inStock => const Color(0xFF22C55E),
+  _StockState.lowStock => const Color(0xFFF59E0B),
+  _StockState.outOfStock => const Color(0xFFEF4444),
+};
+
+Color _badgeBg(_StockState s) => switch (s) {
+  _StockState.inStock => const Color(0xFFDCFCE7),
+  _StockState.lowStock => const Color(0xFFFEF3C7),
+  _StockState.outOfStock => const Color(0xFFFEE2E2),
+};
+
+Color _badgeFg(_StockState s) => switch (s) {
+  _StockState.inStock => const Color(0xFF16A34A),
+  _StockState.lowStock => const Color(0xFFB45309),
+  _StockState.outOfStock => const Color(0xFFDC2626),
+};
+
+String _badgeLabel(int stock) => stock == 0 ? 'Out of stock' : '$stock left';
+
+// ─── SalesPage ────────────────────────────────────────────────────────────────
 class SalesPage extends StatefulWidget {
   final bool openCartDirectly;
   final String? initialBarcode;
@@ -19,17 +48,18 @@ class SalesPage extends StatefulWidget {
   State<SalesPage> createState() => _SalesPageState();
 }
 
-class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
+class _SalesPageState extends State<SalesPage> {
   // ── Design tokens ──────────────────────────────────────────────────────────
   static const Color _primary = Color(0xFF5C6BC0);
   static const Color _surface = Color(0xFFF4F5FF);
+  static const Color _cardSurface = Color(0xFFF8F8F8);
+  static const Color _border = Color(0xFFEEEEEE);
   static const Color _textPrimary = Color(0xFF1A1F36);
   static const Color _textSecondary = Color(0xFF6B7280);
+  static const Color _textTertiary = Color(0xFFBBBBBB);
   static const Color _success = Color(0xFF10B981);
-  static const Color _warning = Color(0xFFF59E0B);
   static const Color _danger = Color(0xFFEF4444);
 
-  late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
 
   String _searchQuery = '';
@@ -37,11 +67,8 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
   String _selectedSort = 'Default';
 
   List<Map<String, dynamic>> _allProducts = [];
-  List<Map<String, dynamic>> _salesHistory = [];
-  List<Map<String, dynamic>> _cart = [];
-
+  final List<Map<String, dynamic>> _cart = [];
   bool _loadingProducts = true;
-  bool _loadingHistory = true;
 
   final List<String> _categories = [
     'All',
@@ -55,46 +82,16 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      if (_tabController.index == 1) _loadSalesHistory();
-    });
     _loadProducts().then((_) => _handleInitialBarcode());
-    _loadSalesHistory();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
-  // ── Initial barcode handling ────────────────────────────────────────────────
-  void _handleInitialBarcode() {
-    final barcode = widget.initialBarcode;
-    if (barcode == null || barcode.isEmpty) return;
-
-    final product = _allProducts.firstWhere(
-      (p) => p['barcode'].toString() == barcode,
-      orElse: () => {},
-    );
-
-    if (product.isNotEmpty) {
-      _addToCart(product);
-      if (widget.openCartDirectly) {
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (!mounted) return;
-          _openCartPage();
-        });
-      }
-      _showSnack('${product['title']} added to cart');
-    } else {
-      _showSnack('No product found for barcode: $barcode', isError: true);
-    }
-  }
-
-  // ── Data loading ───────────────────────────────────────────────────────────
+  // ── Data ───────────────────────────────────────────────────────────────────
   Future<void> _loadProducts() async {
     setState(() => _loadingProducts = true);
     final db = await DatabaseHelper.instance.database;
@@ -118,53 +115,44 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
     });
   }
 
-  Future<void> _loadSalesHistory() async {
-    setState(() => _loadingHistory = true);
-    final db = await DatabaseHelper.instance.database;
-    final history = await db.query('sales', orderBy: 'id DESC');
-    if (!mounted) return;
+  void _handleInitialBarcode() {
+    final barcode = widget.initialBarcode;
+    if (barcode == null || barcode.isEmpty) return;
+
+    final productIndex = _allProducts.indexWhere(
+      (p) => p['barcode'].toString() == barcode,
+    );
+
+    if (productIndex == -1) {
+      _showSnack('Product not found', isError: true);
+      return;
+    }
+
+    final product = _allProducts[productIndex];
+    final cartIndex = _cart.indexWhere(
+      (i) => i['product']['id'] == product['id'],
+    );
+
     setState(() {
-      _salesHistory = history.map((sale) {
-        DateTime? createdAt;
-        try {
-          createdAt = DateTime.parse(sale['created_at'].toString()).toLocal();
-        } catch (_) {}
-        const months = [
-          'Jan',
-          'Feb',
-          'Mar',
-          'Apr',
-          'May',
-          'Jun',
-          'Jul',
-          'Aug',
-          'Sep',
-          'Oct',
-          'Nov',
-          'Dec',
-        ];
-        final dateStr = createdAt != null
-            ? '${months[createdAt.month - 1]} ${createdAt.day}, ${createdAt.year}'
-            : '';
-        final h = createdAt != null
-            ? (createdAt.hour % 12 == 0 ? 12 : createdAt.hour % 12)
-            : 0;
-        final m = createdAt?.minute.toString().padLeft(2, '0') ?? '00';
-        final period = (createdAt?.hour ?? 0) >= 12 ? 'PM' : 'AM';
-        final timeStr = createdAt != null ? '$h:$m $period' : '';
-        return {
-          'product': sale['product_name'] ?? '',
-          'date': dateStr,
-          'time': timeStr,
-          'quantity': sale['quantity'],
-          'total': sale['total'],
-        };
-      }).toList();
-      _loadingHistory = false;
+      if (cartIndex != -1) {
+        _cart[cartIndex]['quantity'] += 1;
+      } else {
+        _cart.add({'product': product, 'quantity': 1});
+      }
     });
+
+    HapticFeedback.mediumImpact();
+    _showSnack('${product['title']} added to cart');
+
+    if (widget.openCartDirectly) {
+      Future.delayed(const Duration(milliseconds: 250), () {
+        if (!mounted) return;
+        _openCartPage();
+      });
+    }
   }
 
-  // ── Cart operations ────────────────────────────────────────────────────────
+  // ── Cart ───────────────────────────────────────────────────────────────────
   void _addToCart(Map<String, dynamic> product) {
     if ((product['stock'] as int) <= 0) return;
     final idx = _cart.indexWhere((i) => i['product']['id'] == product['id']);
@@ -225,7 +213,6 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
       }
       _cart.clear();
       await _loadProducts();
-      await _loadSalesHistory();
       setState(() {});
       _showSnack('Sale completed successfully!');
     } catch (e) {
@@ -282,18 +269,7 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
   int get _cartQuantity =>
       _cart.fold(0, (sum, item) => sum + (item['quantity'] as int));
 
-  double get _historySalesTotal => _salesHistory.fold(
-    0.0,
-    (s, h) => s + ((h['total'] as num?)?.toDouble() ?? 0.0),
-  );
-
   // ── Helpers ────────────────────────────────────────────────────────────────
-  Color _stockColor(int s) {
-    if (s == 0) return _danger;
-    if (s <= 10) return _warning;
-    return _success;
-  }
-
   void _showSnack(String msg, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -323,25 +299,25 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
     final file = File(path);
     if (file.existsSync()) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         child: Image.file(
           file,
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder(size),
+          errorBuilder: (_, _, _) => _placeholder(size),
         ),
       );
     }
     if (path.startsWith('http')) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         child: Image.network(
           path,
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder(size),
+          errorBuilder: (_, _, _) => _placeholder(size),
         ),
       );
     }
@@ -352,15 +328,8 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
     width: size,
     height: size,
     decoration: BoxDecoration(
-      gradient: LinearGradient(
-        colors: [
-          _primary.withValues(alpha: 0.07),
-          _primary.withValues(alpha: 0.13),
-        ],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-      borderRadius: BorderRadius.circular(14),
+      color: _primary.withValues(alpha: 0.07),
+      borderRadius: BorderRadius.circular(10),
     ),
     child: Icon(
       Icons.inventory_2_outlined,
@@ -388,28 +357,6 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
     ).then((_) => setState(() {}));
   }
 
-  Future<void> _scanBarcode() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BarcodeScannerPage(
-          onDetect: (barcode) {
-            final product = _allProducts.firstWhere(
-              (p) => p['barcode'].toString() == barcode,
-              orElse: () => {},
-            );
-            if (product.isNotEmpty) {
-              _addToCart(product);
-              _showSnack('${product['title']} added to cart');
-            } else {
-              _showSnack('Product not found', isError: true);
-            }
-          },
-        ),
-      ),
-    );
-  }
-
   void _showSortSheet() {
     showModalBottomSheet(
       context: context,
@@ -426,94 +373,56 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _surface,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(),
-            _buildTabBar(),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [_buildNewSaleTab(), _buildHistoryTab()],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  // ── Header ─────────────────────────────────────────────────────────────────
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Sales',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    color: _textPrimary,
-                    letterSpacing: -0.7,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                const Text(
-                  'Process sales & view history',
-                  style: TextStyle(fontSize: 13, color: _textSecondary),
-                ),
-              ],
-            ),
-          ),
-          // Cart button
-          GestureDetector(
+      // ── FAB ────────────────────────────────────────────────────────────────
+      floatingActionButton: AnimatedScale(
+        duration: const Duration(milliseconds: 220),
+        scale: _cartQuantity > 0 ? 1 : 0.92,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 220),
+          opacity: _cartQuantity > 0 ? 1 : 0.7,
+          child: GestureDetector(
             onTap: _openCartPage,
             child: Stack(
               clipBehavior: Clip.none,
               children: [
                 Container(
-                  width: 46,
-                  height: 46,
+                  width: 64,
+                  height: 64,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       colors: [_primary, Color(0xFF7C4DFF)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
-                    borderRadius: BorderRadius.circular(14),
+                    shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
                         color: _primary.withValues(alpha: 0.35),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
+                        blurRadius: 16,
+                        offset: const Offset(0, 8),
                       ),
                     ],
                   ),
                   child: const Icon(
                     Icons.shopping_cart_outlined,
                     color: Colors.white,
-                    size: 22,
+                    size: 28,
                   ),
                 ),
                 if (_cartQuantity > 0)
                   Positioned(
-                    top: -5,
-                    right: -5,
+                    top: -2,
+                    right: -2,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
+                        horizontal: 7,
+                        vertical: 3,
                       ),
                       decoration: BoxDecoration(
                         color: _danger,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white, width: 1.5),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white, width: 2),
                       ),
                       child: Text(
                         '$_cartQuantity',
@@ -528,90 +437,25 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
               ],
             ),
           ),
-          const SizedBox(width: 10),
-          // Scan button
-          GestureDetector(
-            onTap: _scanBarcode,
-            child: Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.qr_code_scanner,
-                color: _primary,
-                size: 22,
-              ),
-            ),
-          ),
-        ],
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+
+      body: SafeArea(
+        child: Column(children: [Expanded(child: _buildSaleTab())]),
       ),
     );
   }
 
-  // ── Tab bar ────────────────────────────────────────────────────────────────
-  Widget _buildTabBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-      child: Container(
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: TabBar(
-          controller: _tabController,
-          indicator: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [_primary, Color(0xFF7C4DFF)],
-            ),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          indicatorSize: TabBarIndicatorSize.tab,
-          indicatorPadding: const EdgeInsets.all(4),
-          dividerColor: Colors.transparent,
-          labelColor: Colors.white,
-          unselectedLabelColor: _textSecondary,
-          labelStyle: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-          unselectedLabelStyle: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-          tabs: const [
-            Tab(text: 'New Sale'),
-            Tab(text: 'History'),
-          ],
-        ),
-      ),
-    );
-  }
+  // ── Header ─────────────────────────────────────────────────────────────────
 
-  // ── New Sale tab ───────────────────────────────────────────────────────────
-  Widget _buildNewSaleTab() {
+  // ── Sale tab ───────────────────────────────────────────────────────────────
+  Widget _buildSaleTab() {
     final products = _filteredProducts;
 
     return Column(
       children: [
-        // Search + sort row
+        // Search + sort
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
           child: Row(
@@ -727,7 +571,7 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             scrollDirection: Axis.horizontal,
             itemCount: _categories.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (_, i) {
               final cat = _categories[i];
               final active = cat == _selectedCategory;
@@ -771,7 +615,7 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
           ),
         ),
 
-        // Products count + cart summary
+        // Count + cart pill
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
           child: Row(
@@ -829,7 +673,7 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
           child: _loadingProducts
               ? const Center(child: CircularProgressIndicator(color: _primary))
               : products.isEmpty
-              ? _buildEmptyProducts()
+              ? _buildEmptyState()
               : GridView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                   itemCount: products.length,
@@ -837,7 +681,7 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
                     crossAxisCount: 2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
-                    childAspectRatio: 0.72,
+                    childAspectRatio: 0.58,
                   ),
                   itemBuilder: (_, i) => _buildProductCard(products[i]),
                 ),
@@ -846,10 +690,13 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
     );
   }
 
+  // ── Product card (new design) ──────────────────────────────────────────────
   Widget _buildProductCard(Map<String, dynamic> product) {
     final int stock = product['stock'] as int;
     final double price = (product['price'] as num).toDouble();
-    final sc = _stockColor(stock);
+    final String category = product['category'] as String? ?? '';
+    final _StockState ss = _toStockState(stock);
+
     final cartItem = _cart.firstWhere(
       (c) => c['product']['id'] == product['id'],
       orElse: () => {},
@@ -859,210 +706,164 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.045),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _border, width: 0.5),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image + stock dot
-            Stack(
-              children: [
-                Center(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Image area ──────────────────────────────────────────────────
+          Stack(
+            children: [
+              Container(
+                height: 120,
+                width: double.infinity,
+                color: _cardSurface,
+                padding: const EdgeInsets.all(16),
+                child: Center(
                   child: _buildProductImage(
                     product['imagePath'] as String?,
-                    size: 72,
+                    size: 80,
                   ),
                 ),
-                Positioned(
-                  top: 2,
-                  right: 2,
-                  child: Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: sc,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.5),
-                      boxShadow: [
-                        BoxShadow(
-                          color: sc.withValues(alpha: 0.4),
-                          blurRadius: 4,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            Text(
-              product['title'] as String,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: _textPrimary,
-                height: 1.3,
               ),
-            ),
 
-            const SizedBox(height: 4),
-
-            Text(
-              CurrencyFormatter.format(price),
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: _primary,
-                letterSpacing: -0.4,
-              ),
-            ),
-
-            const SizedBox(height: 6),
-
-            // Stock + add button
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  stock == 0 ? 'Out' : '$stock left',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: sc,
-                    fontWeight: FontWeight.w700,
+              // Stock dot
+              Positioned(
+                top: 10,
+                right: 10,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: _stockDotColor(ss),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
                   ),
                 ),
-                // Add / stepper
-                if (stock == 0)
-                  Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.block_rounded,
-                      color: Colors.grey,
-                      size: 14,
-                    ),
-                  )
-                else if (qty == 0)
-                  GestureDetector(
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      _addToCart(product);
-                    },
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [_primary, Color(0xFF7C4DFF)],
-                        ),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: _primary.withValues(alpha: 0.35),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.add,
-                        color: Colors.white,
-                        size: 18,
+              ),
+            ],
+          ),
+
+          // ── Info area ───────────────────────────────────────────────────
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(11, 9, 11, 11),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Category label
+                  if (category.isNotEmpty) ...[
+                    Text(
+                      category.toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w500,
+                        color: _textTertiary,
+                        letterSpacing: 0.6,
                       ),
                     ),
-                  )
-                else
+                    const SizedBox(height: 2),
+                  ],
+
+                  // Title
+                  Text(
+                    product['title'] as String,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _textPrimary,
+                      height: 1.3,
+                    ),
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  // Price
+                  Text(
+                    CurrencyFormatter.format(price),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: _textPrimary,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+
+                  const Spacer(),
+
+                  // Divider
+                  const Divider(height: 1, thickness: 0.5, color: _border),
+
+                  const SizedBox(height: 8),
+
+                  // Stock badge + action
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      GestureDetector(
-                        onTap: () {
+                      // Stock badge
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _badgeBg(ss),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Text(
+                            _badgeLabel(stock),
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                              color: _badgeFg(ss),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Cart action
+                      _CardAction(
+                        stock: stock,
+                        quantity: qty,
+                        primary: _primary,
+                        surface: _cardSurface,
+                        onAdd: () {
+                          HapticFeedback.lightImpact();
+                          _addToCart(product);
+                        },
+                        onRemove: () {
+                          HapticFeedback.lightImpact();
                           final idx = _cart.indexWhere(
                             (c) => c['product']['id'] == product['id'],
                           );
                           if (idx != -1) _removeFromCart(idx);
                         },
-                        child: Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[100],
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.remove,
-                            color: _textPrimary,
-                            size: 14,
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 22,
-                        child: Text(
-                          '$qty',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: _primary,
-                          ),
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          _addToCart(product);
-                        },
-                        child: Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [_primary, Color(0xFF7C4DFF)],
-                            ),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.add,
-                            color: Colors.white,
-                            size: 14,
-                          ),
-                        ),
                       ),
                     ],
                   ),
-              ],
+                ],
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildEmptyProducts() {
+  Widget _buildEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 80,
-            height: 80,
+            width: 90,
+            height: 90,
             decoration: BoxDecoration(
               color: _primary.withValues(alpha: 0.07),
               shape: BoxShape.circle,
@@ -1072,227 +873,26 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
                   ? Icons.search_off_rounded
                   : Icons.inventory_2_outlined,
               color: _primary.withValues(alpha: 0.45),
-              size: 38,
+              size: 42,
             ),
           ),
-          const SizedBox(height: 14),
-          Text(
-            _searchQuery.isNotEmpty ? 'No results found' : 'No products yet',
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: _textPrimary,
-            ),
-          ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 16),
           Text(
             _searchQuery.isNotEmpty
-                ? 'Try a different keyword'
-                : 'Add products from the Products tab',
-            style: const TextStyle(fontSize: 13, color: _textSecondary),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── History tab ────────────────────────────────────────────────────────────
-  Widget _buildHistoryTab() {
-    return Column(
-      children: [
-        // Stats row
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-          child: Row(
-            children: [
-              _HistoryStat(
-                label: 'Total Revenue',
-                value: CurrencyFormatter.format(_historySalesTotal),
-                icon: Icons.account_balance_wallet_outlined,
-                color: _success,
-              ),
-              const SizedBox(width: 12),
-              _HistoryStat(
-                label: 'Transactions',
-                value: '${_salesHistory.length}',
-                icon: Icons.receipt_long_outlined,
-                color: _primary,
-              ),
-            ],
-          ),
-        ),
-
-        // List header
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
-          child: Row(
-            children: [
-              const Text(
-                'Recent Sales',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: _textPrimary,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '${_salesHistory.length} records',
-                style: const TextStyle(fontSize: 13, color: _textSecondary),
-              ),
-            ],
-          ),
-        ),
-
-        Expanded(
-          child: _loadingHistory
-              ? const Center(child: CircularProgressIndicator(color: _primary))
-              : _salesHistory.isEmpty
-              ? _buildEmptyHistory()
-              : RefreshIndicator(
-                  color: _primary,
-                  onRefresh: _loadSalesHistory,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                    itemCount: _salesHistory.length,
-                    itemBuilder: (_, i) => _buildHistoryCard(_salesHistory[i]),
-                  ),
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHistoryCard(Map<String, dynamic> sale) {
-    final total = (sale['total'] as num?)?.toDouble() ?? 0.0;
-    final qty = sale['quantity'] ?? 0;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            // Icon
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: _success.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: const Icon(
-                Icons.receipt_rounded,
-                color: _success,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    sale['product'] as String,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: _textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${sale['date']}  •  ${sale['time']}',
-                    style: const TextStyle(fontSize: 12, color: _textSecondary),
-                  ),
-                ],
-              ),
-            ),
-            // Amount
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  CurrencyFormatter.format(total),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: _textPrimary,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _success.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    'x$qty sold',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: _success,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyHistory() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: _primary.withValues(alpha: 0.07),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.receipt_long_outlined,
-              color: _primary.withValues(alpha: 0.45),
-              size: 38,
-            ),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'No sales yet',
-            style: TextStyle(
-              fontSize: 16,
+                ? 'No products found'
+                : 'No products available',
+            style: const TextStyle(
+              fontSize: 18,
               fontWeight: FontWeight.w700,
               color: _textPrimary,
             ),
           ),
-          const SizedBox(height: 4),
-          const Text(
-            'Completed sales will appear here',
-            style: TextStyle(fontSize: 13, color: _textSecondary),
+          const SizedBox(height: 6),
+          Text(
+            _searchQuery.isNotEmpty
+                ? 'Try another keyword'
+                : 'Add products from inventory',
+            style: const TextStyle(fontSize: 13, color: _textSecondary),
           ),
         ],
       ),
@@ -1300,73 +900,98 @@ class _SalesPageState extends State<SalesPage> with TickerProviderStateMixin {
   }
 }
 
-// ─── History Stat ─────────────────────────────────────────────────────────────
-class _HistoryStat extends StatelessWidget {
-  final String label, value;
-  final IconData icon;
-  final Color color;
-
-  const _HistoryStat({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
+// ─── Card action widget ───────────────────────────────────────────────────────
+class _CardAction extends StatelessWidget {
+  const _CardAction({
+    required this.stock,
+    required this.quantity,
+    required this.primary,
+    required this.surface,
+    required this.onAdd,
+    required this.onRemove,
   });
+
+  final int stock;
+  final int quantity;
+  final Color primary;
+  final Color surface;
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
+    // Out of stock
+    if (stock == 0) {
+      return Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(color: surface, shape: BoxShape.circle),
+        child: const Icon(
+          Icons.block_rounded,
+          color: Color(0xFFBBBBBB),
+          size: 14,
         ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: color, size: 18),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: color,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: _SalesPageState._textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+      );
+    }
+
+    // Add button
+    if (quantity == 0) {
+      return GestureDetector(
+        onTap: onAdd,
+        child: Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(color: primary, shape: BoxShape.circle),
+          child: const Icon(Icons.add, color: Colors.white, size: 17),
         ),
+      );
+    }
+
+    // Stepper
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: onRemove,
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: const BoxDecoration(shape: BoxShape.circle),
+              child: const Icon(
+                Icons.remove,
+                color: Color(0xFF1A1F36),
+                size: 11,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 16,
+            child: Text(
+              '$quantity',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: primary,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: onAdd,
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(color: primary, shape: BoxShape.circle),
+              child: const Icon(Icons.add, color: Colors.white, size: 11),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1437,236 +1062,139 @@ class _SortSheetState extends State<_SortSheet> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 36),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 22),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Sort Products',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: _textPrimary,
-                letterSpacing: -0.4,
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          ..._options.map((opt) {
-            final selected = _selected == opt['key'];
-            return GestureDetector(
-              onTap: () => setState(() => _selected = opt['key'] as String),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 22),
+                width: 40,
+                height: 4,
                 decoration: BoxDecoration(
-                  color: selected
-                      ? _primary.withValues(alpha: 0.06)
-                      : Colors.grey[50],
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: selected ? _primary : Colors.grey[200]!,
-                    width: selected ? 1.8 : 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? _primary.withValues(alpha: 0.1)
-                            : Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        opt['icon'] as IconData,
-                        color: selected ? _primary : _textSecondary,
-                        size: 18,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            opt['label'] as String,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: selected ? _primary : _textPrimary,
-                            ),
-                          ),
-                          Text(
-                            opt['sub'] as String,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: _textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (selected)
-                      Container(
-                        width: 20,
-                        height: 20,
-                        decoration: const BoxDecoration(
-                          color: _primary,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.check_rounded,
-                          color: Colors.white,
-                          size: 13,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            );
-          }),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () {
-              widget.onSelect(_selected);
-              Navigator.pop(context);
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 15),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [_primary, Color(0xFF7C4DFF)],
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Center(
-                child: Text(
-                  'Apply',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Barcode Scanner ─────────────────────────────────────────────────────────
-class BarcodeScannerPage extends StatefulWidget {
-  final Function(String barcode) onDetect;
-  const BarcodeScannerPage({super.key, required this.onDetect});
-
-  @override
-  State<BarcodeScannerPage> createState() => _BarcodeScannerPageState();
-}
-
-class _BarcodeScannerPageState extends State<BarcodeScannerPage> {
-  bool _isScanned = false;
-  static const Color _primary = Color(0xFF5C6BC0);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: const Text('Scan Barcode'),
-        elevation: 0,
-      ),
-      body: Stack(
-        children: [
-          MobileScanner(
-            onDetect: (capture) {
-              if (_isScanned) return;
-              for (final barcode in capture.barcodes) {
-                final code = barcode.rawValue;
-                if (code != null) {
-                  _isScanned = true;
-                  widget.onDetect(code);
-                  Navigator.pop(context);
-                  break;
-                }
-              }
-            },
-          ),
-          Center(
-            child: Container(
-              width: 240,
-              height: 240,
-              decoration: BoxDecoration(
-                border: Border.all(color: _primary, width: 2.5),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Stack(
-                children: [
-                  for (final al in [
-                    Alignment.topLeft,
-                    Alignment.topRight,
-                    Alignment.bottomLeft,
-                    Alignment.bottomRight,
-                  ])
-                    Align(
-                      alignment: al,
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          border: Border(
-                            top: al.y < 0
-                                ? const BorderSide(color: _primary, width: 4)
-                                : BorderSide.none,
-                            bottom: al.y > 0
-                                ? const BorderSide(color: _primary, width: 4)
-                                : BorderSide.none,
-                            left: al.x < 0
-                                ? const BorderSide(color: _primary, width: 4)
-                                : BorderSide.none,
-                            right: al.x > 0
-                                ? const BorderSide(color: _primary, width: 4)
-                                : BorderSide.none,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          const Positioned(
-            bottom: 60,
-            left: 0,
-            right: 0,
-            child: Center(
+            const Align(
+              alignment: Alignment.centerLeft,
               child: Text(
-                'Align barcode within the frame',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
+                'Sort Products',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: _textPrimary,
+                  letterSpacing: -0.4,
+                ),
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 18),
+            ..._options.map((opt) {
+              final selected = _selected == opt['key'];
+              return GestureDetector(
+                onTap: () => setState(() => _selected = opt['key'] as String),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? _primary.withValues(alpha: 0.06)
+                        : Colors.grey[50],
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: selected ? _primary : Colors.grey[200]!,
+                      width: selected ? 1.8 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? _primary.withValues(alpha: 0.1)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          opt['icon'] as IconData,
+                          color: selected ? _primary : _textSecondary,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              opt['label'] as String,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: selected ? _primary : _textPrimary,
+                              ),
+                            ),
+                            Text(
+                              opt['sub'] as String,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: _textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (selected)
+                        Container(
+                          width: 20,
+                          height: 20,
+                          decoration: const BoxDecoration(
+                            color: _primary,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.check_rounded,
+                            color: Colors.white,
+                            size: 13,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () {
+                widget.onSelect(_selected);
+                Navigator.pop(context);
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [_primary, Color(0xFF7C4DFF)],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Center(
+                  child: Text(
+                    'Apply',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1719,7 +1247,7 @@ class _CartPageState extends State<CartPage> {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder(size),
+          errorBuilder: (_, _, _) => _placeholder(size),
         ),
       );
     }
@@ -1767,7 +1295,6 @@ class _CartPageState extends State<CartPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Handle
                 Center(
                   child: Container(
                     margin: const EdgeInsets.only(top: 12, bottom: 22),
@@ -2010,7 +1537,9 @@ class _CartPageState extends State<CartPage> {
                             setState(() => _completing = true);
                             Navigator.pop(ctx);
                             await widget.onCompleteSale();
-                            if (mounted) setState(() => _completing = false);
+                            if (mounted) {
+                              setState(() => _completing = false);
+                            }
                           }
                         : null,
                     style: ElevatedButton.styleFrom(
@@ -2081,8 +1610,9 @@ class _CartPageState extends State<CartPage> {
     final roundings = [1, 5, 10, 20, 50, 100, 200, 500, 1000];
     for (final r in roundings) {
       final rounded = (total / r).ceil() * r.toDouble();
-      if (!options.contains(rounded) && options.length < 4)
+      if (!options.contains(rounded) && options.length < 4) {
         options.add(rounded);
+      }
     }
     return options;
   }
@@ -2278,18 +1808,6 @@ class _CartPageState extends State<CartPage> {
                               const SizedBox(height: 10),
                               Row(
                                 children: [
-                                  // Subtotal
-                                  Text(
-                                    CurrencyFormatter.format(price * qty),
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w800,
-                                      color: _textPrimary,
-                                      letterSpacing: -0.3,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  // Stepper
                                   GestureDetector(
                                     onTap: () =>
                                         setState(() => widget.onRemove(i)),
@@ -2308,15 +1826,27 @@ class _CartPageState extends State<CartPage> {
                                     ),
                                   ),
                                   SizedBox(
-                                    width: 34,
-                                    child: Text(
-                                      '$qty',
+                                    width: 50,
+                                    child: TextFormField(
+                                      initialValue: '$qty',
                                       textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w800,
-                                        color: _primary,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
                                       ),
+                                      onChanged: (val) {
+                                        final parsed = int.tryParse(val);
+                                        if (parsed != null && parsed > 0) {
+                                          setState(
+                                            () => widget.cart[i]['quantity'] =
+                                                parsed,
+                                          );
+                                        }
+                                      },
                                     ),
                                   ),
                                   GestureDetector(

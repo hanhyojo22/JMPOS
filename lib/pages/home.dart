@@ -279,6 +279,10 @@ class _HomePageState extends State<HomePage> {
 
       case 3:
         return SalesPage(
+          key: ValueKey(
+            '${salesScannedBarcode}_${DateTime.now().millisecondsSinceEpoch}',
+          ),
+
           initialBarcode: salesScannedBarcode,
 
           openCartDirectly: salesScannedBarcode != null,

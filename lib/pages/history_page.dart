@@ -86,50 +86,6 @@ class _HistoryPageState extends State<HistoryPage> {
 
   String activeQuickFilter = '';
 
-  Widget _quickFilterChip(String label) {
-    final active = activeQuickFilter == label;
-
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          activeQuickFilter = label;
-        });
-      },
-
-      child: Container(
-        margin: const EdgeInsets.only(right: 10),
-
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-
-        decoration: BoxDecoration(
-          color: active ? const Color(0xFF667EEA) : Colors.white,
-
-          borderRadius: BorderRadius.circular(14),
-
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-
-              blurRadius: 8,
-
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-
-        child: Text(
-          label,
-
-          style: TextStyle(
-            color: active ? Colors.white : Colors.black87,
-
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-
   double get totalSales => salesHistory.fold(
     0.0,
     (sum, item) => sum + ((item['total'] as num?)?.toDouble() ?? 0.0),
@@ -429,40 +385,6 @@ class _HistoryPageState extends State<HistoryPage> {
             style: TextStyle(fontSize: 13, color: _textSecondary),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _filterChip(String label) {
-    final active = selectedFilter == label;
-
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          selectedFilter = label;
-        });
-      },
-
-      child: Container(
-        margin: const EdgeInsets.only(right: 10),
-
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-
-        decoration: BoxDecoration(
-          color: active ? const Color(0xFF667EEA) : Colors.white,
-
-          borderRadius: BorderRadius.circular(14),
-        ),
-
-        child: Text(
-          label,
-
-          style: TextStyle(
-            color: active ? Colors.white : Colors.black87,
-
-            fontWeight: FontWeight.w600,
-          ),
-        ),
       ),
     );
   }

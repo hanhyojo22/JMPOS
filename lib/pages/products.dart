@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'package:pos_app/database/database_helper.dart';
-import 'package:pos_app/pages/edit_product_page.dart';
 
 class ProductsPage extends StatefulWidget {
   final String? scannedBarcode;
@@ -18,7 +17,6 @@ class _ProductsPageState extends State<ProductsPage>
     with TickerProviderStateMixin {
   // ── Design tokens ──────────────────────────────────────────────────────────
   static const Color _primary = Color(0xFF5C6BC0);
-  static const Color _primaryDark = Color(0xFF3949AB);
   static const Color _surface = Color(0xFFF4F5FF);
   static const Color _textPrimary = Color(0xFF1A1F36);
   static const Color _textSecondary = Color(0xFF6B7280);
@@ -161,29 +159,12 @@ class _ProductsPageState extends State<ProductsPage>
   }
 
   // ── Summary stats ──────────────────────────────────────────────────────────
-  int get _totalProducts => _allProducts.length;
-  int get _lowStockCount => _allProducts
-      .where((p) => (p['stock_quantity'] as int? ?? 0) <= 10)
-      .length;
-  double get _totalValue => _allProducts.fold(
-    0.0,
-    (sum, p) =>
-        sum +
-        ((p['price'] as num?)?.toDouble() ?? 0) *
-            ((p['stock_quantity'] as int?) ?? 0),
-  );
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   Color _stockColor(int s) {
     if (s == 0) return _danger;
     if (s <= 10) return _warning;
     return _success;
-  }
-
-  String _stockLabel(int s) {
-    if (s == 0) return 'Out of stock';
-    if (s <= 10) return 'Low stock';
-    return 'In stock';
   }
 
   Widget _buildImage(String? path) {
@@ -284,52 +265,8 @@ class _ProductsPageState extends State<ProductsPage>
   }
 
   // ── Top header ─────────────────────────────────────────────────────────────
-  Widget _buildTopHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
-      child: Row(
-        children: [
-          _ActionBtn(
-            icon: Icons.tune_rounded,
-            onTap: _showSortSheet,
-            tooltip: 'Sort',
-          ),
-        ],
-      ),
-    );
-  }
 
   // ── Stats row ──────────────────────────────────────────────────────────────
-  Widget _buildStatsRow() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-      child: Row(
-        children: [
-          _StatChip(
-            label: 'Total Items',
-            value: '$_totalProducts',
-            color: _primary,
-            icon: Icons.inventory_2_outlined,
-          ),
-          const SizedBox(width: 10),
-          _StatChip(
-            label: 'Low Stock',
-            value: '$_lowStockCount',
-            color: _lowStockCount > 0 ? _warning : _success,
-            icon: Icons.warning_amber_rounded,
-          ),
-          const SizedBox(width: 10),
-          _StatChip(
-            label: 'Value',
-            value: CurrencyFormatter.format(_totalValue),
-            color: _success,
-            icon: Icons.attach_money_rounded,
-            flex: 2,
-          ),
-        ],
-      ),
-    );
-  }
 
   // ── Search bar ─────────────────────────────────────────────────────────────
   Widget _buildSearchBar() {
@@ -481,48 +418,6 @@ class _ProductsPageState extends State<ProductsPage>
   }
 
   // ── Sort label ─────────────────────────────────────────────────────────────
-  Widget _buildSortLabel() {
-    final labels = {'name': 'Name', 'price': 'Price', 'stock': 'Stock'};
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
-      child: Row(
-        children: [
-          Text(
-            '${_filteredProducts.length} product${_filteredProducts.length != 1 ? 's' : ''}',
-            style: const TextStyle(
-              fontSize: 13,
-              color: _textSecondary,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const Spacer(),
-          GestureDetector(
-            onTap: _showSortSheet,
-            child: Row(
-              children: [
-                Icon(
-                  _isAscending
-                      ? Icons.arrow_upward_rounded
-                      : Icons.arrow_downward_rounded,
-                  size: 13,
-                  color: _primary,
-                ),
-                const SizedBox(width: 3),
-                Text(
-                  labels[_sortBy] ?? 'Name',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: _primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   // ── Product list ───────────────────────────────────────────────────────────
   Widget _buildList(List<Map<String, dynamic>> products) {
@@ -843,120 +738,8 @@ class _ProductsPageState extends State<ProductsPage>
 }
 
 // ─── Stat chip ────────────────────────────────────────────────────────────────
-class _StatChip extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-  final IconData icon;
-  final int flex;
-
-  const _StatChip({
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.icon,
-    this.flex = 1,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      flex: flex,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: color, size: 14),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: color,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: _ProductsPageState._textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 // ─── Action button ────────────────────────────────────────────────────────────
-class _ActionBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  final String tooltip;
-
-  const _ActionBtn({
-    required this.icon,
-    required this.onTap,
-    required this.tooltip,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 42,
-        height: 42,
-        margin: const EdgeInsets.only(right: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Tooltip(
-          message: tooltip,
-          child: Icon(icon, size: 20, color: _ProductsPageState._textSecondary),
-        ),
-      ),
-    );
-  }
-}
 
 // ─── Sort sheet ───────────────────────────────────────────────────────────────
 class _SortSheet extends StatefulWidget {
