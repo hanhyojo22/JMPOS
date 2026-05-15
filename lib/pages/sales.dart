@@ -37,9 +37,11 @@ String _badgeLabel(int stock) => stock == 0 ? 'Out of stock' : '$stock left';
 class SalesPage extends StatefulWidget {
   final bool openCartDirectly;
   final String? initialBarcode;
+  final List<Map<String, dynamic>> cart;
 
   const SalesPage({
     super.key,
+    required this.cart,
     this.initialBarcode,
     this.openCartDirectly = false,
   });
@@ -67,7 +69,7 @@ class _SalesPageState extends State<SalesPage> {
   String _selectedSort = 'Default';
 
   List<Map<String, dynamic>> _allProducts = [];
-  final List<Map<String, dynamic>> _cart = [];
+  late List<Map<String, dynamic>> _cart;
   bool _loadingProducts = true;
 
   final List<String> _categories = [
@@ -82,6 +84,7 @@ class _SalesPageState extends State<SalesPage> {
   @override
   void initState() {
     super.initState();
+    _cart = widget.cart;
     _loadProducts().then((_) => _handleInitialBarcode());
   }
 

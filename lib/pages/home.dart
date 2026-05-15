@@ -30,6 +30,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  final List<Map<String, dynamic>> sharedCart = [];
   int _selectedIndex = 0;
   String? salesScannedBarcode;
   String? productsScannedBarcode;
@@ -283,6 +284,8 @@ class _HomePageState extends State<HomePage> {
             '${salesScannedBarcode}_${DateTime.now().millisecondsSinceEpoch}',
           ),
 
+          cart: sharedCart,
+
           initialBarcode: salesScannedBarcode,
 
           openCartDirectly: salesScannedBarcode != null,
@@ -292,7 +295,7 @@ class _HomePageState extends State<HomePage> {
         if (widget.role == 'admin') {
           return const ReportsPage();
         }
-        return const SalesPage();
+        return SalesPage(cart: sharedCart);
 
       case 5:
         if (widget.role == 'admin') {
