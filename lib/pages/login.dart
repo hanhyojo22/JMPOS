@@ -102,10 +102,10 @@ class _LoginPageState extends State<LoginPage> {
                       children: [
                         // Logo
                         Image.asset(
-                          'lib/assets/cashiericonnobg.png',
-                          height: 120,
-                          width: 200,
-                          fit: BoxFit.contain,
+                          'lib/assets/sari-sari-removebg-preview.png',
+                          height: 180,
+                          width: 300,
+                          fit: BoxFit.fitWidth,
                         ),
 
                         const SizedBox(height: 16),
@@ -119,7 +119,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Welcome back! Please sign in to continue.',
+                          'Welcome! Please sign in to continue.',
                           style: TextStyle(
                             fontSize: 15,
                             color: Colors.grey[600],

@@ -523,20 +523,6 @@ class _AddProductsPageState extends State<AddProductsPage>
                           v == null || v.trim().isEmpty ? 'Required' : null,
                     ),
 
-                    // TextFormField(
-                    //   controller: _barcodeController,
-                    //   validator: (v) =>
-                    //       v == null || v.trim().isEmpty ? 'Required' : null,
-                    //   decoration: InputDecoration(
-                    //     labelText: 'Barcode / SKU',
-                    //     hintText: '8851234567890',
-
-                    //     prefixIcon: const Icon(
-                    //       Icons.qr_code_2_outlined,
-                    //       size: 20,
-                    //     ),
-                    //   ),
-                    // ),
                     const SizedBox(height: 14),
 
                     DropdownButtonFormField<String>(
