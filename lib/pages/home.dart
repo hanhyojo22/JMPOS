@@ -285,7 +285,9 @@ class _HomePageState extends State<HomePage> {
           ),
 
           cart: sharedCart,
-
+          onBarcodeHandled: () {
+            salesScannedBarcode = null;
+          },
           initialBarcode: salesScannedBarcode,
 
           openCartDirectly: salesScannedBarcode != null,
@@ -687,6 +689,68 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.shopping_cart_outlined, size: 28),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CartPage(
+                          cart: sharedCart,
+                          onAdd: (p) {},
+                          onRemove: (i) {},
+                          onDelete: (i) {},
+                          onCompleteSale: () async {},
+                        ),
+                      ),
+                    ).then((_) {
+                      // Refresh badge when returning from cart page
+                      setState(() {});
+                    });
+                  },
+                ),
+
+                // Improved Badge
+                if (sharedCart.isNotEmpty)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 20,
+                        minHeight: 20,
+                      ),
+                      child: Center(
+                        child: Text(
+                          sharedCart.length > 99
+                              ? '99+'
+                              : '${sharedCart.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
       drawer: Drawer(
         shape: const RoundedRectangleBorder(

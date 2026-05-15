@@ -38,11 +38,12 @@ class SalesPage extends StatefulWidget {
   final bool openCartDirectly;
   final String? initialBarcode;
   final List<Map<String, dynamic>> cart;
-
+  final VoidCallback? onBarcodeHandled;
   const SalesPage({
     super.key,
     required this.cart,
     this.initialBarcode,
+    this.onBarcodeHandled,
     this.openCartDirectly = false,
   });
 
@@ -71,6 +72,7 @@ class _SalesPageState extends State<SalesPage> {
   List<Map<String, dynamic>> _allProducts = [];
   late List<Map<String, dynamic>> _cart;
   bool _loadingProducts = true;
+  bool _barcodeHandled = false;
 
   final List<String> _categories = [
     'All',
@@ -119,6 +121,8 @@ class _SalesPageState extends State<SalesPage> {
   }
 
   void _handleInitialBarcode() {
+    if (_barcodeHandled) return;
+
     final barcode = widget.initialBarcode;
     if (barcode == null || barcode.isEmpty) return;
 
@@ -144,6 +148,8 @@ class _SalesPageState extends State<SalesPage> {
       }
     });
 
+    _barcodeHandled = true;
+    widget.onBarcodeHandled?.call();
     HapticFeedback.mediumImpact();
     _showSnack('${product['title']} added to cart');
 
@@ -376,72 +382,6 @@ class _SalesPageState extends State<SalesPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _surface,
-
-      // ── FAB ────────────────────────────────────────────────────────────────
-      floatingActionButton: AnimatedScale(
-        duration: const Duration(milliseconds: 220),
-        scale: _cartQuantity > 0 ? 1 : 0.92,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 220),
-          opacity: _cartQuantity > 0 ? 1 : 0.7,
-          child: GestureDetector(
-            onTap: _openCartPage,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [_primary, Color(0xFF7C4DFF)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: _primary.withValues(alpha: 0.35),
-                        blurRadius: 16,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.shopping_cart_outlined,
-                    color: Colors.white,
-                    size: 28,
-                  ),
-                ),
-                if (_cartQuantity > 0)
-                  Positioned(
-                    top: -2,
-                    right: -2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _danger,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: Text(
-                        '$_cartQuantity',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
 
       body: SafeArea(
@@ -1630,7 +1570,7 @@ class _CartPageState extends State<CartPage> {
         title: Column(
           children: [
             const Text(
-              'Cart',
+              'Shopping Cart',
               style: TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 18,
