@@ -1116,6 +1116,8 @@ class CartPage extends StatefulWidget {
   final void Function(int) onRemove;
   final void Function(int) onDelete;
   final Future<void> Function() onCompleteSale;
+  final bool showAppBar;
+  final VoidCallback? onBrowseProducts;
 
   const CartPage({
     super.key,
@@ -1124,6 +1126,8 @@ class CartPage extends StatefulWidget {
     required this.onRemove,
     required this.onDelete,
     required this.onCompleteSale,
+    this.showAppBar = true,
+    this.onBrowseProducts,
   });
 
   @override
@@ -1532,79 +1536,81 @@ class _CartPageState extends State<CartPage> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F5FF),
-      appBar: AppBar(
-        title: Column(
-          children: [
-            const Text(
-              'Shopping Cart',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 18,
-                color: _textPrimary,
-                letterSpacing: -0.3,
+      appBar: widget.showAppBar
+          ? AppBar(
+              title: Column(
+                children: [
+                  const Text(
+                    'Shopping Cart',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                      color: _textPrimary,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  if (cart.isNotEmpty)
+                    Text(
+                      '${cart.length} item${cart.length != 1 ? 's' : ''}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: _textSecondary,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                ],
               ),
-            ),
-            if (cart.isNotEmpty)
-              Text(
-                '${cart.length} item${cart.length != 1 ? 's' : ''}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: _textSecondary,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-          ],
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        foregroundColor: _textPrimary,
-        elevation: 0,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF4F5FF),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              size: 18,
-              color: _textPrimary,
-            ),
-          ),
-        ),
-        actions: [
-          if (cart.isNotEmpty)
-            GestureDetector(
-              onTap: () => setState(() {
-                for (final item in cart) {
-                  item['product']['stock'] += item['quantity'];
-                }
-                cart.clear();
-              }),
-              child: Container(
-                margin: const EdgeInsets.all(10),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: _danger.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Text(
-                  'Clear',
-                  style: TextStyle(
-                    color: _danger,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
+              centerTitle: true,
+              backgroundColor: Colors.white,
+              foregroundColor: _textPrimary,
+              elevation: 0,
+              leading: GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  margin: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF4F5FF),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    size: 18,
+                    color: _textPrimary,
                   ),
                 ),
               ),
-            ),
-        ],
-      ),
+              actions: [
+                if (cart.isNotEmpty)
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      for (final item in cart) {
+                        item['product']['stock'] += item['quantity'];
+                      }
+                      cart.clear();
+                    }),
+                    child: Container(
+                      margin: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _danger.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text(
+                        'Clear',
+                        style: TextStyle(
+                          color: _danger,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            )
+          : null,
       body: cart.isEmpty
           ? Center(
               child: Column(
@@ -1639,7 +1645,8 @@ class _CartPageState extends State<CartPage> {
                   ),
                   const SizedBox(height: 20),
                   GestureDetector(
-                    onTap: () => Navigator.pop(context),
+                    onTap:
+                        widget.onBrowseProducts ?? () => Navigator.pop(context),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 20,

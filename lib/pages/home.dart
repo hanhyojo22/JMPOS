@@ -421,25 +421,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openCartPage() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CartPage(
-          cart: sharedCart,
-          onAdd: _addToSharedCart,
-          onRemove: _removeFromSharedCart,
-          onDelete: _deleteFromSharedCart,
-          onCompleteSale: () async {
-            final completed = await _completeSharedSale();
-            if (completed && mounted && Navigator.canPop(context)) {
-              Navigator.pop(context);
-            }
-          },
-        ),
-      ),
-    ).then((_) {
-      if (mounted) setState(() {});
-    });
+    setState(() => _selectedIndex = 9);
   }
 
   Widget _buildPageContent() {
@@ -523,6 +505,21 @@ class _HomePageState extends State<HomePage> {
               productsScannedBarcode = null;
               _selectedIndex = 1;
             });
+          },
+        );
+
+      case 9:
+        return CartPage(
+          cart: sharedCart,
+          showAppBar: false,
+          onAdd: _addToSharedCart,
+          onRemove: _removeFromSharedCart,
+          onDelete: _deleteFromSharedCart,
+          onCompleteSale: () async {
+            await _completeSharedSale();
+          },
+          onBrowseProducts: () {
+            setState(() => _selectedIndex = 3);
           },
         );
     }
