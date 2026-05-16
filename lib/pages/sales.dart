@@ -61,7 +61,7 @@ class _SalesPageState extends State<SalesPage> {
   static const Color _border = Color(0xFFEEEEEE);
   static const Color _textPrimary = Color(0xFF1A1F36);
   static const Color _textSecondary = Color(0xFF6B7280);
-  static const Color _textTertiary = Color(0xFFBBBBBB);
+
   static const Color _success = Color(0xFF10B981);
   static const Color _danger = Color(0xFFEF4444);
 
@@ -592,7 +592,7 @@ class _SalesPageState extends State<SalesPage> {
   Widget _buildProductCard(Map<String, dynamic> product) {
     final int stock = product['stock'] as int;
     final double price = (product['price'] as num).toDouble();
-    final String category = product['category'] as String? ?? '';
+
     final _StockState ss = _toStockState(stock);
 
     final cartItem = _cart.firstWhere(

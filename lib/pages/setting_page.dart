@@ -42,7 +42,6 @@ class _SettingsPageState extends State<SettingsPage> {
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 32),
                 children: [
-                  _buildProfileCard(),
                   _buildSection(
                     label: 'Store',
                     children: [
@@ -199,7 +198,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ],
                   ),
-                  _buildSection(children: [_buildLogoutRow()]),
                 ],
               ),
             ),
@@ -248,78 +246,6 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   // ── Profile card ───────────────────────────────────────────────────────────
-  Widget _buildProfileCard() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _border, width: 0.5),
-      ),
-      child: Row(
-        children: [
-          // Avatar
-          Container(
-            width: 52,
-            height: 52,
-            decoration: const BoxDecoration(
-              color: Color(0xFFEEEDFE),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.person_outline_rounded,
-              size: 26,
-              color: Color(0xFF534AB7),
-            ),
-          ),
-
-          const SizedBox(width: 14),
-
-          // Name + role
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Juan dela Cruz',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: _textPrimary,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Store admin · Calinog Branch',
-                  style: TextStyle(fontSize: 12, color: _textSecondary),
-                ),
-              ],
-            ),
-          ),
-
-          // Edit button
-          GestureDetector(
-            onTap: () {},
-            child: Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: _surface,
-                shape: BoxShape.circle,
-                border: Border.all(color: _border, width: 0.5),
-              ),
-              child: const Icon(
-                Icons.edit_outlined,
-                size: 16,
-                color: _textSecondary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   // ── Section wrapper ────────────────────────────────────────────────────────
   Widget _buildSection({String? label, required List<Widget> children}) {
@@ -357,40 +283,6 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   // ── Logout row ─────────────────────────────────────────────────────────────
-  Widget _buildLogoutRow() {
-    return InkWell(
-      onTap: () => _showLogoutDialog(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-        child: Row(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: _dangerBg,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.logout_rounded,
-                size: 17,
-                color: Color(0xFFA32D2D),
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Text(
-              'Log out',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: _danger,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   Widget _buildToggle(bool value, ValueChanged<bool> onChanged) {
@@ -413,39 +305,6 @@ class _SettingsPageState extends State<SettingsPage> {
       child: Text(
         label,
         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg),
-      ),
-    );
-  }
-
-  void _showLogoutDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Log out?',
-          style: TextStyle(fontWeight: FontWeight.w700, color: _textPrimary),
-        ),
-        content: const Text(
-          'You will need to log in again to access the app.',
-          style: TextStyle(color: _textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: _textSecondary),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Log out',
-              style: TextStyle(color: _danger, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
       ),
     );
   }

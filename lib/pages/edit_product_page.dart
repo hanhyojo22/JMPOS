@@ -4,12 +4,69 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:pos_app/database/database_helper.dart';
-import 'package:pos_app/utils/currency.dart';
 
+// ─── Design tokens ────────────────────────────────────────────────────────────
+const _primary = Color(0xFF5C6BC0);
+const _surface = Color(0xFFF5F6FA);
+const _cardBg = Colors.white;
+const _border = Color(0xFFEEEEEE);
+const _textPrimary = Color(0xFF1A1F36);
+const _textSecondary = Color(0xFF6B7280);
+const _textTertiary = Color(0xFFAAAAAA);
+const _purple = Color(0xFF534AB7);
+const _purpleBg = Color(0xFFEEEDFE);
+const _green = Color(0xFF3B6D11);
+const _greenBg = Color(0xFFEAF3DE);
+const _greenBorder = Color(0xFFC0DD97);
+const _amber = Color(0xFF854F0B);
+const _amberBg = Color(0xFFFAEEDA);
+const _amberBorder = Color(0xFFFAC775);
+const _red = Color(0xFFA32D2D);
+const _redBg = Color(0xFFFCEBEB);
+const _redBorder = Color(0xFFF7C1C1);
+
+// ─── Status tone ──────────────────────────────────────────────────────────────
+enum _Tone { green, amber, red }
+
+Color _toneBg(_Tone t) {
+  switch (t) {
+    case _Tone.green:
+      return _greenBg;
+    case _Tone.amber:
+      return _amberBg;
+    case _Tone.red:
+      return _redBg;
+  }
+}
+
+Color _toneBorder(_Tone t) {
+  switch (t) {
+    case _Tone.green:
+      return _greenBorder;
+    case _Tone.amber:
+      return _amberBorder;
+    case _Tone.red:
+      return _redBorder;
+  }
+}
+
+Color _toneFg(_Tone t) {
+  switch (t) {
+    case _Tone.green:
+      return _green;
+    case _Tone.amber:
+      return _amber;
+    case _Tone.red:
+      return _red;
+  }
+}
+
+// ─── EditProductPage ──────────────────────────────────────────────────────────
 class EditProductPage extends StatefulWidget {
   final Map<String, dynamic> product;
   final VoidCallback? onBack;
   final VoidCallback? onSaved;
+
   const EditProductPage({
     super.key,
     required this.product,
@@ -21,31 +78,26 @@ class EditProductPage extends StatefulWidget {
   State<EditProductPage> createState() => _EditProductPageState();
 }
 
-class _EditProductPageState extends State<EditProductPage>
-    with TickerProviderStateMixin {
-  final ImagePicker _picker = ImagePicker();
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+class _EditProductPageState extends State<EditProductPage> {
+  final _picker = ImagePicker();
+  final _formKey = GlobalKey<FormState>();
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  PersistentBottomSheetController? _photoSheet;
 
-  late AnimationController _enterCtrl;
-  late AnimationController _pulseCtrl;
-  late Animation<double> _fadeAnim;
-  late Animation<Offset> _slideAnim;
-  late Animation<double> _pulseAnim;
+  late TextEditingController _nameCtrl;
+  late TextEditingController _barcodeCtrl;
+  late TextEditingController _descCtrl;
+  late TextEditingController _costCtrl;
+  late TextEditingController _priceCtrl;
+  late TextEditingController _stockCtrl;
 
-  late TextEditingController _nameController;
-  late TextEditingController _barcodeController;
-  late TextEditingController _descriptionController;
-  late TextEditingController _costPriceController;
-  late TextEditingController _sellingPriceController;
-  late TextEditingController _stockController;
-
-  String? _selectedCategory;
+  String? _category;
   String? _currentImagePath;
-  XFile? _newPickedImage;
-  bool _isSaving = false;
-  bool _isDeleting = false;
+  XFile? _pickedImage;
+  bool _saving = false;
+  bool _deleting = false;
 
-  final List<String> _categories = [
+  static const _categories = [
     'Beverages',
     'Groceries',
     'Snacks',
@@ -53,96 +105,74 @@ class _EditProductPageState extends State<EditProductPage>
     'Other',
   ];
 
-  // ── Design tokens ──────────────────────────────────────────────────────────
-  static const Color _primary = Color(0xFF5C6BC0);
-  static const Color _primaryLight = Color(0xFF7986CB);
-  static const Color _surface = Color(0xFFF8F9FF);
-  static const Color _card = Colors.white;
-  static const Color _textPrimary = Color(0xFF1A1F36);
-  static const Color _textSecondary = Color(0xFF6B7280);
-
+  // ── Init / dispose ─────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     final p = widget.product;
-    _nameController = TextEditingController(text: p['product_name'] ?? '');
-    _barcodeController = TextEditingController(text: p['barcode'] ?? '');
-    _descriptionController = TextEditingController(
-      text: p['description'] ?? '',
-    );
-    _costPriceController = TextEditingController(
+    _nameCtrl = TextEditingController(text: p['product_name'] ?? '');
+    _barcodeCtrl = TextEditingController(text: p['barcode'] ?? '');
+    _descCtrl = TextEditingController(text: p['description'] ?? '');
+    _costCtrl = TextEditingController(
       text: (p['cost_price'] as num?)?.toStringAsFixed(2) ?? '0.00',
     );
-    _sellingPriceController = TextEditingController(
+    _priceCtrl = TextEditingController(
       text: (p['price'] as num?)?.toStringAsFixed(2) ?? '0.00',
     );
-    _stockController = TextEditingController(
+    _stockCtrl = TextEditingController(
       text: (p['stock_quantity'] as int?)?.toString() ?? '0',
     );
-    _selectedCategory = p['category'] as String?;
+    _category = p['category'] as String?;
     _currentImagePath = p['image_url'] as String?;
-
-    _enterCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat(reverse: true);
-
-    _fadeAnim = CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOut);
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.06),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOutCubic));
-    _pulseAnim = Tween<double>(
-      begin: 0.97,
-      end: 1.03,
-    ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
-    _enterCtrl.forward();
   }
 
   @override
   void dispose() {
-    _enterCtrl.dispose();
-    _pulseCtrl.dispose();
-    _nameController.dispose();
-    _barcodeController.dispose();
-    _descriptionController.dispose();
-    _costPriceController.dispose();
-    _sellingPriceController.dispose();
-    _stockController.dispose();
+    _photoSheet?.close();
+    _nameCtrl.dispose();
+    _barcodeCtrl.dispose();
+    _descCtrl.dispose();
+    _costCtrl.dispose();
+    _priceCtrl.dispose();
+    _stockCtrl.dispose();
     super.dispose();
   }
 
   // ── Computed ───────────────────────────────────────────────────────────────
-  String? get _displayPath => _newPickedImage?.path ?? _currentImagePath;
+  String? get _imagePath => _pickedImage?.path ?? _currentImagePath;
 
   double get _margin {
-    final cost = double.tryParse(_costPriceController.text) ?? 0;
-    final sell = double.tryParse(_sellingPriceController.text) ?? 0;
+    final cost = double.tryParse(_costCtrl.text) ?? 0;
+    final sell = double.tryParse(_priceCtrl.text) ?? 0;
     if (cost <= 0 || sell <= 0) return 0;
     return ((sell - cost) / cost) * 100;
   }
 
   double get _profit {
-    final cost = double.tryParse(_costPriceController.text) ?? 0;
-    final sell = double.tryParse(_sellingPriceController.text) ?? 0;
+    final cost = double.tryParse(_costCtrl.text) ?? 0;
+    final sell = double.tryParse(_priceCtrl.text) ?? 0;
     return sell - cost;
   }
 
-  Color get _marginColor {
-    if (_margin < 0) return const Color(0xFFEF4444);
-    if (_margin < 20) return const Color(0xFFF59E0B);
-    return const Color(0xFF10B981);
+  int get _stock => int.tryParse(_stockCtrl.text) ?? 0;
+
+  _Tone get _marginTone {
+    if (_margin < 0) return _Tone.red;
+    if (_margin < 20) return _Tone.amber;
+    return _Tone.green;
   }
 
-  Color _stockColor(int s) {
-    if (s == 0) return const Color(0xFFEF4444);
-    if (s <= 10) return const Color(0xFFF59E0B);
-    return const Color(0xFF10B981);
+  _Tone get _stockTone {
+    if (_stock == 0) return _Tone.red;
+    if (_stock <= 10) return _Tone.amber;
+    return _Tone.green;
   }
+
+  String get _stockLabel => _stock == 0
+      ? 'Out of stock'
+      : _stock <= 10
+      ? 'Low stock'
+      : 'In stock';
 
   // ── Image ──────────────────────────────────────────────────────────────────
   Future<void> _pickImage(ImageSource src) async {
@@ -152,32 +182,43 @@ class _EditProductPageState extends State<EditProductPage>
       maxHeight: 800,
       imageQuality: 85,
     );
-    if (img != null) setState(() => _newPickedImage = img);
+    if (img != null) setState(() => _pickedImage = img);
   }
 
   void _showImageSheet() {
-    showModalBottomSheet(
-      context: context,
+    if (_photoSheet != null) {
+      _photoSheet!.close();
+      _photoSheet = null;
+      return;
+    }
+
+    _photoSheet = _scaffoldKey.currentState?.showBottomSheet(
       backgroundColor: Colors.transparent,
-      builder: (_) => _ImageSheet(
-        hasImage: _displayPath != null,
+      elevation: 0,
+      enableDrag: true,
+      (_) => _ImageSheet(
+        hasImage: _imagePath != null,
         onGallery: () {
-          Navigator.pop(context);
+          _photoSheet?.close();
+          _photoSheet = null;
           _pickImage(ImageSource.gallery);
         },
         onCamera: () {
-          Navigator.pop(context);
+          _photoSheet?.close();
+          _photoSheet = null;
           _pickImage(ImageSource.camera);
         },
         onRemove: () {
           setState(() {
-            _newPickedImage = null;
+            _pickedImage = null;
             _currentImagePath = null;
           });
-          Navigator.pop(context);
+          _photoSheet?.close();
+          _photoSheet = null;
         },
       ),
     );
+    _photoSheet?.closed.whenComplete(() => _photoSheet = null);
   }
 
   // ── Barcode ────────────────────────────────────────────────────────────────
@@ -186,7 +227,7 @@ class _EditProductPageState extends State<EditProductPage>
       context,
       MaterialPageRoute(
         builder: (_) => BarcodeScannerPage(
-          onDetect: (code) => setState(() => _barcodeController.text = code),
+          onDetect: (code) => setState(() => _barcodeCtrl.text = code),
         ),
       ),
     );
@@ -195,38 +236,38 @@ class _EditProductPageState extends State<EditProductPage>
   // ── Save ───────────────────────────────────────────────────────────────────
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) {
-      _showSnack('Please fix the errors before saving', isError: true);
+      _snack('Please fix the errors before saving', error: true);
       return;
     }
-    setState(() => _isSaving = true);
+    setState(() => _saving = true);
     try {
       final updated = {
         'id': widget.product['id'],
-        'product_name': _nameController.text.trim(),
-        'barcode': _barcodeController.text.trim(),
-        'category': _selectedCategory,
-        'description': _descriptionController.text.trim().isEmpty
+        'product_name': _nameCtrl.text.trim(),
+        'barcode': _barcodeCtrl.text.trim(),
+        'category': _category,
+        'description': _descCtrl.text.trim().isEmpty
             ? null
-            : _descriptionController.text.trim(),
-        'price': double.parse(_sellingPriceController.text),
-        'cost_price': double.parse(_costPriceController.text),
-        'stock_quantity': int.parse(_stockController.text),
-        'image_url': _newPickedImage?.path ?? _currentImagePath,
+            : _descCtrl.text.trim(),
+        'price': double.parse(_priceCtrl.text),
+        'cost_price': double.parse(_costCtrl.text),
+        'stock_quantity': int.parse(_stockCtrl.text),
+        'image_url': _imagePath,
         'updated_at': DateTime.now().toIso8601String(),
       };
       final result = await DatabaseHelper.instance.updateProduct(updated);
       if (!mounted) return;
-      setState(() => _isSaving = false);
+      setState(() => _saving = false);
       if (result > 0) {
-        _showSnack('Product updated successfully!');
+        _snack('Product updated!');
         widget.onSaved?.call();
       } else {
-        _showSnack('Failed to update product', isError: true);
+        _snack('Failed to update', error: true);
       }
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isSaving = false);
-      _showSnack('Error: $e', isError: true);
+      setState(() => _saving = false);
+      _snack('Error: $e', error: true);
     }
   }
 
@@ -238,33 +279,32 @@ class _EditProductPageState extends State<EditProductPage>
         productName: widget.product['product_name'] ?? '',
         onConfirm: () async {
           Navigator.pop(context);
-          await _delete();
+          setState(() => _deleting = true);
+          try {
+            await DatabaseHelper.instance.deleteProduct(
+              widget.product['id'] as int,
+            );
+            if (!mounted) return;
+            _snack('Product deleted');
+            widget.onSaved?.call();
+          } catch (e) {
+            if (!mounted) return;
+            setState(() => _deleting = false);
+            _snack('Error: $e', error: true);
+          }
         },
       ),
     );
   }
 
-  Future<void> _delete() async {
-    setState(() => _isDeleting = true);
-    try {
-      await DatabaseHelper.instance.deleteProduct(widget.product['id'] as int);
-      if (!mounted) return;
-      _showSnack('Product deleted');
-      widget.onSaved?.call();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isDeleting = false);
-      _showSnack('Error: $e', isError: true);
-    }
-  }
-
-  void _showSnack(String msg, {bool isError = false}) {
+  void _snack(String msg, {bool error = false}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
             Icon(
-              isError ? Icons.error_outline : Icons.check_circle_rounded,
+              error ? Icons.error_outline : Icons.check_circle_rounded,
               color: Colors.white,
               size: 18,
             ),
@@ -272,9 +312,9 @@ class _EditProductPageState extends State<EditProductPage>
             Expanded(child: Text(msg)),
           ],
         ),
-        backgroundColor: isError
-            ? const Color(0xFFEF4444)
-            : const Color(0xFF10B981),
+        backgroundColor: error
+            ? const Color(0xFFDC2626)
+            : const Color(0xFF22C55E),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
@@ -285,831 +325,418 @@ class _EditProductPageState extends State<EditProductPage>
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final stockVal = int.tryParse(_stockController.text) ?? 0;
-    final hasPrice =
-        _costPriceController.text.isNotEmpty &&
-        _sellingPriceController.text.isNotEmpty;
-
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: _surface,
-      extendBodyBehindAppBar: true,
-      appBar: _buildAppBar(),
-      body: FadeTransition(
-        opacity: _fadeAnim,
-        child: SlideTransition(
-          position: _slideAnim,
-          child: Form(
-            key: _formKey,
-            child: CustomScrollView(
-              slivers: [
-                // Header space for app bar
-                const SliverToBoxAdapter(child: SizedBox(height: 100)),
-
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate([
-                      // ── Hero product card ──────────────────────────
-                      _buildHeroCard(),
-
-                      const SizedBox(height: 16),
-
-                      // ── Product details ────────────────────────────
-                      _buildSection(
-                        label: 'Product Details',
-                        icon: Icons.inventory_2_outlined,
-                        child: Column(
-                          children: [
-                            _buildField(
-                              controller: _nameController,
-                              label: 'Product Name',
-                              hint: 'e.g. Coca Cola 500ml',
-                              icon: Icons.label_outline_rounded,
-                              onChanged: (_) => setState(() {}),
-                              validator: (v) => v == null || v.trim().isEmpty
-                                  ? 'Required'
-                                  : null,
-                            ),
-                            const SizedBox(height: 12),
-                            _buildField(
-                              controller: _barcodeController,
-                              label: 'Barcode / SKU',
-                              hint: '8851234567890',
-                              icon: Icons.qr_code_rounded,
-                              suffix: _buildScanButton(),
-                              validator: (v) => v == null || v.trim().isEmpty
-                                  ? 'Required'
-                                  : null,
-                            ),
-                            const SizedBox(height: 12),
-                            _buildDropdown(),
-                            const SizedBox(height: 12),
-                            _buildField(
-                              controller: _descriptionController,
-                              label: 'Description',
-                              hint: 'Optional product notes...',
-                              icon: Icons.notes_rounded,
-                              maxLines: 3,
-                              validator: (_) => null,
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // ── Pricing ────────────────────────────────────
-                      _buildSection(
-                        label: 'Pricing',
-                        icon: Icons.payments_outlined,
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildField(
-                                    controller: _costPriceController,
-                                    label: 'Cost Price',
-                                    hint: '0.00',
-                                    icon: Icons.south_rounded,
-                                    iconColor: const Color(0xFFEF4444),
-                                    prefix: '₱',
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                          decimal: true,
-                                        ),
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.allow(
-                                        RegExp(r'^\d*\.?\d{0,2}'),
-                                      ),
-                                    ],
-                                    onChanged: (_) => setState(() {}),
-                                    validator: (v) {
-                                      if (v == null || v.isEmpty) {
-                                        return 'Required';
-                                      }
-                                      if (double.tryParse(v) == null) {
-                                        return 'Invalid';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _buildField(
-                                    controller: _sellingPriceController,
-                                    label: 'Selling Price',
-                                    hint: '0.00',
-                                    icon: Icons.north_rounded,
-                                    iconColor: const Color(0xFF10B981),
-                                    prefix: '₱',
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                          decimal: true,
-                                        ),
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.allow(
-                                        RegExp(r'^\d*\.?\d{0,2}'),
-                                      ),
-                                    ],
-                                    onChanged: (_) => setState(() {}),
-                                    validator: (v) {
-                                      if (v == null || v.isEmpty) {
-                                        return 'Required';
-                                      }
-
-                                      if (double.tryParse(v) == null) {
-                                        return 'Invalid';
-                                      }
-
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (hasPrice) ...[
-                              const SizedBox(height: 12),
-                              _buildMarginBanner(),
-                            ],
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // ── Stock ──────────────────────────────────────
-                      _buildSection(
-                        label: 'Inventory',
-                        icon: Icons.warehouse_outlined,
-                        child: Column(
-                          children: [
-                            _buildField(
-                              controller: _stockController,
-                              label: 'Stock Quantity',
-                              hint: '0',
-                              icon: Icons.layers_outlined,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                              ],
-                              onChanged: (_) => setState(() {}),
-                              validator: (v) {
-                                if (v == null || v.isEmpty) return 'Required';
-                                if (int.tryParse(v) == null) return 'Invalid';
-                                return null;
-                              },
-                            ),
-                            if (_stockController.text.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              _buildStockBanner(stockVal),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ]),
-                  ),
+      body: SafeArea(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              _buildAppBar(),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
+                  children: [
+                    _buildIdentityCard(),
+                    const SizedBox(height: 10),
+                    _buildStatsRow(),
+                    const SizedBox(height: 10),
+                    _buildDetailsSection(),
+                    const SizedBox(height: 10),
+                    _buildPricingSection(),
+                    const SizedBox(height: 10),
+                    _buildInventorySection(),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              _buildBottomBar(),
+            ],
           ),
         ),
       ),
-      bottomNavigationBar: _buildBottomBar(),
     );
   }
 
   // ── App bar ────────────────────────────────────────────────────────────────
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      leading: GestureDetector(
-        onTap: widget.onBack,
-        child: Container(
-          margin: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.07),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            size: 18,
-            color: _textPrimary,
-          ),
-        ),
-      ),
-      title: const Text(
-        'Edit Product',
-        style: TextStyle(
-          fontSize: 17,
-          fontWeight: FontWeight.w700,
-          color: _textPrimary,
-          letterSpacing: -0.3,
-        ),
-      ),
-      centerTitle: true,
-      actions: [
-        GestureDetector(
-          onTap: _isDeleting ? null : _confirmDelete,
-          child: Container(
-            margin: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEF4444).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+  Widget _buildAppBar() {
+    return Container(
+      color: _surface,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+      child: Row(
+        children: [
+          _CircleBtn(
+            onTap: widget.onBack ?? () => Navigator.maybePop(context),
+            child: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              size: 16,
+              color: _textPrimary,
             ),
-            padding: const EdgeInsets.all(8),
-            child: _isDeleting
+          ),
+          const Expanded(
+            child: Text(
+              'Edit product',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: _textPrimary,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ),
+          _CircleBtn(
+            bg: _redBg,
+            border: _redBorder,
+            onTap: _deleting ? null : _confirmDelete,
+            child: _deleting
                 ? const SizedBox(
-                    width: 18,
-                    height: 18,
+                    width: 16,
+                    height: 16,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: Color(0xFFEF4444),
+                      color: _red,
                     ),
                   )
                 : const Icon(
                     Icons.delete_outline_rounded,
-                    size: 20,
-                    color: Color(0xFFEF4444),
+                    size: 18,
+                    color: _red,
                   ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Identity card ──────────────────────────────────────────────────────────
+  Widget _buildIdentityCard() {
+    return GestureDetector(
+      onTap: _showImageSheet,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          children: [
+            // Full-width image or placeholder
+            SizedBox(
+              width: double.infinity,
+              height: MediaQuery.of(context).size.height * 0.20,
+              child: _imagePath != null && File(_imagePath!).existsSync()
+                  ? Image.file(File(_imagePath!), fit: BoxFit.cover)
+                  : Container(
+                      color: _purpleBg,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: _purple.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.add_photo_alternate_outlined,
+                              size: 30,
+                              color: _purple,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Tap to add photo',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: _purple,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+
+            // Camera badge — bottom right
+            Positioned(
+              bottom: 12,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.camera_alt_outlined,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                    SizedBox(width: 5),
+                    Text(
+                      'Change photo',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Stats row ──────────────────────────────────────────────────────────────
+  Widget _buildStatsRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: _StatCard(
+            label: 'Stock',
+            value: '$_stock units',
+            tone: _stockTone,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _StatCard(
+            label: 'Margin',
+            value: '${_margin.toStringAsFixed(1)}%',
+            tone: _marginTone,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _StatCard(
+            label: 'Profit/unit',
+            value: '₱${_profit.toStringAsFixed(2)}',
+            tone: _marginTone,
           ),
         ),
       ],
     );
   }
 
-  // ── Hero card ──────────────────────────────────────────────────────────────
-  Widget _buildHeroCard() {
-    final stockVal = int.tryParse(_stockController.text) ?? 0;
-    final price = double.tryParse(_sellingPriceController.text) ?? 0;
-
-    return Container(
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF5C6BC0), Color(0xFF7C4DFF)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: _primary.withValues(alpha: 0.35),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Stack(
+  // ── Details section ────────────────────────────────────────────────────────
+  Widget _buildDetailsSection() {
+    return _SectionCard(
+      iconBg: _purpleBg,
+      iconColor: _purple,
+      icon: Icons.description_outlined,
+      title: 'Product details',
+      child: Column(
         children: [
-          // Decorative circles
-          Positioned(
-            top: -20,
-            right: -20,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.06),
-              ),
-            ),
+          _Field(
+            label: 'Product name',
+            controller: _nameCtrl,
+            icon: Icons.label_outline_rounded,
+            hint: 'e.g. Coca Cola 500ml',
+            onChanged: (_) => setState(() {}),
+            validator: (v) =>
+                (v == null || v.trim().isEmpty) ? 'Required' : null,
           ),
-          Positioned(
-            bottom: -30,
-            left: -10,
-            child: Container(
-              width: 90,
-              height: 90,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.05),
-              ),
-            ),
-          ),
-
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Row(
-              children: [
-                // Image thumbnail
-                GestureDetector(
-                  onTap: _showImageSheet,
-                  child: Stack(
-                    children: [
-                      AnimatedBuilder(
-                        animation: _pulseAnim,
-                        builder: (_, child) => Transform.scale(
-                          scale: _displayPath == null ? _pulseAnim.value : 1.0,
-                          child: child,
-                        ),
-                        child: Container(
-                          width: 90,
-                          height: 90,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(20),
-                            color: Colors.white.withValues(alpha: 0.15),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.3),
-                              width: 2,
-                            ),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child:
-                              _displayPath != null &&
-                                  File(_displayPath!).existsSync()
-                              ? Image.file(
-                                  File(_displayPath!),
-                                  fit: BoxFit.cover,
-                                )
-                              : const Icon(
-                                  Icons.add_photo_alternate_outlined,
-                                  size: 36,
-                                  color: Colors.white,
-                                ),
-                        ),
-                      ),
-                      Positioned(
-                        bottom: 4,
-                        right: 4,
-                        child: Container(
-                          width: 24,
-                          height: 24,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.15),
-                                blurRadius: 4,
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.camera_alt,
-                            size: 12,
-                            color: _primary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+          const SizedBox(height: 10),
+          _Field(
+            label: 'Barcode / SKU',
+            controller: _barcodeCtrl,
+            icon: Icons.qr_code_rounded,
+            hint: '8851234567890',
+            suffix: GestureDetector(
+              onTap: _scanBarcode,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
                 ),
-
-                const SizedBox(width: 16),
-
-                // Product info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _nameController.text.isEmpty
-                            ? 'Product Name'
-                            : _nameController.text,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: -0.3,
-                          height: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      if (_selectedCategory != null)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            _selectedCategory!,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      const SizedBox(height: 12),
-                      Text(
-                        CurrencyFormatter.format(price),
-                        style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                    ],
-                  ),
+                decoration: BoxDecoration(
+                  color: _primary,
+                  borderRadius: BorderRadius.circular(99),
                 ),
-              ],
-            ),
-          ),
-
-          // Stats row at bottom
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 140),
-                Row(
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _heroStat(
-                      'Stock',
-                      '$stockVal units',
-                      Icons.layers_outlined,
-                    ),
-                    const SizedBox(width: 10),
-                    _heroStat(
-                      'Margin',
-                      '${_margin.toStringAsFixed(1)}%',
-                      Icons.trending_up_rounded,
-                    ),
-                    const SizedBox(width: 10),
-                    _heroStat(
-                      'Profit',
-                      '₱${_profit.toStringAsFixed(2)}',
-                      Icons.attach_money_rounded,
+                    Icon(Icons.qr_code_scanner, color: Colors.white, size: 13),
+                    SizedBox(width: 4),
+                    Text(
+                      'Scan',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
+            validator: (v) =>
+                (v == null || v.trim().isEmpty) ? 'Required' : null,
+          ),
+          const SizedBox(height: 10),
+          _DropdownField(
+            label: 'Category',
+            value: _categories.contains(_category) ? _category : null,
+            items: _categories,
+            onChanged: (v) => setState(() => _category = v),
+          ),
+          const SizedBox(height: 10),
+          _Field(
+            label: 'Description',
+            controller: _descCtrl,
+            icon: Icons.notes_rounded,
+            hint: 'Optional product notes...',
+            maxLines: 3,
+            validator: (_) => null,
           ),
         ],
       ),
     );
   }
 
-  Widget _heroStat(String label, String value, IconData icon) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 14, color: Colors.white.withValues(alpha: 0.7)),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.white.withValues(alpha: 0.65),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Section card ───────────────────────────────────────────────────────────
-  Widget _buildSection({
-    required String label,
-    required IconData icon,
-    required Widget child,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+  // ── Pricing section ────────────────────────────────────────────────────────
+  Widget _buildPricingSection() {
+    return _SectionCard(
+      iconBg: _greenBg,
+      iconColor: _green,
+      icon: Icons.payments_outlined,
+      title: 'Pricing',
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [_primary, _primaryLight],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+          Row(
+            children: [
+              Expanded(
+                child: _Field(
+                  label: 'Cost price',
+                  controller: _costCtrl,
+                  icon: Icons.south_rounded,
+                  iconColor: _red,
+                  prefix: '₱',
+                  hint: '0.00',
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(
+                      RegExp(r'^\d*\.?\d{0,2}'),
                     ),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, size: 16, color: Colors.white),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: _textPrimary,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(height: 1, color: const Color(0xFFF0F1F5)),
-          Padding(padding: const EdgeInsets.all(20), child: child),
-        ],
-      ),
-    );
-  }
-
-  // ── Text field ─────────────────────────────────────────────────────────────
-  Widget _buildField({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    required IconData icon,
-    Color? iconColor,
-    String? prefix,
-    TextInputType keyboardType = TextInputType.text,
-    List<TextInputFormatter>? inputFormatters,
-    String? Function(String?)? validator,
-    void Function(String)? onChanged,
-    int maxLines = 1,
-    Widget? suffix,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      inputFormatters: inputFormatters,
-      validator: validator,
-      onChanged: onChanged,
-      maxLines: maxLines,
-      style: const TextStyle(
-        fontSize: 15,
-        color: _textPrimary,
-        fontWeight: FontWeight.w500,
-      ),
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        labelStyle: const TextStyle(fontSize: 13, color: _textSecondary),
-        hintStyle: TextStyle(
-          fontSize: 14,
-          color: _textSecondary.withValues(alpha: 0.5),
-        ),
-        prefixIcon: Padding(
-          padding: const EdgeInsets.only(left: 14, right: 10),
-          child: Icon(
-            icon,
-            color: iconColor ?? _textSecondary.withValues(alpha: 0.6),
-            size: 19,
-          ),
-        ),
-        prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-        prefixText: prefix != null ? '$prefix ' : null,
-        prefixStyle: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
-          color: _primary,
-        ),
-        suffixIcon: suffix,
-        filled: true,
-        fillColor: const Color(0xFFF8F9FF),
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: maxLines > 1 ? 16 : 0,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE8EAF0)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE8EAF0)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _primary, width: 1.8),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFEF4444)),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.8),
-        ),
-      ),
-    );
-  }
-
-  // ── Scan button ────────────────────────────────────────────────────────────
-  Widget _buildScanButton() {
-    return GestureDetector(
-      onTap: _scanBarcode,
-      child: Container(
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [_primary, _primaryLight]),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.qr_code_scanner, color: Colors.white, size: 14),
-            SizedBox(width: 4),
-            Text(
-              'Scan',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Dropdown ───────────────────────────────────────────────────────────────
-  Widget _buildDropdown() {
-    return DropdownButtonFormField<String>(
-      initialValue: _categories.contains(_selectedCategory)
-          ? _selectedCategory
-          : null,
-      items: _categories
-          .map(
-            (c) => DropdownMenuItem(
-              value: c,
-              child: Text(
-                c,
-                style: const TextStyle(
-                  fontSize: 15,
-                  color: _textPrimary,
-                  fontWeight: FontWeight.w500,
+                  ],
+                  onChanged: (_) => setState(() {}),
+                  validator: (v) {
+                    if (v == null || v.isEmpty) return 'Required';
+                    if (double.tryParse(v) == null) return 'Invalid';
+                    return null;
+                  },
                 ),
               ),
-            ),
-          )
-          .toList(),
-      decoration: InputDecoration(
-        labelText: 'Category',
-        labelStyle: const TextStyle(fontSize: 13, color: _textSecondary),
-        prefixIcon: const Padding(
-          padding: EdgeInsets.only(left: 14, right: 10),
-          child: Icon(Icons.category_outlined, color: _textSecondary, size: 19),
-        ),
-        prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-        filled: true,
-        fillColor: const Color(0xFFF8F9FF),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE8EAF0)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE8EAF0)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _primary, width: 1.8),
-        ),
-      ),
-      onChanged: (v) => setState(() => _selectedCategory = v),
-      validator: (v) => v == null ? 'Select a category' : null,
-    );
-  }
-
-  // ── Margin banner ──────────────────────────────────────────────────────────
-  Widget _buildMarginBanner() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: _marginColor.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _marginColor.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: _marginColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              _margin >= 0
+              const SizedBox(width: 10),
+              Expanded(
+                child: _Field(
+                  label: 'Selling price',
+                  controller: _priceCtrl,
+                  icon: Icons.north_rounded,
+                  iconColor: _green,
+                  prefix: '₱',
+                  hint: '0.00',
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(
+                      RegExp(r'^\d*\.?\d{0,2}'),
+                    ),
+                  ],
+                  onChanged: (_) => setState(() {}),
+                  validator: (v) {
+                    if (v == null || v.isEmpty) return 'Required';
+                    if (double.tryParse(v) == null) return 'Invalid';
+                    return null;
+                  },
+                ),
+              ),
+            ],
+          ),
+          if (_costCtrl.text.isNotEmpty && _priceCtrl.text.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _Banner(
+              tone: _marginTone,
+              icon: _margin >= 0
                   ? Icons.trending_up_rounded
                   : Icons.trending_down_rounded,
-              color: _marginColor,
-              size: 16,
+              main: 'Margin ${_margin.toStringAsFixed(1)}%',
+              sub: _margin >= 20
+                  ? 'Above recommended 20%'
+                  : _margin >= 0
+                  ? 'Below recommended 20%'
+                  : 'Selling below cost',
+              trailing: '₱${_profit.toStringAsFixed(2)} / item',
             ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            'Margin ${_margin.toStringAsFixed(1)}%',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: _marginColor,
-            ),
-          ),
-          const Spacer(),
-          Text(
-            '₱${_profit.toStringAsFixed(2)} profit per item',
-            style: TextStyle(
-              fontSize: 12,
-              color: _marginColor,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          ],
         ],
       ),
     );
   }
 
-  // ── Stock banner ───────────────────────────────────────────────────────────
-  Widget _buildStockBanner(int s) {
-    final color = _stockColor(s);
-    final label = s == 0
-        ? 'Out of Stock'
-        : s <= 10
-        ? 'Low Stock'
-        : 'In Stock';
-    final icon = s == 0
-        ? Icons.remove_shopping_cart_outlined
-        : s <= 10
-        ? Icons.warning_amber_rounded
-        : Icons.check_circle_outline_rounded;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Row(
+  // ── Inventory section ──────────────────────────────────────────────────────
+  Widget _buildInventorySection() {
+    return _SectionCard(
+      iconBg: _amberBg,
+      iconColor: _amber,
+      icon: Icons.warehouse_outlined,
+      title: 'Inventory',
+      child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
+          _Field(
+            label: 'Stock quantity',
+            controller: _stockCtrl,
+            icon: Icons.layers_outlined,
+            hint: '0',
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            onChanged: (_) => setState(() {}),
+            suffix: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: _toneBg(_stockTone),
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(color: _toneBorder(_stockTone), width: 0.5),
+              ),
+              child: Text(
+                _stockLabel,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: _toneFg(_stockTone),
+                ),
+              ),
             ),
-            child: Icon(icon, color: color, size: 16),
+            validator: (v) {
+              if (v == null || v.isEmpty) return 'Required';
+              if (int.tryParse(v) == null) return 'Invalid';
+              return null;
+            },
           ),
-          const SizedBox(width: 10),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: color,
+          if (_stockCtrl.text.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _Banner(
+              tone: _stockTone,
+              icon: _stock == 0
+                  ? Icons.remove_shopping_cart_outlined
+                  : _stock <= 10
+                  ? Icons.warning_amber_rounded
+                  : Icons.check_circle_outline_rounded,
+              main: _stockLabel,
+              sub: '$_stock units available',
             ),
-          ),
-          const Spacer(),
-          Text(
-            '$s units available',
-            style: TextStyle(
-              fontSize: 12,
-              color: color,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          ],
         ],
       ),
     );
@@ -1118,319 +745,666 @@ class _EditProductPageState extends State<EditProductPage>
   // ── Bottom bar ─────────────────────────────────────────────────────────────
   Widget _buildBottomBar() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
-          ),
-        ],
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
+      decoration: const BoxDecoration(
+        color: _cardBg,
+        border: Border(top: BorderSide(color: _border, width: 0.5)),
       ),
       child: SizedBox(
-        height: 54,
+        width: double.infinity,
+        height: 50,
         child: ElevatedButton(
-          onPressed: _isSaving ? null : _save,
+          onPressed: _saving ? null : _save,
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.transparent,
-            shadowColor: Colors.transparent,
-            padding: EdgeInsets.zero,
+            backgroundColor: _primary,
+            disabledBackgroundColor: Colors.grey[300],
+            elevation: 0,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
-          child: Ink(
-            decoration: BoxDecoration(
-              gradient: _isSaving
-                  ? null
-                  : const LinearGradient(
-                      colors: [_primary, Color(0xFF7C4DFF)],
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                    ),
-              color: _isSaving ? Colors.grey[300] : null,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Container(
-              alignment: Alignment.center,
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
+          child: _saving
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                )
+              : const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.save_rounded, color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      'Save changes',
+                      style: TextStyle(
                         color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
                       ),
-                    )
-                  : const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.save_rounded, color: Colors.white, size: 20),
-                        SizedBox(width: 8),
-                        Text(
-                          'Save Changes',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.2,
-                          ),
-                        ),
-                      ],
                     ),
-            ),
-          ),
+                  ],
+                ),
         ),
       ),
     );
   }
 }
 
-// ─── Image Sheet ──────────────────────────────────────────────────────────────
-class _ImageSheet extends StatelessWidget {
-  final bool hasImage;
-  final VoidCallback onGallery;
-  final VoidCallback onCamera;
-  final VoidCallback onRemove;
+// ─── _CircleBtn ───────────────────────────────────────────────────────────────
+class _CircleBtn extends StatelessWidget {
+  const _CircleBtn({this.bg, this.border, this.onTap, required this.child});
+  final Color? bg, border;
+  final VoidCallback? onTap;
+  final Widget child;
 
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: bg ?? _cardBg,
+        shape: BoxShape.circle,
+        border: Border.all(color: border ?? _border, width: 0.5),
+      ),
+      child: child,
+    ),
+  );
+}
+
+// ─── _StatCard ────────────────────────────────────────────────────────────────
+class _StatCard extends StatelessWidget {
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.tone,
+  });
+  final String label, value;
+  final _Tone tone;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+    decoration: BoxDecoration(
+      color: _cardBg,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: _border, width: 0.5),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 10, color: _textTertiary)),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: _toneFg(tone),
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    ),
+  );
+}
+
+// ─── _SectionCard ─────────────────────────────────────────────────────────────
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.iconBg,
+    required this.iconColor,
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
+  final Color iconBg, iconColor;
+  final IconData icon;
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    decoration: BoxDecoration(
+      color: _cardBg,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _border, width: 0.5),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: _border, width: 0.5)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 16, color: iconColor),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(padding: const EdgeInsets.all(14), child: child),
+      ],
+    ),
+  );
+}
+
+// ─── _Field ───────────────────────────────────────────────────────────────────
+class _Field extends StatelessWidget {
+  const _Field({
+    required this.label,
+    required this.controller,
+    required this.icon,
+    required this.hint,
+    this.iconColor,
+    this.prefix,
+    this.suffix,
+    this.keyboardType = TextInputType.text,
+    this.inputFormatters,
+    this.validator,
+    this.onChanged,
+    this.maxLines = 1,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final IconData icon;
+  final String hint;
+  final Color? iconColor;
+  final String? prefix;
+  final Widget? suffix;
+  final TextInputType keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
+  final String? Function(String?)? validator;
+  final void Function(String)? onChanged;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: _textSecondary,
+          ),
+        ),
+        const SizedBox(height: 5),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          inputFormatters: inputFormatters,
+          validator: validator,
+          onChanged: onChanged,
+          maxLines: maxLines,
+          style: const TextStyle(
+            fontSize: 14,
+            color: _textPrimary,
+            fontWeight: FontWeight.w500,
+          ),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(fontSize: 14, color: _textTertiary),
+            prefixIcon: Padding(
+              padding: const EdgeInsets.only(left: 12, right: 8),
+              child: Icon(icon, size: 17, color: iconColor ?? _textTertiary),
+            ),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 0,
+              minHeight: 0,
+            ),
+            prefixText: prefix != null ? '$prefix ' : null,
+            prefixStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: _textPrimary,
+            ),
+            suffixIcon: suffix != null
+                ? Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: suffix,
+                  )
+                : null,
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 0,
+              minHeight: 0,
+            ),
+            filled: true,
+            fillColor: const Color(0xFFF8F9FF),
+            contentPadding: EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: maxLines > 1 ? 12 : 0,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _border),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _primary, width: 1.5),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _red),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _red, width: 1.5),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── _DropdownField ───────────────────────────────────────────────────────────
+class _DropdownField extends StatelessWidget {
+  const _DropdownField({
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+  final String label;
+  final String? value;
+  final List<String> items;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: _textSecondary,
+          ),
+        ),
+        const SizedBox(height: 5),
+        DropdownButtonFormField<String>(
+          initialValue: value,
+          items: items
+              .map(
+                (c) => DropdownMenuItem(
+                  value: c,
+                  child: Text(
+                    c,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: _textPrimary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: onChanged,
+          validator: (v) => v == null ? 'Required' : null,
+          decoration: InputDecoration(
+            prefixIcon: const Padding(
+              padding: EdgeInsets.only(left: 12, right: 8),
+              child: Icon(
+                Icons.category_outlined,
+                size: 17,
+                color: _textTertiary,
+              ),
+            ),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 0,
+              minHeight: 0,
+            ),
+            filled: true,
+            fillColor: const Color(0xFFF8F9FF),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _border),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _primary, width: 1.5),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── _Banner ──────────────────────────────────────────────────────────────────
+class _Banner extends StatelessWidget {
+  const _Banner({
+    required this.tone,
+    required this.icon,
+    required this.main,
+    required this.sub,
+    this.trailing,
+  });
+  final _Tone tone;
+  final IconData icon;
+  final String main, sub;
+  final String? trailing;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    decoration: BoxDecoration(
+      color: _toneBg(tone),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: _toneBorder(tone), width: 0.5),
+    ),
+    child: Row(
+      children: [
+        Icon(icon, size: 18, color: _toneFg(tone)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                main,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _toneFg(tone),
+                ),
+              ),
+              Text(
+                sub,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: _toneFg(tone).withValues(alpha: 0.8),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (trailing != null)
+          Text(
+            trailing!,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _toneFg(tone),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+// ─── _ImageSheet ──────────────────────────────────────────────────────────────
+class _ImageSheet extends StatelessWidget {
   const _ImageSheet({
     required this.hasImage,
     required this.onGallery,
     required this.onCamera,
     required this.onRemove,
   });
+  final bool hasImage;
+  final VoidCallback onGallery, onCamera, onRemove;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 36),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 24),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const Text(
-            'Product Photo',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Choose a source for your product image',
-            style: TextStyle(fontSize: 13, color: Colors.grey[500]),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: _SheetOption(
-                  icon: Icons.photo_library_outlined,
-                  label: 'Gallery',
-                  color: const Color(0xFF5C6BC0),
-                  onTap: onGallery,
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 20),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: _SheetOption(
-                  icon: Icons.camera_alt_outlined,
-                  label: 'Camera',
-                  color: const Color(0xFF10B981),
-                  onTap: onCamera,
+            ),
+            const Text(
+              'Product photo',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: _textPrimary,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Choose a source',
+              style: TextStyle(fontSize: 13, color: _textSecondary),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: _SheetOption(
+                    icon: Icons.photo_library_outlined,
+                    label: 'Gallery',
+                    color: _primary,
+                    onTap: onGallery,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _SheetOption(
+                    icon: Icons.camera_alt_outlined,
+                    label: 'Camera',
+                    color: _green,
+                    onTap: onCamera,
+                  ),
+                ),
+              ],
+            ),
+            if (hasImage) ...[
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: _redBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _redBorder, width: 0.5),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.delete_outline, color: _red, size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'Remove photo',
+                        style: TextStyle(
+                          color: _red,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
-          ),
-          if (hasImage) ...[
-            const SizedBox(height: 14),
-            GestureDetector(
-              onTap: onRemove,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444).withValues(alpha: 0.07),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: const Color(0xFFEF4444).withValues(alpha: 0.2),
-                  ),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.delete_outline,
-                      color: Color(0xFFEF4444),
-                      size: 18,
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      'Remove photo',
-                      style: TextStyle(
-                        color: Color(0xFFEF4444),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
 class _SheetOption extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
   const _SheetOption({
     required this.icon,
     required this.label,
     required this.color,
     required this.onTap,
   });
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.07),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
-        ),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 26),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: color,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.2), width: 0.5),
       ),
-    );
-  }
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
-// ─── Delete dialog ────────────────────────────────────────────────────────────
+// ─── _DeleteDialog ────────────────────────────────────────────────────────────
 class _DeleteDialog extends StatelessWidget {
+  const _DeleteDialog({required this.productName, required this.onConfirm});
   final String productName;
   final VoidCallback onConfirm;
-
-  const _DeleteDialog({required this.productName, required this.onConfirm});
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Padding(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+              width: 64,
+              height: 64,
+              decoration: const BoxDecoration(
+                color: _redBg,
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.delete_forever_rounded,
-                color: Color(0xFFEF4444),
-                size: 34,
+                color: _red,
+                size: 30,
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             const Text(
-              'Delete Product?',
+              'Delete product?',
               style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: _textPrimary,
                 letterSpacing: -0.3,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'This will permanently remove "$productName" from your inventory. This action cannot be undone.',
+              'This will permanently remove "$productName" from inventory. This cannot be undone.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
+              style: const TextStyle(
+                fontSize: 13,
+                color: _textSecondary,
                 height: 1.5,
               ),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 24),
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      side: BorderSide(color: Colors.grey[200]!),
+                      side: const BorderSide(color: _border),
                     ),
                     child: const Text(
                       'Cancel',
                       style: TextStyle(
-                        color: Color(0xFF1A1F36),
+                        color: _textPrimary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: ElevatedButton(
                     onPressed: onConfirm,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFEF4444),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                      backgroundColor: _red,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
                       elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     child: const Text(
                       'Delete',
@@ -1450,9 +1424,9 @@ class _DeleteDialog extends StatelessWidget {
   }
 }
 
-// ─── Barcode Scanner Page ─────────────────────────────────────────────────────
+// ─── BarcodeScannerPage ───────────────────────────────────────────────────────
 class BarcodeScannerPage extends StatefulWidget {
-  final Function(String barcode) onDetect;
+  final Function(String) onDetect;
   const BarcodeScannerPage({super.key, required this.onDetect});
 
   @override
@@ -1460,7 +1434,7 @@ class BarcodeScannerPage extends StatefulWidget {
 }
 
 class _BarcodeScannerPageState extends State<BarcodeScannerPage> {
-  bool _isScanned = false;
+  bool _scanned = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1469,18 +1443,18 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('Scan Barcode'),
+        title: const Text('Scan barcode'),
         elevation: 0,
       ),
       body: Stack(
         children: [
           MobileScanner(
             onDetect: (capture) {
-              if (_isScanned) return;
-              for (final barcode in capture.barcodes) {
-                final code = barcode.rawValue;
+              if (_scanned) return;
+              for (final b in capture.barcodes) {
+                final code = b.rawValue;
                 if (code != null) {
-                  _isScanned = true;
+                  _scanned = true;
                   widget.onDetect(code);
                   Navigator.pop(context);
                   break;
@@ -1490,56 +1464,11 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage> {
           ),
           Center(
             child: Container(
-              width: 240,
-              height: 240,
+              width: 220,
+              height: 220,
               decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFF5C6BC0), width: 2.5),
+                border: Border.all(color: _primary, width: 2),
                 borderRadius: BorderRadius.circular(16),
-              ),
-              child: Stack(
-                children: [
-                  for (final al in [
-                    Alignment.topLeft,
-                    Alignment.topRight,
-                    Alignment.bottomLeft,
-                    Alignment.bottomRight,
-                  ])
-                    Align(
-                      alignment: al,
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          border: Border(
-                            top: al.y < 0
-                                ? const BorderSide(
-                                    color: Color(0xFF5C6BC0),
-                                    width: 4,
-                                  )
-                                : BorderSide.none,
-                            bottom: al.y > 0
-                                ? const BorderSide(
-                                    color: Color(0xFF5C6BC0),
-                                    width: 4,
-                                  )
-                                : BorderSide.none,
-                            left: al.x < 0
-                                ? const BorderSide(
-                                    color: Color(0xFF5C6BC0),
-                                    width: 4,
-                                  )
-                                : BorderSide.none,
-                            right: al.x > 0
-                                ? const BorderSide(
-                                    color: Color(0xFF5C6BC0),
-                                    width: 4,
-                                  )
-                                : BorderSide.none,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
               ),
             ),
           ),
@@ -1549,7 +1478,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage> {
             right: 0,
             child: Center(
               child: Text(
-                'Align barcode within the frame',
+                'Align barcode in the frame',
                 style: TextStyle(color: Colors.white70, fontSize: 13),
               ),
             ),

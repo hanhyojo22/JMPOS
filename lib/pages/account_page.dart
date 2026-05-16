@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:pos_app/database/database_helper.dart';
-import 'login.dart';
 
 class AccountPage extends StatefulWidget {
   final String username;
@@ -117,20 +116,6 @@ class _AccountPageState extends State<AccountPage>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _ChangePasswordSheet(username: widget.username),
-    );
-  }
-
-  void _showLogoutDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => _LogoutDialog(
-        onConfirm: () {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const LoginPage()),
-            (route) => false,
-          );
-        },
-      ),
     );
   }
 
@@ -276,7 +261,7 @@ class _AccountPageState extends State<AccountPage>
                         ],
                       ),
                       const SizedBox(height: 24),
-                      _LogoutButton(onTap: _showLogoutDialog),
+
                       const SizedBox(height: 8),
                       Text(
                         'POS App © 2026',
@@ -612,41 +597,6 @@ class _ActionRow extends StatelessWidget {
 }
 
 // ─── Logout Button ────────────────────────────────────────────────────────────
-class _LogoutButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _LogoutButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: Colors.red.shade50,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.red.shade100),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.logout_rounded, color: Colors.red[600], size: 20),
-            const SizedBox(width: 10),
-            Text(
-              'Log Out',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.red[600],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 // ─── Change Password Sheet ────────────────────────────────────────────────────
 class _ChangePasswordSheet extends StatefulWidget {
@@ -959,94 +909,3 @@ class _PasswordField extends StatelessWidget {
 }
 
 // ─── Logout Dialog ────────────────────────────────────────────────────────────
-class _LogoutDialog extends StatelessWidget {
-  final VoidCallback onConfirm;
-  const _LogoutDialog({required this.onConfirm});
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 70,
-              height: 70,
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.logout_rounded,
-                color: Colors.red[600],
-                size: 32,
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Log Out?',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Are you sure you want to log out of your account?',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-            ),
-            const SizedBox(height: 28),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      side: BorderSide(color: Colors.grey[300]!),
-                    ),
-                    child: const Text(
-                      'Cancel',
-                      style: TextStyle(
-                        color: Colors.black87,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      onConfirm();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red[600],
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: const Text(
-                      'Log Out',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
