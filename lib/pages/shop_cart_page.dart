@@ -20,8 +20,6 @@ const _greenBorder = Color(0xFFC0DD97);
 const _red = Color(0xFFA32D2D);
 const _redBg = Color(0xFFFCEBEB);
 const _redBorder = Color(0xFFF7C1C1);
-const _danger = Color(0xFFEF4444);
-const _success = Color(0xFF22C55E);
 
 // ─── CartPage ─────────────────────────────────────────────────────────────────
 class CartPage extends StatefulWidget {

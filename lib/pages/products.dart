@@ -186,32 +186,36 @@ class _ProductsPageState extends State<ProductsPage>
   }
 
   Widget _buildImage(String? path) {
-    const double size = 76;
-    if (path == null || path.trim().isEmpty) return _imgPlaceholder(size);
+    if (path == null || path.trim().isEmpty) {
+      return _imgPlaceholder(double.infinity);
+    }
+
     final file = File(path);
+
     if (file.existsSync()) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Image.file(file, width: size, height: size, fit: BoxFit.cover),
+      return Image.file(
+        file,
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.cover,
       );
     }
+
     if (path.startsWith('http')) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Image.network(
-          path,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-        ),
+      return Image.network(
+        path,
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.cover,
       );
     }
-    return _imgPlaceholder(size);
+
+    return _imgPlaceholder(double.infinity);
   }
 
   Widget _imgPlaceholder(double size) => Container(
-    width: size,
-    height: size,
+    width: double.infinity,
+    height: double.infinity,
     decoration: BoxDecoration(
       gradient: LinearGradient(
         colors: [
@@ -221,7 +225,6 @@ class _ProductsPageState extends State<ProductsPage>
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ),
-      borderRadius: BorderRadius.circular(16),
     ),
     child: Icon(
       Icons.inventory_2_outlined,
@@ -465,7 +468,7 @@ class _ProductsPageState extends State<ProductsPage>
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
 
-          childAspectRatio: 0.72,
+          childAspectRatio: 0.70,
         ),
         itemCount: products.length,
         itemBuilder: (_, i) {
@@ -519,107 +522,116 @@ class _ProductsPageState extends State<ProductsPage>
 
           borderRadius: BorderRadius.circular(18),
         ),
+        clipBehavior: Clip.antiAlias,
 
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
 
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-              Expanded(
-                child: Center(
-                  child: Hero(
-                    tag: 'product_${p['id']}',
-
-                    child: _buildImage(imagePath),
-                  ),
+          children: [
+            Container(
+              height: 126,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: _primary.withValues(alpha: 0.04),
+                border: Border(
+                  bottom: BorderSide(color: Colors.grey.shade200, width: 0.5),
                 ),
               ),
+              child: _buildImage(imagePath),
+            ),
 
-              const SizedBox(height: 10),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
 
-              Text(
-                name,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
 
-                maxLines: 2,
+                  children: [
+                    Text(
+                      name,
 
-                overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
 
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
+                      overflow: TextOverflow.ellipsis,
 
-                  fontSize: 14,
-                ),
-              ),
-
-              const SizedBox(height: 6),
-
-              Text(
-                CurrencyFormatter.format(price),
-
-                style: const TextStyle(
-                  color: _primary,
-
-                  fontWeight: FontWeight.bold,
-
-                  fontSize: 16,
-                ),
-              ),
-
-              const SizedBox(height: 8),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-
-                    decoration: BoxDecoration(
-                      color: stockColor.withValues(alpha: 0.12),
-
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-
-                    child: Text(
-                      '$stock pcs',
-
-                      style: TextStyle(
-                        fontSize: 11,
-
+                      style: const TextStyle(
                         fontWeight: FontWeight.w600,
 
-                        color: stockColor,
+                        fontSize: 14,
                       ),
                     ),
-                  ),
 
-                  Container(
-                    width: 34,
-                    height: 34,
+                    const SizedBox(height: 6),
 
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF667EEA),
+                    Text(
+                      CurrencyFormatter.format(price),
 
-                      shape: BoxShape.circle,
+                      style: const TextStyle(
+                        color: _primary,
+
+                        fontWeight: FontWeight.bold,
+
+                        fontSize: 16,
+                      ),
                     ),
 
-                    child: const Icon(
-                      Icons.edit_rounded,
+                    const Spacer(),
 
-                      color: Colors.white,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
 
-                      size: 18,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+
+                          decoration: BoxDecoration(
+                            color: stockColor.withValues(alpha: 0.12),
+
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+
+                          child: Text(
+                            '$stock pcs',
+
+                            style: TextStyle(
+                              fontSize: 11,
+
+                              fontWeight: FontWeight.w600,
+
+                              color: stockColor,
+                            ),
+                          ),
+                        ),
+
+                        Container(
+                          width: 34,
+                          height: 34,
+
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF667EEA),
+
+                            shape: BoxShape.circle,
+                          ),
+
+                          child: const Icon(
+                            Icons.edit_rounded,
+
+                            color: Colors.white,
+
+                            size: 18,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -14,6 +14,7 @@ import 'package:pos_app/utils/currency.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'edit_product_page.dart';
 import 'setting_page.dart';
+import 'login.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -155,13 +156,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openAccount() {
-    Navigator.of(context)
-        .push(
-          MaterialPageRoute(
-            builder: (_) => AccountPage(username: widget.username),
-          ),
-        )
-        .then((_) => loadRecentTransactions());
+    setState(() => _selectedIndex = 10);
   }
 
   // ── Step 1: open scanner  Step 2: if barcode captured → open SalesPage ──────
@@ -522,6 +517,9 @@ class _HomePageState extends State<HomePage> {
             setState(() => _selectedIndex = 3);
           },
         );
+
+      case 10:
+        return AccountPage(username: widget.username);
     }
 
     // ── Home tab ─────────────────────────────────────────────────────────────
@@ -1023,12 +1021,64 @@ class _HomePageState extends State<HomePage> {
 
                   ListTile(
                     leading: const Icon(Icons.person),
-
                     title: const Text('Account'),
-
                     onTap: () {
                       Navigator.pop(context);
                       _openAccount();
+                    },
+                  ),
+
+                  const Divider(),
+
+                  ListTile(
+                    leading: const Icon(
+                      Icons.logout_rounded,
+                      color: Colors.red,
+                    ),
+
+                    title: const Text(
+                      'Logout',
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+
+                    onTap: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          title: const Text('Logout'),
+                          content: const Text(
+                            'Are you sure you want to logout?',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel'),
+                            ),
+
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Logout'),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (confirm == true && mounted) {
+                        Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(builder: (_) => const LoginPage()),
+                          (route) => false,
+                        );
+                      }
                     },
                   ),
                 ],

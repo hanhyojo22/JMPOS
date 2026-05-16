@@ -241,6 +241,7 @@ class _SalesPageState extends State<SalesPage> {
   // ── Computed ───────────────────────────────────────────────────────────────
   List<Map<String, dynamic>> get _filteredProducts {
     List<Map<String, dynamic>> list = List.from(_allProducts);
+    list = list.where((p) => (p['stock'] as int) > 0).toList();
 
     if (_selectedCategory != 'All') {
       list = list
@@ -296,9 +297,9 @@ class _SalesPageState extends State<SalesPage> {
         ),
         backgroundColor: isError ? _danger : _success,
         behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.only(left: 60, right: 60, bottom: 90),
         duration: const Duration(seconds: 2),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(16),
       ),
     );
   }
@@ -578,7 +579,7 @@ class _SalesPageState extends State<SalesPage> {
                     crossAxisCount: 2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
-                    childAspectRatio: 0.62,
+                    childAspectRatio: 0.76,
                   ),
                   itemBuilder: (_, i) => _buildProductCard(products[i]),
                 ),
@@ -642,32 +643,7 @@ class _SalesPageState extends State<SalesPage> {
                   ),
                 ),
               ),
-              if (category.isNotEmpty)
-                Positioned(
-                  left: 10,
-                  top: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(99),
-                      border: Border.all(color: _border, width: 0.5),
-                    ),
-                    child: Text(
-                      category,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: _textSecondary,
-                      ),
-                    ),
-                  ),
-                ),
+
               Positioned(
                 top: 10,
                 right: 10,
@@ -736,14 +712,6 @@ class _SalesPageState extends State<SalesPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Text(
-                              'Price',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: _textTertiary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
                             Text(
                               CurrencyFormatter.format(price),
                               maxLines: 1,
