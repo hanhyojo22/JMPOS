@@ -398,7 +398,7 @@ class _SettingsPageState extends State<SettingsPage> {
       value: value,
       onChanged: onChanged,
       activeThumbColor: _primary, // replaces activeColor
-      activeTrackColor: _primary.withOpacity(0.5), // optional for track
+      activeTrackColor: _primary.withValues(alpha: 0.5), // optional for track
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }

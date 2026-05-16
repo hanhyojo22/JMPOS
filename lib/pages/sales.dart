@@ -567,59 +567,6 @@ class _SalesPageState extends State<SalesPage> {
           ),
         ),
 
-        // Count + cart pill
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
-          child: Row(
-            children: [
-              Text(
-                '${products.length} product${products.length != 1 ? 's' : ''}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: _textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const Spacer(),
-              if (_cartQuantity > 0)
-                GestureDetector(
-                  onTap: _openCartPage,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: _primary.withValues(alpha: 0.2),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.shopping_bag_outlined,
-                          size: 13,
-                          color: _primary,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          '$_cartQuantity • ${CurrencyFormatter.format(_cartTotal)}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: _primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-
         // Product grid
         Expanded(
           child: _loadingProducts
