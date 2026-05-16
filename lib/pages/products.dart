@@ -29,8 +29,7 @@ class _ProductsPageState extends State<ProductsPage>
   List<Map<String, dynamic>> _allProducts = [];
   bool _loading = true;
   String? _error;
-  String _sortBy = 'name';
-  bool _isAscending = true;
+  String _sortBy = 'Default';
   String? _filterCategory;
 
   late AnimationController _headerCtrl;
@@ -121,40 +120,59 @@ class _ProductsPageState extends State<ProductsPage>
   }
 
   List<Map<String, dynamic>> get _filteredProducts {
-    final query = _searchQuery.trim().toLowerCase();
-    List<Map<String, dynamic>> list = _allProducts.where((p) {
-      final name = (p['product_name'] as String? ?? '').toLowerCase();
-      final category = (p['category'] as String? ?? '').toLowerCase();
+    List<Map<String, dynamic>> list = List.from(_allProducts);
 
-      final barcode = (p['barcode'] as String? ?? '').toLowerCase();
+    // Category filter
+    if (_filterCategory != null && _filterCategory != 'All') {
+      list = list
+          .where((p) => p['category'].toString() == _filterCategory)
+          .toList();
+    }
 
-      final matchesQuery =
-          name.contains(query) ||
-          category.contains(query) ||
-          barcode.contains(query);
-      final matchesCategory =
-          _filterCategory == null ||
-          _filterCategory == 'All' ||
-          (p['category'] as String? ?? '') == _filterCategory;
-      return matchesQuery && matchesCategory;
-    }).toList();
+    // Search
+    if (_searchQuery.isNotEmpty) {
+      list = list.where((p) {
+        final name = (p['product_name'] as String? ?? '').toLowerCase();
 
-    list.sort((a, b) {
-      switch (_sortBy) {
-        case 'price':
-          final pa = (a['price'] as num?)?.toDouble() ?? 0;
-          final pb = (b['price'] as num?)?.toDouble() ?? 0;
-          return _isAscending ? pa.compareTo(pb) : pb.compareTo(pa);
-        case 'stock':
-          final sa = (a['stock_quantity'] as int?) ?? 0;
-          final sb = (b['stock_quantity'] as int?) ?? 0;
-          return _isAscending ? sa.compareTo(sb) : sb.compareTo(sa);
-        default:
-          final na = (a['product_name'] as String? ?? '').toLowerCase();
-          final nb = (b['product_name'] as String? ?? '').toLowerCase();
-          return _isAscending ? na.compareTo(nb) : nb.compareTo(na);
-      }
-    });
+        final category = (p['category'] as String? ?? '').toLowerCase();
+
+        final barcode = (p['barcode'] as String? ?? '').toLowerCase();
+
+        final query = _searchQuery.toLowerCase();
+
+        return name.contains(query) ||
+            category.contains(query) ||
+            barcode.contains(query);
+      }).toList();
+    }
+
+    // Sort
+    switch (_sortBy) {
+      case 'A → Z':
+        list.sort(
+          (a, b) => (a['product_name'] as String).compareTo(
+            b['product_name'] as String,
+          ),
+        );
+        break;
+
+      case 'Price ↑':
+        list.sort((a, b) => (a['price'] as num).compareTo(b['price'] as num));
+        break;
+
+      case 'Price ↓':
+        list.sort((a, b) => (b['price'] as num).compareTo(a['price'] as num));
+        break;
+
+      case 'Stock ↓':
+        list.sort(
+          (a, b) => (b['stock_quantity'] as int).compareTo(
+            a['stock_quantity'] as int,
+          ),
+        );
+        break;
+    }
+
     return list;
   }
 
@@ -217,12 +235,8 @@ class _ProductsPageState extends State<ProductsPage>
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _SortSheet(
-        currentSort: _sortBy,
-        isAscending: _isAscending,
-        onSelect: (sort, asc) => setState(() {
-          _sortBy = sort;
-          _isAscending = asc;
-        }),
+        current: _sortBy,
+        onSelect: (s) => setState(() => _sortBy = s),
       ),
     );
   }
@@ -742,34 +756,61 @@ class _ProductsPageState extends State<ProductsPage>
 // ─── Action button ────────────────────────────────────────────────────────────
 
 // ─── Sort sheet ───────────────────────────────────────────────────────────────
-class _SortSheet extends StatefulWidget {
-  final String currentSort;
-  final bool isAscending;
-  final void Function(String sort, bool asc) onSelect;
 
-  const _SortSheet({
-    required this.currentSort,
-    required this.isAscending,
-    required this.onSelect,
-  });
+class _SortSheet extends StatefulWidget {
+  final String current;
+  final void Function(String) onSelect;
+
+  const _SortSheet({required this.current, required this.onSelect});
 
   @override
   State<_SortSheet> createState() => _SortSheetState();
 }
 
 class _SortSheetState extends State<_SortSheet> {
-  late String _sort;
-  late bool _asc;
-
   static const Color _primary = Color(0xFF5C6BC0);
   static const Color _textPrimary = Color(0xFF1A1F36);
   static const Color _textSecondary = Color(0xFF6B7280);
 
+  late String _selected;
+
+  final _options = [
+    {
+      'key': 'Default',
+      'label': 'Default',
+      'sub': 'As added to inventory',
+      'icon': Icons.list_rounded,
+    },
+    {
+      'key': 'A → Z',
+      'label': 'Name A → Z',
+      'sub': 'Alphabetical order',
+      'icon': Icons.sort_by_alpha_rounded,
+    },
+    {
+      'key': 'Price ↑',
+      'label': 'Price Low → High',
+      'sub': 'Cheapest first',
+      'icon': Icons.arrow_upward_rounded,
+    },
+    {
+      'key': 'Price ↓',
+      'label': 'Price High → Low',
+      'sub': 'Most expensive first',
+      'icon': Icons.arrow_downward_rounded,
+    },
+    {
+      'key': 'Stock ↓',
+      'label': 'Stock High → Low',
+      'sub': 'Most available first',
+      'icon': Icons.layers_rounded,
+    },
+  ];
+
   @override
   void initState() {
     super.initState();
-    _sort = widget.currentSort;
-    _asc = widget.isAscending;
+    _selected = widget.current;
   }
 
   @override
@@ -780,188 +821,145 @@ class _SortSheetState extends State<_SortSheet> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 36),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 24),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(2),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 22),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
-          Row(
-            children: [
-              const Text(
+
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
                 'Sort Products',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
                   color: _textPrimary,
-                  letterSpacing: -0.4,
                 ),
               ),
-              const Spacer(),
-              // Order toggle
-              GestureDetector(
-                onTap: () => setState(() => _asc = !_asc),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
+            ),
+
+            const SizedBox(height: 18),
+
+            ..._options.map((opt) {
+              final selected = _selected == opt['key'];
+
+              return GestureDetector(
+                onTap: () => setState(() => _selected = opt['key'] as String),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: _primary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(10),
+                    color: selected
+                        ? _primary.withValues(alpha: 0.06)
+                        : Colors.grey[50],
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: selected ? _primary : Colors.grey[200]!,
+                      width: selected ? 1.8 : 1,
+                    ),
                   ),
                   child: Row(
                     children: [
-                      Icon(
-                        _asc
-                            ? Icons.arrow_upward_rounded
-                            : Icons.arrow_downward_rounded,
-                        size: 14,
-                        color: _primary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _asc ? 'Ascending' : 'Descending',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _primary,
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? _primary.withValues(alpha: 0.1)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          opt['icon'] as IconData,
+                          color: selected ? _primary : _textSecondary,
+                          size: 18,
                         ),
                       ),
+
+                      const SizedBox(width: 12),
+
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              opt['label'] as String,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: selected ? _primary : _textPrimary,
+                              ),
+                            ),
+                            Text(
+                              opt['sub'] as String,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: _textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      if (selected)
+                        Container(
+                          width: 20,
+                          height: 20,
+                          decoration: const BoxDecoration(
+                            color: _primary,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.check_rounded,
+                            color: Colors.white,
+                            size: 13,
+                          ),
+                        ),
                     ],
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          _sortTile(
-            'name',
-            'Name',
-            'A to Z alphabetical',
-            Icons.sort_by_alpha_rounded,
-          ),
-          const SizedBox(height: 10),
-          _sortTile(
-            'price',
-            'Price',
-            'By selling price',
-            Icons.attach_money_rounded,
-          ),
-          const SizedBox(height: 10),
-          _sortTile(
-            'stock',
-            'Stock',
-            'By quantity available',
-            Icons.layers_outlined,
-          ),
-          const SizedBox(height: 20),
-          GestureDetector(
-            onTap: () {
-              widget.onSelect(_sort, _asc);
-              Navigator.pop(context);
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 15),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [_primary, Color(0xFF7C4DFF)],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Center(
-                child: Text(
-                  'Apply',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+              );
+            }),
 
-  Widget _sortTile(String key, String title, String subtitle, IconData icon) {
-    final selected = _sort == key;
-    return GestureDetector(
-      onTap: () => setState(() => _sort = key),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: selected ? _primary.withValues(alpha: 0.06) : Colors.grey[50],
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? _primary : Colors.grey[200]!,
-            width: selected ? 1.8 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: selected
-                    ? _primary.withValues(alpha: 0.1)
-                    : Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                icon,
-                color: selected ? _primary : _textSecondary,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
+            const SizedBox(height: 12),
+
+            GestureDetector(
+              onTap: () {
+                widget.onSelect(_selected);
+                Navigator.pop(context);
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [_primary, Color(0xFF7C4DFF)],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Center(
+                  child: Text(
+                    'Apply',
                     style: TextStyle(
-                      fontSize: 15,
+                      color: Colors.white,
+                      fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: selected ? _primary : _textPrimary,
                     ),
                   ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(fontSize: 12, color: _textSecondary),
-                  ),
-                ],
+                ),
               ),
             ),
-            if (selected)
-              Container(
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  color: _primary,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check_rounded,
-                  color: Colors.white,
-                  size: 14,
-                ),
-              ),
           ],
         ),
       ),

@@ -278,15 +278,6 @@ class _SalesPageState extends State<SalesPage> {
     return list;
   }
 
-  double get _cartTotal => _cart.fold(
-    0.0,
-    (sum, item) =>
-        sum + (item['product']['price'] as num) * (item['quantity'] as int),
-  );
-
-  int get _cartQuantity =>
-      _cart.fold(0, (sum, item) => sum + (item['quantity'] as int));
-
   // ── Helpers ────────────────────────────────────────────────────────────────
   void _showSnack(String msg, {bool isError = false}) {
     if (!mounted) return;
