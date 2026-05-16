@@ -907,5 +907,3 @@ class _PasswordField extends StatelessWidget {
     );
   }
 }
-
-// ─── Logout Dialog ────────────────────────────────────────────────────────────

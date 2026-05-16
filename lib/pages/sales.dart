@@ -364,7 +364,6 @@ class _SalesPageState extends State<SalesPage> {
           onDelete: _deleteFromCart,
           onCompleteSale: () async {
             await _completeSale();
-            if (mounted) Navigator.pop(context);
           },
         ),
       ),
@@ -1472,6 +1471,10 @@ class _CartPageState extends State<CartPage> {
                   child: ElevatedButton(
                     onPressed: sufficient && !_completing
                         ? () async {
+                            final confirmed = await _confirmPurchase();
+                            if (!confirmed) return;
+                            if (!mounted || !ctx.mounted) return;
+
                             setModal(() {});
                             setState(() => _completing = true);
                             Navigator.pop(ctx);
@@ -1554,6 +1557,61 @@ class _CartPageState extends State<CartPage> {
       }
     }
     return options;
+  }
+
+  Future<bool> _confirmPurchase() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.receipt_long_rounded, color: _primary, size: 24),
+            SizedBox(width: 10),
+            Text(
+              'Complete purchase?',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Text(
+          'Confirm this sale for ${CurrencyFormatter.format(_total)}?',
+          style: const TextStyle(color: _textSecondary, height: 1.4),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(
+                color: _textSecondary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _success,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            ),
+            child: const Text(
+              'Yes',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return confirmed ?? false;
   }
 
   @override

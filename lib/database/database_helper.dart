@@ -197,10 +197,15 @@ class DatabaseHelper {
     final db = await database;
     await _ensureProductSchema(db);
     final now = DateTime.now().toIso8601String();
+    final trimmedBarcode = barcode.trim();
+
+    if (await barcodeExists(trimmedBarcode)) {
+      throw Exception('Barcode already exists');
+    }
 
     try {
       return await db.insert('products', {
-        'barcode': barcode.trim(),
+        'barcode': trimmedBarcode,
         'product_name': productName.trim(),
         'category': category?.trim(),
         'description': description?.trim(),
@@ -228,11 +233,19 @@ class DatabaseHelper {
 
   Future<int> updateProduct(Map<String, dynamic> product) async {
     final db = await database;
+    final barcode = product['barcode']?.toString().trim() ?? '';
+    final id = product['id'] as int;
+
+    if (barcode.isNotEmpty &&
+        await barcodeExists(barcode, excludeProductId: id)) {
+      throw Exception('Barcode already exists');
+    }
+
     return await db.update(
       'products',
-      product,
+      {...product, 'barcode': barcode},
       where: 'id = ?',
-      whereArgs: [product['id']],
+      whereArgs: [id],
     );
   }
 
@@ -340,12 +353,19 @@ class DatabaseHelper {
     return result > 0;
   }
 
-  Future<bool> barcodeExists(String barcode) async {
+  Future<bool> barcodeExists(String barcode, {int? excludeProductId}) async {
     final db = await database;
+    final trimmedBarcode = barcode.trim();
+    if (trimmedBarcode.isEmpty) return false;
+
     final result = await db.query(
       'products',
-      where: 'barcode = ?',
-      whereArgs: [barcode.trim()],
+      where: excludeProductId == null
+          ? 'LOWER(barcode) = LOWER(?)'
+          : 'LOWER(barcode) = LOWER(?) AND id != ?',
+      whereArgs: excludeProductId == null
+          ? [trimmedBarcode]
+          : [trimmedBarcode, excludeProductId],
       limit: 1,
     );
     return result.isNotEmpty;

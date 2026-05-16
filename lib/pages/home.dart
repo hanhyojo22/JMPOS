@@ -40,6 +40,7 @@ class _HomePageState extends State<HomePage> {
   final int _salesBarcodeScanVersion = 0;
   String? productsScannedBarcode;
   String? addProductBarcode;
+  String? editProductBarcode;
   Map<String, dynamic>? selectedProduct;
   double totalSales = 0;
   int totalTransactions = 0;
@@ -199,7 +200,7 @@ class _HomePageState extends State<HomePage> {
     // EDIT PRODUCT PAGE
     if (_selectedIndex == 8) {
       setState(() {
-        addProductBarcode = scannedBarcode;
+        editProductBarcode = scannedBarcode;
       });
 
       return;
@@ -488,9 +489,14 @@ class _HomePageState extends State<HomePage> {
           key: ValueKey(selectedProduct!['id']),
 
           product: selectedProduct!,
+          scannedBarcode: editProductBarcode,
+          onBarcodeHandled: () {
+            editProductBarcode = null;
+          },
 
           onBack: () {
             setState(() {
+              editProductBarcode = null;
               _selectedIndex = 1;
             });
           },
@@ -498,6 +504,7 @@ class _HomePageState extends State<HomePage> {
           onSaved: () {
             setState(() {
               productsScannedBarcode = null;
+              editProductBarcode = null;
               _selectedIndex = 1;
             });
           },
@@ -1073,7 +1080,9 @@ class _HomePageState extends State<HomePage> {
                         ),
                       );
 
-                      if (confirm == true && mounted) {
+                      if (!context.mounted) return;
+
+                      if (confirm == true) {
                         Navigator.of(context).pushAndRemoveUntil(
                           MaterialPageRoute(builder: (_) => const LoginPage()),
                           (route) => false,

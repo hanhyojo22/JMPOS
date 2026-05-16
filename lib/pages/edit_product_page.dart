@@ -64,14 +64,18 @@ Color _toneFg(_Tone t) {
 // ─── EditProductPage ──────────────────────────────────────────────────────────
 class EditProductPage extends StatefulWidget {
   final Map<String, dynamic> product;
+  final String? scannedBarcode;
   final VoidCallback? onBack;
   final VoidCallback? onSaved;
+  final VoidCallback? onBarcodeHandled;
 
   const EditProductPage({
     super.key,
     required this.product,
+    this.scannedBarcode,
     this.onBack,
     this.onSaved,
+    this.onBarcodeHandled,
   });
 
   @override
@@ -96,6 +100,8 @@ class _EditProductPageState extends State<EditProductPage> {
   XFile? _pickedImage;
   bool _saving = false;
   bool _deleting = false;
+  String? _topWarning;
+  bool _topWarningIsError = true;
 
   static const _categories = [
     'Beverages',
@@ -124,6 +130,23 @@ class _EditProductPageState extends State<EditProductPage> {
     );
     _category = p['category'] as String?;
     _currentImagePath = p['image_url'] as String?;
+    _applyScannedBarcode();
+  }
+
+  @override
+  void didUpdateWidget(covariant EditProductPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.scannedBarcode != null &&
+        widget.scannedBarcode != oldWidget.scannedBarcode) {
+      _applyScannedBarcode();
+    }
+  }
+
+  void _applyScannedBarcode() {
+    final barcode = widget.scannedBarcode;
+    if (barcode == null || barcode.isEmpty) return;
+    _barcodeCtrl.text = barcode;
+    widget.onBarcodeHandled?.call();
   }
 
   @override
@@ -221,30 +244,31 @@ class _EditProductPageState extends State<EditProductPage> {
     _photoSheet?.closed.whenComplete(() => _photoSheet = null);
   }
 
-  // ── Barcode ────────────────────────────────────────────────────────────────
-  Future<void> _scanBarcode() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BarcodeScannerPage(
-          onDetect: (code) => setState(() => _barcodeCtrl.text = code),
-        ),
-      ),
-    );
-  }
-
   // ── Save ───────────────────────────────────────────────────────────────────
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) {
-      _snack('Please fix the errors before saving', error: true);
+      _showTopWarning('Please fix the errors before saving');
       return;
     }
+
+    final barcode = _barcodeCtrl.text.trim();
+    final productId = widget.product['id'] as int;
+
+    final duplicateBarcode = await DatabaseHelper.instance.barcodeExists(
+      barcode,
+      excludeProductId: productId,
+    );
+    if (duplicateBarcode) {
+      _showTopWarning('Duplicate barcode found!');
+      return;
+    }
+
     setState(() => _saving = true);
     try {
       final updated = {
-        'id': widget.product['id'],
+        'id': productId,
         'product_name': _nameCtrl.text.trim(),
-        'barcode': _barcodeCtrl.text.trim(),
+        'barcode': barcode,
         'category': _category,
         'description': _descCtrl.text.trim().isEmpty
             ? null
@@ -259,15 +283,17 @@ class _EditProductPageState extends State<EditProductPage> {
       if (!mounted) return;
       setState(() => _saving = false);
       if (result > 0) {
-        _snack('Product updated!');
+        _showTopWarning('Product updated!', error: false);
+        await Future.delayed(const Duration(milliseconds: 900));
+        if (!mounted) return;
         widget.onSaved?.call();
       } else {
-        _snack('Failed to update', error: true);
+        _showTopWarning('Failed to update');
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      _snack('Error: $e', error: true);
+      _showTopWarning('Error: $e');
     }
   }
 
@@ -297,8 +323,11 @@ class _EditProductPageState extends State<EditProductPage> {
     );
   }
 
-  void _snack(String msg, {bool error = false}) {
+  void _snack(String msg, {bool error = false, bool top = false}) {
     if (!mounted) return;
+    final media = MediaQuery.of(context);
+    final topMargin = media.size.height - media.padding.top - 112;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -317,9 +346,23 @@ class _EditProductPageState extends State<EditProductPage> {
             : const Color(0xFF22C55E),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(16),
+        margin: top
+            ? EdgeInsets.fromLTRB(16, 16, 16, topMargin.clamp(16, 1000))
+            : const EdgeInsets.all(16),
       ),
     );
+  }
+
+  void _showTopWarning(String message, {bool error = true}) {
+    if (!mounted) return;
+    setState(() {
+      _topWarning = message;
+      _topWarningIsError = error;
+    });
+    Future.delayed(const Duration(seconds: 3), () {
+      if (!mounted || _topWarning != message) return;
+      setState(() => _topWarning = null);
+    });
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -329,30 +372,44 @@ class _EditProductPageState extends State<EditProductPage> {
       key: _scaffoldKey,
       backgroundColor: _surface,
       body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              _buildAppBar(),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
-                  children: [
-                    _buildIdentityCard(),
-                    const SizedBox(height: 10),
-                    _buildStatsRow(),
-                    const SizedBox(height: 10),
-                    _buildDetailsSection(),
-                    const SizedBox(height: 10),
-                    _buildPricingSection(),
-                    const SizedBox(height: 10),
-                    _buildInventorySection(),
-                  ],
+        child: Stack(
+          children: [
+            Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  _buildAppBar(),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
+                      children: [
+                        _buildIdentityCard(),
+                        const SizedBox(height: 10),
+                        _buildStatsRow(),
+                        const SizedBox(height: 10),
+                        _buildDetailsSection(),
+                        const SizedBox(height: 10),
+                        _buildPricingSection(),
+                        const SizedBox(height: 10),
+                        _buildInventorySection(),
+                      ],
+                    ),
+                  ),
+                  _buildBottomBar(),
+                ],
+              ),
+            ),
+            if (_topWarning != null)
+              Positioned(
+                top: 8,
+                left: 14,
+                right: 14,
+                child: _TopWarning(
+                  message: _topWarning!,
+                  error: _topWarningIsError,
                 ),
               ),
-              _buildBottomBar(),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -550,34 +607,7 @@ class _EditProductPageState extends State<EditProductPage> {
             controller: _barcodeCtrl,
             icon: Icons.qr_code_rounded,
             hint: '8851234567890',
-            suffix: GestureDetector(
-              onTap: _scanBarcode,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: _primary,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.qr_code_scanner, color: Colors.white, size: 13),
-                    SizedBox(width: 4),
-                    Text(
-                      'Scan',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+
             validator: (v) =>
                 (v == null || v.trim().isEmpty) ? 'Required' : null,
           ),
@@ -794,6 +824,53 @@ class _EditProductPageState extends State<EditProductPage> {
 }
 
 // ─── _CircleBtn ───────────────────────────────────────────────────────────────
+class _TopWarning extends StatelessWidget {
+  const _TopWarning({required this.message, required this.error});
+
+  final String message;
+  final bool error;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = error ? const Color(0xFFDC2626) : const Color(0xFF22C55E);
+    final icon = error ? Icons.error_outline : Icons.check_circle_rounded;
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.14),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _CircleBtn extends StatelessWidget {
   const _CircleBtn({this.bg, this.border, this.onTap, required this.child});
   final Color? bg, border;
