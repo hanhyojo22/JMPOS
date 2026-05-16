@@ -16,6 +16,7 @@ import 'edit_product_page.dart';
 import 'setting_page.dart';
 import 'login.dart';
 import 'shop_cart_page.dart' as shop_cart;
+import 'package:pos_app/utils/message_banner.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -47,6 +48,8 @@ class _HomePageState extends State<HomePage> {
   int totalTransactions = 0;
   List<Map<String, dynamic>> recentTransactions = [];
   bool _loadingHome = true;
+  String? _topMessage;
+  bool _topMessageSuccess = false;
 
   @override
   void initState() {
@@ -259,15 +262,33 @@ class _HomePageState extends State<HomePage> {
     ),
   );
 
-  void _showSnack(String message, {bool isError = false}) {
+  void _showSnack(String message, {bool isError = false, bool top = false}) {
     if (!mounted) return;
+    if (top) {
+      _showTopMessage(message, success: !isError);
+      return;
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: isError ? Colors.red : Colors.green,
         behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
       ),
     );
+  }
+
+  void _showTopMessage(String message, {bool success = false}) {
+    setState(() {
+      _topMessage = message;
+      _topMessageSuccess = success;
+    });
+
+    Future.delayed(const Duration(seconds: 3), () {
+      if (!mounted || _topMessage != message) return;
+      setState(() => _topMessage = null);
+    });
   }
 
   Future<bool> _addScannedBarcodeToSharedCart(String barcode) async {
@@ -409,7 +430,7 @@ class _HomePageState extends State<HomePage> {
       sharedCart.clear();
       await loadRecentTransactions();
       if (mounted) setState(() {});
-      _showSnack('Sale completed successfully!');
+      _showSnack('Sale completed successfully!', top: true);
       return true;
     } catch (e) {
       _showSnack('Error: $e', isError: true);
@@ -1097,7 +1118,24 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ),
-      body: _buildPageContent(),
+      body: Stack(
+        children: [
+          _buildPageContent(),
+          if (_topMessage != null)
+            Positioned(
+              top: 12,
+              left: 16,
+              right: 16,
+              child: SafeArea(
+                bottom: false,
+                child: MessageBanner(
+                  message: _topMessage!,
+                  success: _topMessageSuccess,
+                ),
+              ),
+            ),
+        ],
+      ),
 
       bottomNavigationBar: SafeArea(
         top: false,

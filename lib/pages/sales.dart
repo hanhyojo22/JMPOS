@@ -233,7 +233,7 @@ class _SalesPageState extends State<SalesPage> {
       await _loadProducts();
       setState(() {});
       _notifyCartChanged();
-      _showSnack('Sale completed successfully!');
+      _showSnack('Sale completed successfully!', top: true);
     } catch (e) {
       _showSnack('Error: $e', isError: true);
     }
@@ -281,8 +281,13 @@ class _SalesPageState extends State<SalesPage> {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  void _showSnack(String msg, {bool isError = false}) {
+  void _showSnack(String msg, {bool isError = false, bool top = false}) {
     if (!mounted) return;
+    final media = MediaQuery.of(context);
+    final bottomMargin = top
+        ? (media.size.height - media.padding.top - 112).clamp(16.0, 1000.0)
+        : 90.0;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -298,7 +303,9 @@ class _SalesPageState extends State<SalesPage> {
         ),
         backgroundColor: isError ? _danger : _success,
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.only(left: 60, right: 60, bottom: 90),
+        margin: top
+            ? EdgeInsets.fromLTRB(16, 16, 16, bottomMargin)
+            : const EdgeInsets.only(left: 60, right: 60, bottom: 90),
         duration: const Duration(seconds: 2),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
