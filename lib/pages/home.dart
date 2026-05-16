@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'history_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'add_products.dart';
 import 'products.dart';
 import 'sales.dart';
@@ -35,7 +36,7 @@ class _HomePageState extends State<HomePage> {
   String? addProductScannedBarcode;
   int _selectedIndex = 0;
   String? salesScannedBarcode;
-  int _salesBarcodeScanVersion = 0;
+  final int _salesBarcodeScanVersion = 0;
   String? productsScannedBarcode;
   String? addProductBarcode;
   Map<String, dynamic>? selectedProduct;
@@ -209,14 +210,10 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    // ALL OTHER PAGES
-    // → ADD TO SALES CART
-    setState(() {
-      salesScannedBarcode = scannedBarcode;
-      _salesBarcodeScanVersion++;
+    final added = await _addScannedBarcodeToSharedCart(scannedBarcode!);
+    if (!mounted || !added) return;
 
-      _selectedIndex = 3;
-    });
+    _openCartPage();
   }
 
   Widget _buildProductImage(String imagePath) {
@@ -274,6 +271,71 @@ class _HomePageState extends State<HomePage> {
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  Future<bool> _addScannedBarcodeToSharedCart(String barcode) async {
+    final db = await DatabaseHelper.instance.database;
+    final rows = await db.query(
+      'products',
+      where: 'barcode = ?',
+      whereArgs: [barcode],
+      limit: 1,
+    );
+
+    if (!mounted) return false;
+
+    if (rows.isEmpty) {
+      _showSnack('Product not found', isError: true);
+      return false;
+    }
+
+    final productRow = rows.first;
+    final productId = productRow['id'];
+    final productName = productRow['product_name']?.toString() ?? 'Product';
+    final cartIndex = sharedCart.indexWhere(
+      (item) => item['product']['id'] == productId,
+    );
+
+    if (cartIndex != -1) {
+      final cartProduct =
+          sharedCart[cartIndex]['product'] as Map<String, dynamic>;
+      final stock = (cartProduct['stock'] as num?)?.toInt() ?? 0;
+
+      if (stock <= 0) {
+        _showSnack('$productName is out of stock', isError: true);
+        return false;
+      }
+
+      setState(() {
+        cartProduct['stock'] = stock - 1;
+        sharedCart[cartIndex]['quantity'] += 1;
+      });
+    } else {
+      final stock = (productRow['stock_quantity'] as num?)?.toInt() ?? 0;
+
+      if (stock <= 0) {
+        _showSnack('$productName is out of stock', isError: true);
+        return false;
+      }
+
+      final product = {
+        'id': productId,
+        'title': productName,
+        'price': productRow['price'],
+        'stock': stock - 1,
+        'barcode': productRow['barcode'] ?? '',
+        'imagePath': productRow['image_url'] ?? '',
+        'category': productRow['category'] ?? 'Other',
+      };
+
+      setState(() {
+        sharedCart.add({'product': product, 'quantity': 1});
+      });
+    }
+
+    HapticFeedback.mediumImpact();
+    _showSnack('$productName added to cart');
+    return true;
   }
 
   void _addToSharedCart(Map<String, dynamic> product) {
