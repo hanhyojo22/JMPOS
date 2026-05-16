@@ -303,12 +303,16 @@ class _SalesPageState extends State<SalesPage> {
     );
   }
 
-  Widget _buildProductImage(String? path, {double size = 70}) {
+  Widget _buildProductImage(
+    String? path, {
+    double size = 70,
+    double borderRadius = 10,
+  }) {
     if (path == null || path.isEmpty) return _placeholder(size);
     final file = File(path);
     if (file.existsSync()) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(borderRadius),
         child: Image.file(
           file,
           width: size,
@@ -320,7 +324,7 @@ class _SalesPageState extends State<SalesPage> {
     }
     if (path.startsWith('http')) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(borderRadius),
         child: Image.network(
           path,
           width: size,
@@ -568,13 +572,13 @@ class _SalesPageState extends State<SalesPage> {
               : products.isEmpty
               ? _buildEmptyState()
               : GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   itemCount: products.length,
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
-                    childAspectRatio: 0.58,
+                    childAspectRatio: 0.62,
                   ),
                   itemBuilder: (_, i) => _buildProductCard(products[i]),
                 ),
@@ -596,71 +600,122 @@ class _SalesPageState extends State<SalesPage> {
     );
     final int qty = cartItem.isNotEmpty ? cartItem['quantity'] as int : 0;
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _border, width: 0.5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: qty > 0 ? _primary.withValues(alpha: 0.28) : _border,
+          width: qty > 0 ? 1 : 0.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: qty > 0
+                ? _primary.withValues(alpha: 0.12)
+                : Colors.black.withValues(alpha: 0.04),
+            blurRadius: qty > 0 ? 16 : 10,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Image area ──────────────────────────────────────────────────
           Stack(
             children: [
               Container(
-                height: 120,
+                height: 126,
                 width: double.infinity,
-                color: _cardSurface,
-                padding: const EdgeInsets.all(16),
-                child: Center(
+                decoration: BoxDecoration(
+                  color: _primary.withValues(alpha: 0.04),
+                  border: const Border(
+                    bottom: BorderSide(color: _border, width: 0.5),
+                  ),
+                ),
+                child: SizedBox.expand(
                   child: _buildProductImage(
                     product['imagePath'] as String?,
-                    size: 80,
+                    borderRadius: 0,
+                    size: double.infinity,
                   ),
                 ),
               ),
-
-              // Stock dot
+              if (category.isNotEmpty)
+                Positioned(
+                  left: 10,
+                  top: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(color: _border, width: 0.5),
+                    ),
+                    child: Text(
+                      category,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: _textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
               Positioned(
                 top: 10,
                 right: 10,
                 child: Container(
-                  width: 8,
-                  height: 8,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
-                    color: _stockDotColor(ss),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
+                    color: _badgeBg(ss),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(
+                      color: _badgeFg(ss).withValues(alpha: 0.16),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: _stockDotColor(ss),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        _badgeLabel(stock),
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: _badgeFg(ss),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ],
           ),
 
-          // ── Info area ───────────────────────────────────────────────────
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(11, 9, 11, 11),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Category label
-                  if (category.isNotEmpty) ...[
-                    Text(
-                      category.toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w500,
-                        color: _textTertiary,
-                        letterSpacing: 0.6,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                  ],
-
-                  // Title
                   Text(
                     product['title'] as String,
                     maxLines: 2,
@@ -672,55 +727,38 @@ class _SalesPageState extends State<SalesPage> {
                       height: 1.3,
                     ),
                   ),
-
                   const SizedBox(height: 6),
-
-                  // Price
-                  Text(
-                    CurrencyFormatter.format(price),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: _textPrimary,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-
-                  const Spacer(),
-
-                  // Divider
-                  const Divider(height: 1, thickness: 0.5, color: _border),
-
-                  const SizedBox(height: 8),
-
-                  // Stock badge + action
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      // Stock badge
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _badgeBg(ss),
-                            borderRadius: BorderRadius.circular(99),
-                          ),
-                          child: Text(
-                            _badgeLabel(stock),
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w600,
-                              color: _badgeFg(ss),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Price',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: _textTertiary,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                          ),
+                            Text(
+                              CurrencyFormatter.format(price),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                color: _textPrimary,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-
-                      // Cart action
+                      const SizedBox(width: 8),
                       _CardAction(
                         stock: stock,
                         quantity: qty,
@@ -816,13 +854,17 @@ class _CardAction extends StatelessWidget {
     // Out of stock
     if (stock == 0) {
       return Container(
-        width: 30,
-        height: 30,
-        decoration: BoxDecoration(color: surface, shape: BoxShape.circle),
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
         child: const Icon(
           Icons.block_rounded,
           color: Color(0xFFBBBBBB),
-          size: 14,
+          size: 17,
         ),
       );
     }
@@ -832,20 +874,37 @@ class _CardAction extends StatelessWidget {
       return GestureDetector(
         onTap: onAdd,
         child: Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(color: primary, shape: BoxShape.circle),
-          child: const Icon(Icons.add, color: Colors.white, size: 17),
+          width: 42,
+          height: 38,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [primary, const Color(0xFF7C4DFF)],
+            ),
+            borderRadius: BorderRadius.circular(13),
+            boxShadow: [
+              BoxShadow(
+                color: primary.withValues(alpha: 0.28),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.add_shopping_cart_rounded,
+            color: Colors.white,
+            size: 18,
+          ),
         ),
       );
     }
 
     // Stepper
     return Container(
-      padding: const EdgeInsets.all(2),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(99),
+        color: primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: primary.withValues(alpha: 0.18)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -853,18 +912,17 @@ class _CardAction extends StatelessWidget {
           GestureDetector(
             onTap: onRemove,
             child: Container(
-              width: 20,
-              height: 20,
-              decoration: const BoxDecoration(shape: BoxShape.circle),
-              child: const Icon(
-                Icons.remove,
-                color: Color(0xFF1A1F36),
-                size: 11,
+              width: 24,
+              height: 24,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
               ),
+              child: Icon(Icons.remove, color: primary, size: 13),
             ),
           ),
           SizedBox(
-            width: 16,
+            width: 24,
             child: Text(
               '$quantity',
               textAlign: TextAlign.center,
@@ -878,10 +936,10 @@ class _CardAction extends StatelessWidget {
           GestureDetector(
             onTap: onAdd,
             child: Container(
-              width: 20,
-              height: 20,
+              width: 24,
+              height: 24,
               decoration: BoxDecoration(color: primary, shape: BoxShape.circle),
-              child: const Icon(Icons.add, color: Colors.white, size: 11),
+              child: const Icon(Icons.add, color: Colors.white, size: 13),
             ),
           ),
         ],

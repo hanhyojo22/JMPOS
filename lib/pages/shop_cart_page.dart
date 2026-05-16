@@ -74,7 +74,7 @@ class _CartPageState extends State<CartPage> {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder(size),
+          errorBuilder: (_, _, _) => _placeholder(size),
         ),
       );
     }
@@ -621,7 +621,7 @@ class _CartPageState extends State<CartPage> {
           padding: const EdgeInsets.fromLTRB(14, 0, 14, 120),
           sliver: SliverList.separated(
             itemCount: _cart.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (_, i) => _buildCartItem(i),
           ),
         ),
