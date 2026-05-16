@@ -154,16 +154,18 @@ class _CartPageState extends State<CartPage> {
           final sufficient = cashAmt >= _total && cashAmt > 0;
           final quickAmounts = _quickCashOptions(_total);
 
+          final media = MediaQuery.of(ctx);
+          final keyboardInset = media.viewInsets.bottom;
+          final systemNavInset = media.padding.bottom;
+
           return Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom,
-            ),
+            padding: EdgeInsets.only(bottom: keyboardInset),
             child: Container(
               decoration: const BoxDecoration(
                 color: _cardBg,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+              padding: EdgeInsets.fromLTRB(16, 0, 16, systemNavInset + 24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -854,6 +856,8 @@ class _CartPageState extends State<CartPage> {
   // ── Bottom bar ─────────────────────────────────────────────────────────────
   Widget _buildBottomBar() {
     return SafeArea(
+      top: false,
+      minimum: const EdgeInsets.only(bottom: 10),
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
         decoration: const BoxDecoration(

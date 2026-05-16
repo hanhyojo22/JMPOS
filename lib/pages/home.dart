@@ -15,6 +15,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'edit_product_page.dart';
 import 'setting_page.dart';
 import 'login.dart';
+import 'shop_cart_page.dart' as shop_cart;
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -511,7 +512,7 @@ class _HomePageState extends State<HomePage> {
         );
 
       case 9:
-        return CartPage(
+        return shop_cart.CartPage(
           cart: sharedCart,
           showAppBar: false,
           onAdd: _addToSharedCart,
