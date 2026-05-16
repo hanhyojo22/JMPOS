@@ -232,6 +232,7 @@ class _ProductsPageState extends State<ProductsPage>
 
   void _showSortSheet() {
     showModalBottomSheet(
+      isScrollControlled: true,
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _SortSheet(
@@ -327,7 +328,6 @@ class _ProductsPageState extends State<ProductsPage>
             ),
             suffixIcon: Row(
               mainAxisSize: MainAxisSize.min,
-
               children: [
                 if (_searchQuery.isNotEmpty)
                   GestureDetector(
@@ -355,21 +355,39 @@ class _ProductsPageState extends State<ProductsPage>
                       ),
                     ),
                   ),
-
-                GestureDetector(
-                  onTap: _showSortSheet,
-
-                  child: Container(
-                    margin: const EdgeInsets.only(right: 12),
-
-                    child: const Icon(
-                      Icons.tune_rounded,
-                      color: _primary,
-                      size: 22,
+                Container(
+                  width: 1,
+                  height: 24,
+                  margin: const EdgeInsets.only(right: 4),
+                  color: _textSecondary.withValues(alpha: 0.14),
+                ),
+                Tooltip(
+                  message: 'Sort products',
+                  child: GestureDetector(
+                    onTap: _showSortSheet,
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      margin: const EdgeInsets.only(right: 6),
+                      decoration: BoxDecoration(
+                        color: _sortBy != 'Default'
+                            ? _primary.withValues(alpha: 0.1)
+                            : Colors.transparent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.tune_rounded,
+                        color: _sortBy != 'Default' ? _primary : _textSecondary,
+                        size: 21,
+                      ),
                     ),
                   ),
                 ),
               ],
+            ),
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 0,
+              minHeight: 0,
             ),
           ),
         ),
@@ -815,152 +833,159 @@ class _SortSheetState extends State<_SortSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.88,
       ),
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 36),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 22),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Sort Products',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: _textPrimary,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 18),
-
-            ..._options.map((opt) {
-              final selected = _selected == opt['key'];
-
-              return GestureDetector(
-                onTap: () => setState(() => _selected = opt['key'] as String),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(24, 0, 24, 60),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 22),
+                  width: 40,
+                  height: 4,
                   decoration: BoxDecoration(
-                    color: selected
-                        ? _primary.withValues(alpha: 0.06)
-                        : Colors.grey[50],
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: selected ? _primary : Colors.grey[200]!,
-                      width: selected ? 1.8 : 1,
-                    ),
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
+                ),
+              ),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Sort Products',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: _textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  itemCount: _options.length,
+                  itemBuilder: (context, index) {
+                    final opt = _options[index];
+                    final selected = _selected == opt['key'];
+
+                    return GestureDetector(
+                      onTap: () =>
+                          setState(() => _selected = opt['key'] as String),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: selected
-                              ? _primary.withValues(alpha: 0.1)
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(10),
+                              ? _primary.withValues(alpha: 0.06)
+                              : Colors.grey[50],
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: selected ? _primary : Colors.grey[200]!,
+                            width: selected ? 1.8 : 1,
+                          ),
                         ),
-                        child: Icon(
-                          opt['icon'] as IconData,
-                          color: selected ? _primary : _textSecondary,
-                          size: 18,
-                        ),
-                      ),
-
-                      const SizedBox(width: 12),
-
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Row(
                           children: [
-                            Text(
-                              opt['label'] as String,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: selected ? _primary : _textPrimary,
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? _primary.withValues(alpha: 0.1)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                opt['icon'] as IconData,
+                                color: selected ? _primary : _textSecondary,
+                                size: 18,
                               ),
                             ),
-                            Text(
-                              opt['sub'] as String,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: _textSecondary,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    opt['label'] as String,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: selected ? _primary : _textPrimary,
+                                    ),
+                                  ),
+                                  Text(
+                                    opt['sub'] as String,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: _textSecondary,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
+                            if (selected)
+                              Container(
+                                width: 20,
+                                height: 20,
+                                decoration: const BoxDecoration(
+                                  color: _primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.check_rounded,
+                                  color: Colors.white,
+                                  size: 13,
+                                ),
+                              ),
                           ],
                         ),
                       ),
-
-                      if (selected)
-                        Container(
-                          width: 20,
-                          height: 20,
-                          decoration: const BoxDecoration(
-                            color: _primary,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.check_rounded,
-                            color: Colors.white,
-                            size: 13,
-                          ),
-                        ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
-              );
-            }),
-
-            const SizedBox(height: 12),
-
-            GestureDetector(
-              onTap: () {
-                widget.onSelect(_selected);
-                Navigator.pop(context);
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 15),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [_primary, Color(0xFF7C4DFF)],
+              ),
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: () {
+                  widget.onSelect(_selected);
+                  Navigator.pop(context);
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [_primary, Color(0xFF7C4DFF)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Center(
-                  child: Text(
-                    'Apply',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                  child: const Center(
+                    child: Text(
+                      'Apply',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

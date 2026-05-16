@@ -368,6 +368,7 @@ class _SalesPageState extends State<SalesPage> {
 
   void _showSortSheet() {
     showModalBottomSheet(
+      isScrollControlled: true,
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _SortSheet(
@@ -401,109 +402,111 @@ class _SalesPageState extends State<SalesPage> {
         // Search + sort
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _searchQuery = v),
+              style: const TextStyle(
+                fontSize: 15,
+                color: _textPrimary,
+                fontWeight: FontWeight.w500,
+              ),
+              decoration: InputDecoration(
+                hintText: 'Search products...',
+                hintStyle: TextStyle(
+                  fontSize: 14,
+                  color: _textSecondary.withValues(alpha: 0.55),
+                  fontWeight: FontWeight.w400,
+                ),
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.only(left: 14, right: 10),
+                  child: Icon(
+                    Icons.search_rounded,
+                    color: _textSecondary.withValues(alpha: 0.5),
+                    size: 22,
                   ),
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (v) => setState(() => _searchQuery = v),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: _textPrimary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Search products...',
-                      hintStyle: TextStyle(
-                        fontSize: 14,
-                        color: _textSecondary.withValues(alpha: 0.5),
-                      ),
-                      prefixIcon: Padding(
-                        padding: const EdgeInsets.only(left: 12, right: 8),
-                        child: Icon(
-                          Icons.search_rounded,
-                          color: _textSecondary.withValues(alpha: 0.5),
-                          size: 20,
+                ),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 0,
+                  minHeight: 0,
+                ),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_searchQuery.isNotEmpty)
+                      GestureDetector(
+                        onTap: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: _textSecondary.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            size: 16,
+                            color: _textSecondary,
+                          ),
                         ),
                       ),
-                      prefixIconConstraints: const BoxConstraints(
-                        minWidth: 0,
-                        minHeight: 0,
-                      ),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? GestureDetector(
-                              onTap: () {
-                                _searchController.clear();
-                                setState(() => _searchQuery = '');
-                              },
-                              child: Container(
-                                margin: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: _textSecondary.withValues(alpha: 0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.close_rounded,
-                                  size: 15,
-                                  color: _textSecondary,
-                                ),
-                              ),
-                            )
-                          : null,
-                      filled: false,
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 13,
+                    Container(
+                      width: 1,
+                      height: 24,
+                      margin: const EdgeInsets.only(right: 4),
+                      color: _textSecondary.withValues(alpha: 0.14),
+                    ),
+                    Tooltip(
+                      message: 'Sort products',
+                      child: GestureDetector(
+                        onTap: _showSortSheet,
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          margin: const EdgeInsets.only(right: 6),
+                          decoration: BoxDecoration(
+                            color: _selectedSort != 'Default'
+                                ? _primary.withValues(alpha: 0.1)
+                                : Colors.transparent,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.tune_rounded,
+                            color: _selectedSort != 'Default'
+                                ? _primary
+                                : _textSecondary,
+                            size: 21,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
+                ),
+                suffixIconConstraints: const BoxConstraints(
+                  minWidth: 0,
+                  minHeight: 0,
+                ),
+                filled: false,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 13,
                 ),
               ),
-              const SizedBox(width: 10),
-              GestureDetector(
-                onTap: _showSortSheet,
-                child: Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: _selectedSort != 'Default'
-                        ? _primary.withValues(alpha: 0.1)
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: _selectedSort != 'Default'
-                        ? Border.all(color: _primary.withValues(alpha: 0.4))
-                        : null,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    Icons.tune_rounded,
-                    color: _selectedSort != 'Default'
-                        ? _primary
-                        : _textSecondary,
-                    size: 20,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
 
@@ -946,144 +949,160 @@ class _SortSheetState extends State<_SortSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.88,
       ),
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 36),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 22),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Sort Products',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: _textPrimary,
-                  letterSpacing: -0.4,
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            ..._options.map((opt) {
-              final selected = _selected == opt['key'];
-              return GestureDetector(
-                onTap: () => setState(() => _selected = opt['key'] as String),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(24, 0, 24, 60),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 22),
+                  width: 40,
+                  height: 4,
                   decoration: BoxDecoration(
-                    color: selected
-                        ? _primary.withValues(alpha: 0.06)
-                        : Colors.grey[50],
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: selected ? _primary : Colors.grey[200]!,
-                      width: selected ? 1.8 : 1,
-                    ),
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
+                ),
+              ),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Sort Products',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: _textPrimary,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  itemCount: _options.length,
+                  itemBuilder: (context, index) {
+                    final opt = _options[index];
+                    final selected = _selected == opt['key'];
+
+                    return GestureDetector(
+                      onTap: () =>
+                          setState(() => _selected = opt['key'] as String),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: selected
-                              ? _primary.withValues(alpha: 0.1)
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(10),
+                              ? _primary.withValues(alpha: 0.06)
+                              : Colors.grey[50],
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: selected ? _primary : Colors.grey[200]!,
+                            width: selected ? 1.8 : 1,
+                          ),
                         ),
-                        child: Icon(
-                          opt['icon'] as IconData,
-                          color: selected ? _primary : _textSecondary,
-                          size: 18,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Row(
                           children: [
-                            Text(
-                              opt['label'] as String,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: selected ? _primary : _textPrimary,
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? _primary.withValues(alpha: 0.1)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                opt['icon'] as IconData,
+                                color: selected ? _primary : _textSecondary,
+                                size: 18,
                               ),
                             ),
-                            Text(
-                              opt['sub'] as String,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: _textSecondary,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    opt['label'] as String,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: selected ? _primary : _textPrimary,
+                                    ),
+                                  ),
+                                  Text(
+                                    opt['sub'] as String,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: _textSecondary,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
+                            if (selected)
+                              Container(
+                                width: 20,
+                                height: 20,
+                                decoration: const BoxDecoration(
+                                  color: _primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.check_rounded,
+                                  color: Colors.white,
+                                  size: 13,
+                                ),
+                              ),
                           ],
                         ),
                       ),
-                      if (selected)
-                        Container(
-                          width: 20,
-                          height: 20,
-                          decoration: const BoxDecoration(
-                            color: _primary,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.check_rounded,
-                            color: Colors.white,
-                            size: 13,
-                          ),
-                        ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
-              );
-            }),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: () {
-                widget.onSelect(_selected);
-                Navigator.pop(context);
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 15),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [_primary, Color(0xFF7C4DFF)],
+              ),
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: () {
+                  widget.onSelect(_selected);
+                  Navigator.pop(context);
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [_primary, Color(0xFF7C4DFF)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Center(
-                  child: Text(
-                    'Apply',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                  child: const Center(
+                    child: Text(
+                      'Apply',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
