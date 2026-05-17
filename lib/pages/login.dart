@@ -118,14 +118,6 @@ class _LoginPageState extends State<LoginPage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             // Logo
-                            Image.asset(
-                              'lib/assets/sari-sari-removebg-preview.png',
-                              height: 180,
-                              width: 300,
-                              fit: BoxFit.fitWidth,
-                            ),
-
-                            const SizedBox(height: 16),
                             const Text(
                               'POS App',
                               style: TextStyle(
@@ -134,6 +126,14 @@ class _LoginPageState extends State<LoginPage> {
                                 color: Color(0xFF333333),
                               ),
                             ),
+                            const SizedBox(height: 16),
+                            Image.asset(
+                              'lib/assets/sari-sari-removebg-preview.png',
+                              height: 150,
+                              width: 250,
+                              fit: BoxFit.contain,
+                            ),
+
                             const SizedBox(height: 8),
                             Text(
                               'Welcome! Please sign in to continue.',

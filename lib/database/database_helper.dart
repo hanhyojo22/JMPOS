@@ -5,7 +5,7 @@ import 'dart:convert';
 
 class DatabaseHelper {
   static Database? _database;
-  static const int _dbVersion = 2;
+  static const int _dbVersion = 3;
 
   static final DatabaseHelper instance = DatabaseHelper._init();
 
@@ -55,6 +55,7 @@ class DatabaseHelper {
         quantity INTEGER NOT NULL,
         price REAL NOT NULL,
         total REAL NOT NULL,
+        image_url TEXT,
         created_at TEXT NOT NULL
       )
     ''');
@@ -87,6 +88,9 @@ class DatabaseHelper {
     if (oldVersion < 2) {
       await db.execute('ALTER TABLE products ADD COLUMN description TEXT');
     }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE sales ADD COLUMN image_url TEXT');
+    }
   }
 
   Future<void> _ensureProductSchema(Database db) async {
@@ -97,6 +101,18 @@ class DatabaseHelper {
 
     if (!hasDescription) {
       await db.execute('ALTER TABLE products ADD COLUMN description TEXT');
+    }
+  }
+
+  Future<void> ensureSalesSchema() async {
+    final db = await database;
+    final columns = await db.rawQuery('PRAGMA table_info(sales)');
+    final hasImageUrl = columns.cast<Map<String, Object?>>().any(
+      (column) => column['name'] == 'image_url',
+    );
+
+    if (!hasImageUrl) {
+      await db.execute('ALTER TABLE sales ADD COLUMN image_url TEXT');
     }
   }
 

@@ -66,6 +66,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
   Future<void> loadSalesHistory() async {
     final db = await DatabaseHelper.instance.database;
+    await DatabaseHelper.instance.ensureSalesSchema();
 
     final history = await db.rawQuery('''
       SELECT
@@ -75,7 +76,7 @@ class _HistoryPageState extends State<HistoryPage> {
         sales.quantity,
         sales.total,
         sales.created_at,
-        products.image_url
+        COALESCE(sales.image_url, products.image_url) AS image_url
       FROM sales
       LEFT JOIN products ON products.id = sales.product_id
       ORDER BY sales.created_at DESC, sales.id DESC

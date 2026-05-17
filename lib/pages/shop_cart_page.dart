@@ -227,6 +227,7 @@ class _CartPageState extends State<CartPage> {
         final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
         final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
         final line = isDark ? const Color(0xFF253047) : _border;
+        final successText = isDark ? const Color(0xFF86EFAC) : _green;
 
         return AlertDialog(
           backgroundColor: panel,
@@ -268,7 +269,7 @@ class _CartPageState extends State<CartPage> {
                     _ConfirmRow(
                       label: 'Change',
                       value: CurrencyFormatter.format(change),
-                      valueColor: _green,
+                      valueColor: successText,
                     ),
                   ],
                 ),
@@ -313,6 +314,30 @@ class _CartPageState extends State<CartPage> {
           final change = cashAmt - _total;
           final sufficient = cashAmt >= _total && cashAmt > 0;
           final quickAmounts = _quickCashOptions(_total);
+          final accentBg = _isDark
+              ? _primary.withValues(alpha: 0.14)
+              : _purpleBg;
+          final accentBorder = _isDark
+              ? _primary.withValues(alpha: 0.32)
+              : _purpleBorder;
+          final accentFg = _isDark ? const Color(0xFFC4B5FD) : _purple;
+          final successFg = _isDark ? const Color(0xFF86EFAC) : _green;
+          final dangerFg = _isDark ? const Color(0xFFFCA5A5) : _red;
+          final cashFieldBg = _isDark
+              ? const Color(0xFF1E293B)
+              : const Color(0xFFF8F9FF);
+          final cashFieldBorder = sufficient
+              ? _primary.withValues(alpha: _isDark ? 0.65 : 0.4)
+              : _lineColor;
+          final statusBg = sufficient
+              ? (_isDark ? _green.withValues(alpha: 0.16) : _greenBg)
+              : (_isDark ? _red.withValues(alpha: 0.16) : _redBg);
+          final statusBorder = sufficient
+              ? (_isDark ? _green.withValues(alpha: 0.34) : _greenBorder)
+              : (_isDark ? _red.withValues(alpha: 0.34) : _redBorder);
+          final disabledButtonBg = _isDark
+              ? const Color(0xFF253047)
+              : Colors.grey[200];
 
           final media = MediaQuery.of(ctx);
           final keyboardInset = media.viewInsets.bottom;
@@ -352,14 +377,14 @@ class _CartPageState extends State<CartPage> {
                         width: 38,
                         height: 38,
                         decoration: BoxDecoration(
-                          color: _purpleBg,
+                          color: accentBg,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: _purpleBorder, width: 0.5),
+                          border: Border.all(color: accentBorder, width: 0.5),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.payments_outlined,
                           size: 20,
-                          color: _purple,
+                          color: accentFg,
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -438,13 +463,9 @@ class _CartPageState extends State<CartPage> {
                   // Cash input
                   Container(
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8F9FF),
+                      color: cashFieldBg,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: sufficient
-                            ? _primary.withValues(alpha: 0.4)
-                            : const Color(0xFFE8EAF0),
-                      ),
+                      border: Border.all(color: cashFieldBorder),
                     ),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
@@ -452,7 +473,7 @@ class _CartPageState extends State<CartPage> {
                     ),
                     child: Row(
                       children: [
-                        const Text(
+                        Text(
                           '₱ ',
                           style: TextStyle(
                             fontSize: 22,
@@ -476,15 +497,15 @@ class _CartPageState extends State<CartPage> {
                               fontWeight: FontWeight.w700,
                               color: _primaryText,
                             ),
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               hintText: '0.00',
                               hintStyle: TextStyle(
-                                color: _textTertiary,
+                                color: _tertiaryText,
                                 fontSize: 22,
                               ),
                               border: InputBorder.none,
                               isDense: true,
-                              contentPadding: EdgeInsets.symmetric(
+                              contentPadding: const EdgeInsets.symmetric(
                                 vertical: 10,
                               ),
                             ),
@@ -515,10 +536,10 @@ class _CartPageState extends State<CartPage> {
                             vertical: 7,
                           ),
                           decoration: BoxDecoration(
-                            color: isSelected ? _primary : _purpleBg,
+                            color: isSelected ? _primary : accentBg,
                             borderRadius: BorderRadius.circular(99),
                             border: Border.all(
-                              color: isSelected ? _primary : _purpleBorder,
+                              color: isSelected ? _primary : accentBorder,
                               width: 0.5,
                             ),
                           ),
@@ -527,7 +548,7 @@ class _CartPageState extends State<CartPage> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: isSelected ? Colors.white : _purple,
+                              color: isSelected ? Colors.white : accentFg,
                             ),
                           ),
                         ),
@@ -547,12 +568,9 @@ class _CartPageState extends State<CartPage> {
                         vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: sufficient ? _greenBg : _redBg,
+                        color: statusBg,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: sufficient ? _greenBorder : _redBorder,
-                          width: 0.5,
-                        ),
+                        border: Border.all(color: statusBorder, width: 0.5),
                       ),
                       child: Row(
                         children: [
@@ -560,7 +578,7 @@ class _CartPageState extends State<CartPage> {
                             sufficient
                                 ? Icons.check_circle_outline_rounded
                                 : Icons.error_outline_rounded,
-                            color: sufficient ? _green : _red,
+                            color: sufficient ? successFg : dangerFg,
                             size: 18,
                           ),
                           const SizedBox(width: 8),
@@ -569,7 +587,7 @@ class _CartPageState extends State<CartPage> {
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: sufficient ? _green : _red,
+                              color: sufficient ? successFg : dangerFg,
                             ),
                           ),
                           const Spacer(),
@@ -579,17 +597,17 @@ class _CartPageState extends State<CartPage> {
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w800,
-                                color: _green,
+                                color: successFg,
                                 letterSpacing: -0.5,
                               ),
                             ),
                           if (!sufficient)
                             Text(
                               'Need ${CurrencyFormatter.format(-change)} more',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: _red,
+                                color: dangerFg,
                               ),
                             ),
                         ],
@@ -629,7 +647,7 @@ class _CartPageState extends State<CartPage> {
                           : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _primary,
-                        disabledBackgroundColor: Colors.grey[200],
+                        disabledBackgroundColor: disabledButtonBg,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),

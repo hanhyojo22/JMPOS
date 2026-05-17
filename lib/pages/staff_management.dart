@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:pos_app/database/database_helper.dart';
+import 'package:pos_app/utils/message_banner.dart';
 
 class StaffManagementPage extends StatefulWidget {
   const StaffManagementPage({super.key});
@@ -10,11 +11,38 @@ class StaffManagementPage extends StatefulWidget {
 
 class _StaffManagementPageState extends State<StaffManagementPage> {
   late Future<List<Map<String, dynamic>>> _staffFuture;
+  OverlayEntry? _messageOverlay;
 
   @override
   void initState() {
     super.initState();
     _refreshStaffList();
+  }
+
+  @override
+  void dispose() {
+    _messageOverlay?.remove();
+    super.dispose();
+  }
+
+  void _showBanner(String message, {bool success = false}) {
+    _messageOverlay?.remove();
+
+    _messageOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        top: MediaQuery.of(context).padding.top + 14,
+        left: 16,
+        right: 16,
+        child: MessageBanner(message: message, success: success),
+      ),
+    );
+
+    Overlay.of(context).insert(_messageOverlay!);
+
+    Future.delayed(const Duration(seconds: 2), () {
+      _messageOverlay?.remove();
+      _messageOverlay = null;
+    });
   }
 
   void _refreshStaffList() {
@@ -26,15 +54,21 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
   void _showAddStaffDialog() {
     showDialog<void>(
       context: context,
-      builder: (_) => _AddStaffDialog(onStaffAdded: _refreshStaffList),
+      builder: (_) => _AddStaffDialog(
+        onStaffAdded: _refreshStaffList,
+        onMessage: _showBanner,
+      ),
     );
   }
 
   void _showEditStaffDialog(Map<String, dynamic> staff) {
     showDialog<void>(
       context: context,
-      builder: (_) =>
-          _EditStaffDialog(staff: staff, onStaffUpdated: _refreshStaffList),
+      builder: (_) => _EditStaffDialog(
+        staff: staff,
+        onStaffUpdated: _refreshStaffList,
+        onMessage: _showBanner,
+      ),
     );
   }
 
@@ -58,15 +92,10 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
               if (!context.mounted) return;
 
               if (success) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Staff member deleted')),
-                );
-
+                _showBanner('Staff member deleted', success: true);
                 _refreshStaffList();
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Failed to delete staff')),
-                );
+                _showBanner('Failed to delete staff');
               }
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
@@ -226,6 +255,7 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
         userId: userId,
         username: username,
         onPasswordReset: _refreshStaffList,
+        onMessage: _showBanner,
       ),
     );
   }
@@ -235,8 +265,9 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
 
 class _AddStaffDialog extends StatefulWidget {
   final VoidCallback onStaffAdded;
+  final void Function(String message, {bool success}) onMessage;
 
-  const _AddStaffDialog({required this.onStaffAdded});
+  const _AddStaffDialog({required this.onStaffAdded, required this.onMessage});
 
   @override
   State<_AddStaffDialog> createState() => _AddStaffDialogState();
@@ -278,15 +309,9 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
     if (userId > 0) {
       Navigator.pop(context);
       widget.onStaffAdded();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Staff member created successfully')),
-      );
+      widget.onMessage('Staff member created successfully', success: true);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error creating staff. Username might already exist.'),
-        ),
-      );
+      widget.onMessage('Error creating staff. Username might already exist.');
     }
   }
 
@@ -425,8 +450,13 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
 class _EditStaffDialog extends StatefulWidget {
   final Map<String, dynamic> staff;
   final VoidCallback onStaffUpdated;
+  final void Function(String message, {bool success}) onMessage;
 
-  const _EditStaffDialog({required this.staff, required this.onStaffUpdated});
+  const _EditStaffDialog({
+    required this.staff,
+    required this.onStaffUpdated,
+    required this.onMessage,
+  });
 
   @override
   State<_EditStaffDialog> createState() => _EditStaffDialogState();
@@ -472,13 +502,9 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
     if (success) {
       Navigator.pop(context);
       widget.onStaffUpdated();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Staff member updated successfully')),
-      );
+      widget.onMessage('Staff member updated successfully', success: true);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error updating staff member')),
-      );
+      widget.onMessage('Error updating staff member');
     }
   }
 
@@ -568,11 +594,13 @@ class _ResetPasswordDialog extends StatefulWidget {
   final int userId;
   final String username;
   final VoidCallback onPasswordReset;
+  final void Function(String message, {bool success}) onMessage;
 
   const _ResetPasswordDialog({
     required this.userId,
     required this.username,
     required this.onPasswordReset,
+    required this.onMessage,
   });
 
   @override
@@ -614,13 +642,9 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
     if (success) {
       Navigator.pop(context);
       widget.onPasswordReset();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password reset successfully')),
-      );
+      widget.onMessage('Password reset successfully', success: true);
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Error resetting password')));
+      widget.onMessage('Error resetting password');
     }
   }
 

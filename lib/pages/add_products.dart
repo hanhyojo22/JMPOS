@@ -9,8 +9,13 @@ import '../database/database_helper.dart';
 
 class AddProductsPage extends StatefulWidget {
   final String? initialBarcode;
+  final VoidCallback? onBarcodeHandled;
 
-  const AddProductsPage({super.key, this.initialBarcode});
+  const AddProductsPage({
+    super.key,
+    this.initialBarcode,
+    this.onBarcodeHandled,
+  });
   @override
   State<AddProductsPage> createState() => _AddProductsPageState();
 }
@@ -99,28 +104,7 @@ class _AddProductsPageState extends State<AddProductsPage>
   void initState() {
     super.initState();
 
-    // AUTO-FILL BARCODE FROM SCANNER
-    if (widget.initialBarcode != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        final barcode = widget.initialBarcode!;
-
-        final exists = await DatabaseHelper.instance.barcodeExists(barcode);
-
-        if (!mounted) return;
-
-        if (exists) {
-          _showBanner('Barcode already exists in database');
-
-          // CLEAR FIELD
-          _barcodeController.clear();
-
-          return;
-        }
-
-        // ONLY SAVE IF NOT DUPLICATE
-        _barcodeController.text = barcode;
-      });
-    }
+    _applyInitialBarcode();
 
     _animController = AnimationController(
       vsync: this,
@@ -135,6 +119,36 @@ class _AddProductsPageState extends State<AddProductsPage>
         );
 
     _animController.forward();
+  }
+
+  @override
+  void didUpdateWidget(covariant AddProductsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialBarcode != oldWidget.initialBarcode) {
+      _applyInitialBarcode();
+    }
+  }
+
+  void _applyInitialBarcode() {
+    final barcode = widget.initialBarcode?.trim();
+    if (barcode == null || barcode.isEmpty) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      widget.onBarcodeHandled?.call();
+
+      final exists = await DatabaseHelper.instance.barcodeExists(barcode);
+
+      if (!mounted) return;
+
+      if (exists) {
+        _showBanner('Barcode already exists in database');
+        _barcodeController.clear();
+        return;
+      }
+
+      _barcodeController.text = barcode;
+    });
   }
 
   @override
@@ -420,28 +434,7 @@ class _AddProductsPageState extends State<AddProductsPage>
       backgroundColor: pageSurface,
 
       body: FadeTransition(
-      appBar: AppBar(
-        backgroundColor: panelSurface,
-        elevation: 0,
-        foregroundColor: primaryText,
-        title: Text(
-          'Add Product',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-        ),
-        actions: [
-          IconButton(
-            onPressed: _resetForm,
-            tooltip: 'Reset form',
-            icon: Icon(
-              Icons.refresh_rounded,
-              color: isDark ? const Color(0xFFCBD5E1) : Colors.grey[600],
-            ),
-          ),
-        ],
-      ),
-
-      body: FadeTransition(
-      body: FadeTransition(
+        opacity: _fadeAnim,
         child: SlideTransition(
           position: _slideAnim,
           child: Form(

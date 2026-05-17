@@ -223,16 +223,21 @@ class _SalesPageState extends State<SalesPage> {
     if (_cart.isEmpty) return;
     final db = await DatabaseHelper.instance.database;
     try {
+      await DatabaseHelper.instance.ensureSalesSchema();
       for (final item in _cart) {
         final product = item['product'];
         final int quantity = item['quantity'];
         final double price = (product['price'] as num).toDouble();
+        final imagePath = product['imagePath']?.toString();
         await db.insert('sales', {
           'product_id': product['id'],
           'product_name': product['title'],
           'quantity': quantity,
           'price': price,
           'total': price * quantity,
+          'image_url': imagePath == null || imagePath.isEmpty
+              ? null
+              : imagePath,
           'created_at': DateTime.now().toIso8601String(),
         });
         await db.update(

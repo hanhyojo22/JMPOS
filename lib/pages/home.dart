@@ -73,6 +73,7 @@ class _HomePageState extends State<HomePage> {
     setState(() => _loadingHome = true);
     try {
       final db = await DatabaseHelper.instance.database;
+      await DatabaseHelper.instance.ensureSalesSchema();
 
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
@@ -96,7 +97,7 @@ class _HomePageState extends State<HomePage> {
           sales.total,
           sales.quantity,
           sales.created_at,
-          products.image_url
+          COALESCE(sales.image_url, products.image_url) AS image_url
         FROM sales
         LEFT JOIN products ON sales.product_id = products.id
         ORDER BY sales.created_at DESC
@@ -413,6 +414,7 @@ class _HomePageState extends State<HomePage> {
 
     final db = await DatabaseHelper.instance.database;
     try {
+      await DatabaseHelper.instance.ensureSalesSchema();
       await db.transaction((txn) async {
         for (final item in sharedCart) {
           final product = item['product'] as Map<String, dynamic>;
@@ -452,6 +454,7 @@ class _HomePageState extends State<HomePage> {
           }
 
           final price = (product['price'] as num).toDouble();
+          final imagePath = product['imagePath']?.toString();
           final remainingStock = dbStock - quantity;
 
           await txn.insert('sales', {
@@ -460,6 +463,9 @@ class _HomePageState extends State<HomePage> {
             'quantity': quantity,
             'price': price,
             'total': price * quantity,
+            'image_url': imagePath == null || imagePath.isEmpty
+                ? null
+                : imagePath,
             'created_at': DateTime.now().toIso8601String(),
           });
 
@@ -529,6 +535,9 @@ class _HomePageState extends State<HomePage> {
         return AddProductsPage(
           key: ValueKey(addProductBarcode),
           initialBarcode: addProductBarcode,
+          onBarcodeHandled: () {
+            addProductBarcode = null;
+          },
         );
 
       case 3:
