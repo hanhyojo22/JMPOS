@@ -221,10 +221,10 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    final added = await _addScannedBarcodeToSharedCart(scannedBarcode!);
-    if (!mounted || !added) return;
+    final productName = await _addScannedBarcodeToSharedCart(scannedBarcode!);
+    if (!mounted || productName == null) return;
 
-    _openCartPage();
+    _openCartPage(initialMessage: '$productName added to cart');
   }
 
   Widget _buildProductImage(String imagePath) {
@@ -302,7 +302,7 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<bool> _addScannedBarcodeToSharedCart(String barcode) async {
+  Future<String?> _addScannedBarcodeToSharedCart(String barcode) async {
     final db = await DatabaseHelper.instance.database;
     final rows = await db.query(
       'products',
@@ -311,11 +311,11 @@ class _HomePageState extends State<HomePage> {
       limit: 1,
     );
 
-    if (!mounted) return false;
+    if (!mounted) return null;
 
     if (rows.isEmpty) {
       _showSnack('Product not found', isError: true);
-      return false;
+      return null;
     }
 
     final productRow = rows.first;
@@ -332,7 +332,7 @@ class _HomePageState extends State<HomePage> {
 
       if (stock <= 0) {
         _showSnack('$productName is out of stock', isError: true);
-        return false;
+        return null;
       }
 
       setState(() {
@@ -344,7 +344,7 @@ class _HomePageState extends State<HomePage> {
 
       if (stock <= 0) {
         _showSnack('$productName is out of stock', isError: true);
-        return false;
+        return null;
       }
 
       final product = {
@@ -363,8 +363,7 @@ class _HomePageState extends State<HomePage> {
     }
 
     HapticFeedback.mediumImpact();
-    _showSnack('$productName added to cart');
-    return true;
+    return productName;
   }
 
   void _addToSharedCart(Map<String, dynamic> product) {
@@ -449,8 +448,14 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _openCartPage() {
+  void _openCartPage({String? initialMessage}) {
     setState(() => _selectedIndex = 9);
+    if (initialMessage != null && initialMessage.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _selectedIndex != 9) return;
+        _showTopMessage(initialMessage, success: true);
+      });
+    }
   }
 
   Widget _buildPageContent() {
@@ -696,7 +701,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     TextButton(
-                      onPressed: () => setState(() => _selectedIndex = 3),
+                      onPressed: () => setState(() => _selectedIndex = 6),
                       child: const Text('View all'),
                     ),
                   ],

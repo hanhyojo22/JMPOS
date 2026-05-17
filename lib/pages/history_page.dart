@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
@@ -65,10 +67,19 @@ class _HistoryPageState extends State<HistoryPage> {
   Future<void> loadSalesHistory() async {
     final db = await DatabaseHelper.instance.database;
 
-    final history = await db.query(
-      'sales',
-      orderBy: 'created_at DESC, id DESC',
-    );
+    final history = await db.rawQuery('''
+      SELECT
+        sales.id,
+        sales.product_id,
+        sales.product_name,
+        sales.quantity,
+        sales.total,
+        sales.created_at,
+        products.image_url
+      FROM sales
+      LEFT JOIN products ON products.id = sales.product_id
+      ORDER BY sales.created_at DESC, sales.id DESC
+    ''');
 
     setState(() {
       salesHistory = history.map((sale) {
@@ -115,6 +126,7 @@ class _HistoryPageState extends State<HistoryPage> {
           'createdAt': createdAt,
           'quantity': sale['quantity'],
           'total': sale['total'],
+          'imagePath': sale['image_url'] ?? '',
         };
       }).toList();
 
@@ -384,6 +396,7 @@ class _HistoryPageState extends State<HistoryPage> {
   Widget _buildHistoryCard(Map<String, dynamic> sale) {
     final total = (sale['total'] as num?)?.toDouble() ?? 0.0;
     final qty = sale['quantity'] ?? 0;
+    final imagePath = sale['imagePath'] as String? ?? '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -404,21 +417,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
         child: Row(
           children: [
-            Container(
-              width: 46,
-              height: 46,
-
-              decoration: BoxDecoration(
-                color: _success.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(13),
-              ),
-
-              child: const Icon(
-                Icons.receipt_rounded,
-                color: _success,
-                size: 22,
-              ),
-            ),
+            _buildProductImage(imagePath),
 
             const SizedBox(width: 12),
 
@@ -535,6 +534,38 @@ class _HistoryPageState extends State<HistoryPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildProductImage(String imagePath) {
+    if (imagePath.isNotEmpty) {
+      final file = File(imagePath);
+      if (file.existsSync()) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(13),
+          child: Image.file(
+            file,
+            width: 46,
+            height: 46,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => _historyImageFallback(),
+          ),
+        );
+      }
+    }
+
+    return _historyImageFallback();
+  }
+
+  Widget _historyImageFallback() {
+    return Container(
+      width: 46,
+      height: 46,
+      decoration: BoxDecoration(
+        color: _success.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: const Icon(Icons.receipt_rounded, color: _success, size: 22),
     );
   }
 }

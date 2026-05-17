@@ -197,6 +197,24 @@ class _ProductsPageState extends State<ProductsPage>
     return _success;
   }
 
+  Color _stockBadgeBg(int stock) {
+    if (stock == 0) return const Color(0xFFFEE2E2);
+    if (stock <= 10) return const Color(0xFFFEF3C7);
+    return const Color(0xFFDCFCE7);
+  }
+
+  Color _stockBadgeFg(int stock) {
+    if (stock == 0) return const Color(0xFFDC2626);
+    if (stock <= 10) return const Color(0xFFB45309);
+    return const Color(0xFF16A34A);
+  }
+
+  String _stockLabel(int stock) {
+    if (stock == 0) return 'Out of stock';
+    if (stock <= 10) return '$stock left';
+    return '$stock in stock';
+  }
+
   Widget _buildImage(String? path) {
     if (path == null || path.trim().isEmpty) {
       return _imgPlaceholder(double.infinity);
@@ -516,6 +534,8 @@ class _ProductsPageState extends State<ProductsPage>
     final imagePath = p['image_url'] as String?;
 
     final stockColor = _stockColor(stock);
+    final stockBadgeBg = _stockBadgeBg(stock);
+    final stockBadgeFg = _stockBadgeFg(stock);
 
     return GestureDetector(
       onTap: () async {
@@ -540,16 +560,59 @@ class _ProductsPageState extends State<ProductsPage>
           crossAxisAlignment: CrossAxisAlignment.start,
 
           children: [
-            Container(
-              height: 126,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: _primary.withValues(alpha: _isDark ? 0.12 : 0.04),
-                border: Border(
-                  bottom: BorderSide(color: _lineColor, width: 0.5),
+            Stack(
+              children: [
+                Container(
+                  height: 126,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: _primary.withValues(alpha: _isDark ? 0.12 : 0.04),
+                    border: Border(
+                      bottom: BorderSide(color: _lineColor, width: 0.5),
+                    ),
+                  ),
+                  child: _buildImage(imagePath),
                 ),
-              ),
-              child: _buildImage(imagePath),
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: stockBadgeBg,
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(
+                        color: stockBadgeFg.withValues(alpha: 0.16),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: stockColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          _stockLabel(stock),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: stockBadgeFg,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
 
             Expanded(
@@ -590,54 +653,21 @@ class _ProductsPageState extends State<ProductsPage>
 
                     const Spacer(),
 
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-
-                          decoration: BoxDecoration(
-                            color: stockColor.withValues(alpha: 0.12),
-
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-
-                          child: Text(
-                            '$stock pcs',
-
-                            style: TextStyle(
-                              fontSize: 11,
-
-                              fontWeight: FontWeight.w600,
-
-                              color: stockColor,
-                            ),
-                          ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Container(
+                        width: 34,
+                        height: 34,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF667EEA),
+                          shape: BoxShape.circle,
                         ),
-
-                        Container(
-                          width: 34,
-                          height: 34,
-
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF667EEA),
-
-                            shape: BoxShape.circle,
-                          ),
-
-                          child: const Icon(
-                            Icons.edit_rounded,
-
-                            color: Colors.white,
-
-                            size: 18,
-                          ),
+                        child: const Icon(
+                          Icons.edit_rounded,
+                          color: Colors.white,
+                          size: 18,
                         ),
-                      ],
+                      ),
                     ),
                   ],
                 ),

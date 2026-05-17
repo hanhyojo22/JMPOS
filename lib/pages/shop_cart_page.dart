@@ -31,6 +31,8 @@ class CartPage extends StatefulWidget {
   final Future<void> Function() onCompleteSale;
   final bool showAppBar;
   final VoidCallback? onBrowseProducts;
+  final String? initialMessage;
+  final bool initialMessageSuccess;
 
   const CartPage({
     super.key,
@@ -41,6 +43,8 @@ class CartPage extends StatefulWidget {
     required this.onCompleteSale,
     this.showAppBar = true,
     this.onBrowseProducts,
+    this.initialMessage,
+    this.initialMessageSuccess = true,
   });
 
   @override
@@ -50,6 +54,19 @@ class CartPage extends StatefulWidget {
 class _CartPageState extends State<CartPage> {
   final TextEditingController _cashCtrl = TextEditingController();
   bool _completing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final message = widget.initialMessage;
+    if (message != null && message.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showBanner(message, success: widget.initialMessageSuccess);
+      });
+    }
+  }
+
   OverlayEntry? _messageOverlay;
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
@@ -172,6 +189,29 @@ class _CartPageState extends State<CartPage> {
         ],
       ),
     );
+  }
+
+  void _setCartQuantity(int index, int requestedQuantity) {
+    if (index < 0 || index >= _cart.length) return;
+
+    final item = _cart[index];
+    final product = item['product'] as Map<String, dynamic>;
+    final currentQuantity = item['quantity'] as int;
+    final availableStock = (product['stock'] as num?)?.toInt() ?? 0;
+    final maxQuantity = currentQuantity + availableStock;
+    final nextQuantity = requestedQuantity.clamp(1, maxQuantity);
+
+    setState(() {
+      final delta = nextQuantity - currentQuantity;
+      product['stock'] = availableStock - delta;
+      item['quantity'] = nextQuantity;
+    });
+
+    if (requestedQuantity > maxQuantity) {
+      _showBanner('Only $maxQuantity available');
+    } else {
+      _showBanner('Quantity updated', success: true);
+    }
   }
 
   // ── Payment sheet ──────────────────────────────────────────────────────────
@@ -808,15 +848,21 @@ class _CartPageState extends State<CartPage> {
                           },
                         ),
                         SizedBox(
-                          width: 28,
-                          child: Text(
-                            '$qty',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: _primary,
-                            ),
+                          width: 44,
+                          height: 30,
+                          child: _CartQuantityField(
+                            key: ValueKey('cart_qty_${product['id']}_$qty'),
+                            quantity: qty,
+                            onSubmit: (value, reset) {
+                              final parsed = int.tryParse(value.trim());
+                              if (parsed == null || parsed <= 0) {
+                                reset();
+                                _showBanner('Enter a valid quantity');
+                                return;
+                              }
+                              HapticFeedback.lightImpact();
+                              _setCartQuantity(i, parsed);
+                            },
                           ),
                         ),
                         _StepBtn(
@@ -1037,6 +1083,76 @@ class _SummaryCard extends StatelessWidget {
 }
 
 // ─── Stepper button ───────────────────────────────────────────────────────────
+class _CartQuantityField extends StatefulWidget {
+  const _CartQuantityField({
+    super.key,
+    required this.quantity,
+    required this.onSubmit,
+  });
+
+  final int quantity;
+  final void Function(String value, VoidCallback reset) onSubmit;
+
+  @override
+  State<_CartQuantityField> createState() => _CartQuantityFieldState();
+}
+
+class _CartQuantityFieldState extends State<_CartQuantityField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: '${widget.quantity}');
+  }
+
+  @override
+  void didUpdateWidget(covariant _CartQuantityField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.quantity != widget.quantity) {
+      _reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _reset() {
+    _controller.text = '${widget.quantity}';
+    _controller.selection = TextSelection.collapsed(
+      offset: _controller.text.length,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: _controller,
+      textAlign: TextAlign.center,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w800,
+        color: _primary,
+      ),
+      decoration: const InputDecoration(
+        isDense: true,
+        border: InputBorder.none,
+        contentPadding: EdgeInsets.symmetric(horizontal: 2, vertical: 7),
+      ),
+      onFieldSubmitted: (value) => widget.onSubmit(value, _reset),
+      onTapOutside: (_) {
+        final parsed = int.tryParse(_controller.text.trim());
+        if (parsed == null || parsed <= 0) _reset();
+      },
+    );
+  }
+}
+
 class _StepBtn extends StatelessWidget {
   const _StepBtn({
     required this.icon,
