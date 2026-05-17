@@ -24,6 +24,18 @@ class _ProductsPageState extends State<ProductsPage>
   static const Color _warning = Color(0xFFF59E0B);
   static const Color _danger = Color(0xFFEF4444);
 
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
+  Color get _panelSurface => _isDark ? const Color(0xFF111827) : Colors.white;
+  Color get _lineColor =>
+      _isDark ? const Color(0xFF253047) : Colors.grey.shade200;
+  Color get _primaryText => _isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+  Color get _secondaryText =>
+      _isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+  Color get _softShadow => _isDark
+      ? Colors.black.withValues(alpha: 0.22)
+      : Colors.black.withValues(alpha: 0.04);
+
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   List<Map<String, dynamic>> _allProducts = [];
@@ -251,7 +263,7 @@ class _ProductsPageState extends State<ProductsPage>
     final products = _filteredProducts;
 
     return Scaffold(
-      backgroundColor: _surface,
+      backgroundColor: _pageSurface,
       body: SafeArea(
         child: FadeTransition(
           opacity: _headerFade,
@@ -292,11 +304,11 @@ class _ProductsPageState extends State<ProductsPage>
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _panelSurface,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
+              color: _softShadow,
               blurRadius: 12,
               offset: const Offset(0, 3),
             ),
@@ -305,23 +317,23 @@ class _ProductsPageState extends State<ProductsPage>
         child: TextField(
           controller: _searchController,
           onChanged: (v) => setState(() => _searchQuery = v),
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 15,
-            color: _textPrimary,
+            color: _primaryText,
             fontWeight: FontWeight.w500,
           ),
           decoration: InputDecoration(
             hintText: 'Search by name or category...',
             hintStyle: TextStyle(
               fontSize: 14,
-              color: _textSecondary.withValues(alpha: 0.55),
+              color: _secondaryText.withValues(alpha: 0.7),
               fontWeight: FontWeight.w400,
             ),
             prefixIcon: Padding(
               padding: const EdgeInsets.only(left: 14, right: 10),
               child: Icon(
                 Icons.search_rounded,
-                color: _textSecondary.withValues(alpha: 0.5),
+                color: _secondaryText.withValues(alpha: 0.75),
                 size: 22,
               ),
             ),
@@ -346,15 +358,15 @@ class _ProductsPageState extends State<ProductsPage>
                       margin: const EdgeInsets.all(10),
 
                       decoration: BoxDecoration(
-                        color: _textSecondary.withValues(alpha: 0.1),
+                        color: _secondaryText.withValues(alpha: 0.12),
 
                         shape: BoxShape.circle,
                       ),
 
-                      child: const Icon(
+                      child: Icon(
                         Icons.close_rounded,
                         size: 16,
-                        color: _textSecondary,
+                        color: _secondaryText,
                       ),
                     ),
                   ),
@@ -362,7 +374,7 @@ class _ProductsPageState extends State<ProductsPage>
                   width: 1,
                   height: 24,
                   margin: const EdgeInsets.only(right: 4),
-                  color: _textSecondary.withValues(alpha: 0.14),
+                  color: _secondaryText.withValues(alpha: 0.18),
                 ),
                 Tooltip(
                   message: 'Sort products',
@@ -380,7 +392,7 @@ class _ProductsPageState extends State<ProductsPage>
                       ),
                       child: Icon(
                         Icons.tune_rounded,
-                        color: _sortBy != 'Default' ? _primary : _textSecondary,
+                        color: _sortBy != 'Default' ? _primary : _secondaryText,
                         size: 21,
                       ),
                     ),
@@ -419,7 +431,7 @@ class _ProductsPageState extends State<ProductsPage>
               duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               decoration: BoxDecoration(
-                color: selected ? _primary : Colors.white,
+                color: selected ? _primary : _panelSurface,
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: selected
                     ? [
@@ -431,7 +443,7 @@ class _ProductsPageState extends State<ProductsPage>
                       ]
                     : [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
+                          color: _softShadow,
                           blurRadius: 6,
                           offset: const Offset(0, 2),
                         ),
@@ -442,7 +454,7 @@ class _ProductsPageState extends State<ProductsPage>
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: selected ? Colors.white : _textSecondary,
+                  color: selected ? Colors.white : _secondaryText,
                 ),
               ),
             ),
@@ -518,7 +530,7 @@ class _ProductsPageState extends State<ProductsPage>
 
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _panelSurface,
 
           borderRadius: BorderRadius.circular(18),
         ),
@@ -532,9 +544,9 @@ class _ProductsPageState extends State<ProductsPage>
               height: 126,
               width: double.infinity,
               decoration: BoxDecoration(
-                color: _primary.withValues(alpha: 0.04),
+                color: _primary.withValues(alpha: _isDark ? 0.12 : 0.04),
                 border: Border(
-                  bottom: BorderSide(color: Colors.grey.shade200, width: 0.5),
+                  bottom: BorderSide(color: _lineColor, width: 0.5),
                 ),
               ),
               child: _buildImage(imagePath),
@@ -555,9 +567,9 @@ class _ProductsPageState extends State<ProductsPage>
 
                       overflow: TextOverflow.ellipsis,
 
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w600,
-
+                        color: _primaryText,
                         fontSize: 14,
                       ),
                     ),
@@ -659,9 +671,9 @@ class _ProductsPageState extends State<ProductsPage>
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'Loading products...',
-            style: TextStyle(fontSize: 14, color: _textSecondary),
+            style: TextStyle(fontSize: 14, color: _secondaryText),
           ),
         ],
       ),
@@ -689,19 +701,19 @@ class _ProductsPageState extends State<ProductsPage>
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Failed to load',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: _textPrimary,
+                color: _primaryText,
               ),
             ),
             const SizedBox(height: 6),
             Text(
               _error ?? '',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13, color: _textSecondary),
+              style: TextStyle(fontSize: 13, color: _secondaryText),
             ),
             const SizedBox(height: 24),
             GestureDetector(
@@ -762,10 +774,10 @@ class _ProductsPageState extends State<ProductsPage>
           const SizedBox(height: 16),
           Text(
             _searchQuery.isNotEmpty ? 'No results found' : 'No products yet',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
-              color: _textPrimary,
+              color: _primaryText,
             ),
           ),
           const SizedBox(height: 6),
@@ -773,7 +785,7 @@ class _ProductsPageState extends State<ProductsPage>
             _searchQuery.isNotEmpty
                 ? 'Try a different search term'
                 : 'Add your first product to get started',
-            style: const TextStyle(fontSize: 13, color: _textSecondary),
+            style: TextStyle(fontSize: 13, color: _secondaryText),
           ),
         ],
       ),
@@ -845,14 +857,21 @@ class _SortSheetState extends State<_SortSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panel = isDark ? const Color(0xFF111827) : Colors.white;
+    final muted = isDark ? const Color(0xFF1E293B) : Colors.grey[50]!;
+    final line = isDark ? const Color(0xFF253047) : Colors.grey[200]!;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.sizeOf(context).height * 0.88,
       ),
       child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        decoration: BoxDecoration(
+          color: panel,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
           top: false,
@@ -866,19 +885,19 @@ class _SortSheetState extends State<_SortSheet> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey[200],
+                    color: line,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
-              const Align(
+              Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
                   'Sort Products',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
-                    color: _textPrimary,
+                    color: primaryText,
                   ),
                 ),
               ),
@@ -902,10 +921,10 @@ class _SortSheetState extends State<_SortSheet> {
                         decoration: BoxDecoration(
                           color: selected
                               ? _primary.withValues(alpha: 0.06)
-                              : Colors.grey[50],
+                              : muted,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: selected ? _primary : Colors.grey[200]!,
+                            color: selected ? _primary : line,
                             width: selected ? 1.8 : 1,
                           ),
                         ),
@@ -916,12 +935,12 @@ class _SortSheetState extends State<_SortSheet> {
                               decoration: BoxDecoration(
                                 color: selected
                                     ? _primary.withValues(alpha: 0.1)
-                                    : Colors.white,
+                                    : panel,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(
                                 opt['icon'] as IconData,
-                                color: selected ? _primary : _textSecondary,
+                                color: selected ? _primary : secondaryText,
                                 size: 18,
                               ),
                             ),
@@ -935,14 +954,14 @@ class _SortSheetState extends State<_SortSheet> {
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
-                                      color: selected ? _primary : _textPrimary,
+                                      color: selected ? _primary : primaryText,
                                     ),
                                   ),
                                   Text(
                                     opt['sub'] as String,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 11,
-                                      color: _textSecondary,
+                                      color: secondaryText,
                                     ),
                                   ),
                                 ],

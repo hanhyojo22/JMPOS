@@ -21,6 +21,15 @@ class _HistoryPageState extends State<HistoryPage> {
   String searchQuery = '';
   String _selectedSort = 'Newest';
   String selectedFilter = 'All';
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
+  Color get _panelSurface => _isDark ? const Color(0xFF111827) : Colors.white;
+  Color get _primaryText => _isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+  Color get _secondaryText =>
+      _isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+  Color get _softShadow => _isDark
+      ? Colors.black.withValues(alpha: 0.22)
+      : Colors.black.withValues(alpha: 0.04);
   double get historySalesTotal => salesHistory.fold(
     0.0,
     (s, h) => s + ((h['total'] as num?)?.toDouble() ?? 0.0),
@@ -180,7 +189,7 @@ class _HistoryPageState extends State<HistoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _surface,
+      backgroundColor: _pageSurface,
 
       body: SafeArea(
         child: Column(
@@ -190,11 +199,11 @@ class _HistoryPageState extends State<HistoryPage> {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: _panelSurface,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
+                      color: _softShadow,
                       blurRadius: 12,
                       offset: const Offset(0, 3),
                     ),
@@ -207,23 +216,23 @@ class _HistoryPageState extends State<HistoryPage> {
                       searchQuery = v;
                     });
                   },
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
-                    color: _textPrimary,
+                    color: _primaryText,
                     fontWeight: FontWeight.w500,
                   ),
                   decoration: InputDecoration(
                     hintText: 'Search transaction...',
                     hintStyle: TextStyle(
                       fontSize: 14,
-                      color: _textSecondary.withValues(alpha: 0.55),
+                      color: _secondaryText.withValues(alpha: 0.7),
                       fontWeight: FontWeight.w400,
                     ),
                     prefixIcon: Padding(
                       padding: const EdgeInsets.only(left: 14, right: 10),
                       child: Icon(
                         Icons.search_rounded,
-                        color: _textSecondary.withValues(alpha: 0.5),
+                        color: _secondaryText.withValues(alpha: 0.75),
                         size: 22,
                       ),
                     ),
@@ -245,13 +254,13 @@ class _HistoryPageState extends State<HistoryPage> {
                             child: Container(
                               margin: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: _textSecondary.withValues(alpha: 0.1),
+                                color: _secondaryText.withValues(alpha: 0.12),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.close_rounded,
                                 size: 16,
-                                color: _textSecondary,
+                                color: _secondaryText,
                               ),
                             ),
                           ),
@@ -259,7 +268,7 @@ class _HistoryPageState extends State<HistoryPage> {
                           width: 1,
                           height: 24,
                           margin: const EdgeInsets.only(right: 4),
-                          color: _textSecondary.withValues(alpha: 0.14),
+                          color: _secondaryText.withValues(alpha: 0.18),
                         ),
                         Tooltip(
                           message: 'Sort history',
@@ -279,7 +288,7 @@ class _HistoryPageState extends State<HistoryPage> {
                                 Icons.tune_rounded,
                                 color: _selectedSort != 'Newest'
                                     ? _primary
-                                    : _textSecondary,
+                                    : _secondaryText,
                                 size: 21,
                               ),
                             ),
@@ -329,12 +338,12 @@ class _HistoryPageState extends State<HistoryPage> {
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
               child: Row(
                 children: [
-                  const Text(
+                  Text(
                     'Recent Sales',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      color: _textPrimary,
+                      color: _primaryText,
                     ),
                   ),
 
@@ -342,7 +351,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
                   Text(
                     '${filteredHistory.length} records',
-                    style: const TextStyle(fontSize: 13, color: _textSecondary),
+                    style: TextStyle(fontSize: 13, color: _secondaryText),
                   ),
                 ],
               ),
@@ -379,11 +388,11 @@ class _HistoryPageState extends State<HistoryPage> {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _panelSurface,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: _softShadow,
             blurRadius: 10,
             offset: const Offset(0, 3),
           ),
@@ -422,10 +431,10 @@ class _HistoryPageState extends State<HistoryPage> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
 
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: _textPrimary,
+                      color: _primaryText,
                     ),
                   ),
 
@@ -434,7 +443,7 @@ class _HistoryPageState extends State<HistoryPage> {
                   Text(
                     '${sale['date']}  •  ${sale['time']}',
 
-                    style: const TextStyle(fontSize: 12, color: _textSecondary),
+                    style: TextStyle(fontSize: 12, color: _secondaryText),
                   ),
                 ],
               ),
@@ -446,10 +455,10 @@ class _HistoryPageState extends State<HistoryPage> {
                 Text(
                   CurrencyFormatter.format(total),
 
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
-                    color: _textPrimary,
+                    color: _primaryText,
                   ),
                 ),
 
@@ -507,22 +516,22 @@ class _HistoryPageState extends State<HistoryPage> {
 
           const SizedBox(height: 14),
 
-          const Text(
+          Text(
             'No sales yet',
 
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
-              color: _textPrimary,
+              color: _primaryText,
             ),
           ),
 
           const SizedBox(height: 4),
 
-          const Text(
+          Text(
             'Completed sales will appear here',
 
-            style: TextStyle(fontSize: 13, color: _textSecondary),
+            style: TextStyle(fontSize: 13, color: _secondaryText),
           ),
         ],
       ),

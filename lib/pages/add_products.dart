@@ -157,75 +157,93 @@ class _AddProductsPageState extends State<AddProductsPage>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 20),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
+      useSafeArea: true,
+      builder: (sheetContext) {
+        final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
+        final bottomInset = MediaQuery.paddingOf(sheetContext).bottom;
+
+        return SafeArea(
+          top: false,
+          minimum: EdgeInsets.only(bottom: bottomInset + 12),
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF111827) : Colors.white,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(28),
               ),
             ),
-            const Text(
-              'Add Product Image',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 20),
-            Row(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: _ImgSrcBtn(
-                    icon: Icons.photo_library_outlined,
-                    label: 'Gallery',
-                    color: const Color(0xFF667EEA),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _pickImage(source: ImageSource.gallery);
-                    },
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 20),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: _ImgSrcBtn(
-                    icon: Icons.camera_alt_outlined,
-                    label: 'Camera',
-                    color: const Color(0xFF43B89C),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _pickImage(source: ImageSource.camera);
-                    },
+                Text(
+                  'Add Product Image',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? const Color(0xFFF8FAFC) : Colors.black87,
                   ),
                 ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ImgSrcBtn(
+                        icon: Icons.photo_library_outlined,
+                        label: 'Gallery',
+                        color: const Color(0xFF667EEA),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _pickImage(source: ImageSource.gallery);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: _ImgSrcBtn(
+                        icon: Icons.camera_alt_outlined,
+                        label: 'Camera',
+                        color: const Color(0xFF43B89C),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _pickImage(source: ImageSource.camera);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                if (_pickedImage != null) ...[
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() => _pickedImage = null);
+                      Navigator.pop(sheetContext);
+                    },
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    label: const Text(
+                      'Remove photo',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ],
               ],
             ),
-            if (_pickedImage != null) ...[
-              const SizedBox(height: 12),
-              TextButton.icon(
-                onPressed: () {
-                  setState(() => _pickedImage = null);
-                  Navigator.pop(context);
-                },
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                label: const Text(
-                  'Remove photo',
-                  style: TextStyle(color: Colors.red),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -408,19 +426,29 @@ class _AddProductsPageState extends State<AddProductsPage>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pageSurface = isDark
+        ? const Color(0xFF0F172A)
+        : const Color(0xFFF5F6FA);
+    final panelSurface = isDark ? const Color(0xFF111827) : Colors.white;
+    final lineColor = isDark ? const Color(0xFF253047) : Colors.grey[100]!;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : Colors.black;
+    final shadowColor = isDark
+        ? Colors.black.withValues(alpha: 0.22)
+        : Colors.black.withValues(alpha: 0.05);
     final hasPrice =
         _costPriceController.text.isNotEmpty &&
         _sellingPriceController.text.isNotEmpty;
     final stockVal = _stockValue;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
+      backgroundColor: pageSurface,
 
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: panelSurface,
         elevation: 0,
-        foregroundColor: Colors.black,
-        title: const Text(
+        foregroundColor: primaryText,
+        title: Text(
           'Add Product',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
@@ -428,7 +456,10 @@ class _AddProductsPageState extends State<AddProductsPage>
           IconButton(
             onPressed: _resetForm,
             tooltip: 'Reset form',
-            icon: Icon(Icons.refresh_rounded, color: Colors.grey[600]),
+            icon: Icon(
+              Icons.refresh_rounded,
+              color: isDark ? const Color(0xFFCBD5E1) : Colors.grey[600],
+            ),
           ),
         ],
       ),
@@ -445,11 +476,11 @@ class _AddProductsPageState extends State<AddProductsPage>
                 // ── Image + Quick Stats card ──────────────────────────
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: panelSurface,
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
+                        color: shadowColor,
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -462,7 +493,7 @@ class _AddProductsPageState extends State<AddProductsPage>
                         onTap: _showImageSheet,
                         child: _heroImage(),
                       ),
-                      Divider(height: 1, color: Colors.grey[100]),
+                      Divider(height: 1, color: lineColor),
                       Padding(
                         padding: const EdgeInsets.all(12),
                         child: Row(
@@ -539,14 +570,24 @@ class _AddProductsPageState extends State<AddProductsPage>
                           size: 20,
                         ),
                         filled: true,
-                        fillColor: Colors.grey[50],
+                        fillColor: isDark
+                            ? const Color(0xFF1E293B)
+                            : Colors.grey[50],
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey[200]!),
+                          borderSide: BorderSide(
+                            color: isDark
+                                ? const Color(0xFF334155)
+                                : Colors.grey[200]!,
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey[200]!),
+                          borderSide: BorderSide(
+                            color: isDark
+                                ? const Color(0xFF334155)
+                                : Colors.grey[200]!,
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -749,13 +790,21 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panelSurface = isDark ? const Color(0xFF111827) : Colors.white;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : Colors.black87;
+    final lineColor = isDark ? const Color(0xFF253047) : Colors.grey[100]!;
+    final shadowColor = isDark
+        ? Colors.black.withValues(alpha: 0.22)
+        : Colors.black.withValues(alpha: 0.05);
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: panelSurface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: shadowColor,
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -779,15 +828,16 @@ class _SectionCard extends StatelessWidget {
                 const SizedBox(width: 10),
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
+                    color: primaryText,
                   ),
                 ),
               ],
             ),
           ),
-          Divider(height: 1, color: Colors.grey[100]),
+          Divider(height: 1, color: lineColor),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -939,8 +989,14 @@ class _TF extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fill = isDark ? const Color(0xFF1E293B) : Colors.grey[50]!;
+    final line = isDark ? const Color(0xFF334155) : Colors.grey[200]!;
+    final iconFallback = isDark ? const Color(0xFF94A3B8) : Colors.grey[500]!;
+
     return TextFormField(
       controller: controller,
+      style: TextStyle(color: isDark ? const Color(0xFFF8FAFC) : null),
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
       validator: validator,
@@ -949,7 +1005,7 @@ class _TF extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        prefixIcon: Icon(icon, color: iconColor ?? Colors.grey[500], size: 20),
+        prefixIcon: Icon(icon, color: iconColor ?? iconFallback, size: 20),
         prefixText: prefix != null ? '$prefix ' : null,
         prefixStyle: const TextStyle(
           fontSize: 15,
@@ -957,14 +1013,14 @@ class _TF extends StatelessWidget {
           color: Color(0xFF667EEA),
         ),
         filled: true,
-        fillColor: Colors.grey[50],
+        fillColor: fill,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey[200]!),
+          borderSide: BorderSide(color: line),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey[200]!),
+          borderSide: BorderSide(color: line),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),

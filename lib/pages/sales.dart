@@ -66,6 +66,18 @@ class _SalesPageState extends State<SalesPage> {
   static const Color _success = Color(0xFF10B981);
   static const Color _danger = Color(0xFFEF4444);
 
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
+  Color get _panelSurface => _isDark ? const Color(0xFF111827) : Colors.white;
+  Color get _mutedSurface => _isDark ? const Color(0xFF1E293B) : _cardSurface;
+  Color get _lineColor => _isDark ? const Color(0xFF253047) : _border;
+  Color get _primaryText => _isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+  Color get _secondaryText =>
+      _isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+  Color get _softShadow => _isDark
+      ? Colors.black.withValues(alpha: 0.22)
+      : Colors.black.withValues(alpha: 0.04);
+
   final TextEditingController _searchController = TextEditingController();
 
   String _searchQuery = '';
@@ -394,7 +406,7 @@ class _SalesPageState extends State<SalesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _surface,
+      backgroundColor: _pageSurface,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
 
       body: SafeArea(
@@ -416,11 +428,11 @@ class _SalesPageState extends State<SalesPage> {
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _panelSurface,
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
+                  color: _softShadow,
                   blurRadius: 12,
                   offset: const Offset(0, 3),
                 ),
@@ -429,23 +441,23 @@ class _SalesPageState extends State<SalesPage> {
             child: TextField(
               controller: _searchController,
               onChanged: (v) => setState(() => _searchQuery = v),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
-                color: _textPrimary,
+                color: _primaryText,
                 fontWeight: FontWeight.w500,
               ),
               decoration: InputDecoration(
                 hintText: 'Search products...',
                 hintStyle: TextStyle(
                   fontSize: 14,
-                  color: _textSecondary.withValues(alpha: 0.55),
+                  color: _secondaryText.withValues(alpha: 0.7),
                   fontWeight: FontWeight.w400,
                 ),
                 prefixIcon: Padding(
                   padding: const EdgeInsets.only(left: 14, right: 10),
                   child: Icon(
                     Icons.search_rounded,
-                    color: _textSecondary.withValues(alpha: 0.5),
+                    color: _secondaryText.withValues(alpha: 0.75),
                     size: 22,
                   ),
                 ),
@@ -465,13 +477,13 @@ class _SalesPageState extends State<SalesPage> {
                         child: Container(
                           margin: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: _textSecondary.withValues(alpha: 0.1),
+                            color: _secondaryText.withValues(alpha: 0.12),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.close_rounded,
                             size: 16,
-                            color: _textSecondary,
+                            color: _secondaryText,
                           ),
                         ),
                       ),
@@ -479,7 +491,7 @@ class _SalesPageState extends State<SalesPage> {
                       width: 1,
                       height: 24,
                       margin: const EdgeInsets.only(right: 4),
-                      color: _textSecondary.withValues(alpha: 0.14),
+                      color: _secondaryText.withValues(alpha: 0.18),
                     ),
                     Tooltip(
                       message: 'Sort products',
@@ -499,7 +511,7 @@ class _SalesPageState extends State<SalesPage> {
                             Icons.tune_rounded,
                             color: _selectedSort != 'Default'
                                 ? _primary
-                                : _textSecondary,
+                                : _secondaryText,
                             size: 21,
                           ),
                         ),
@@ -542,7 +554,7 @@ class _SalesPageState extends State<SalesPage> {
                     vertical: 5,
                   ),
                   decoration: BoxDecoration(
-                    color: active ? _primary : Colors.white,
+                    color: active ? _primary : _panelSurface,
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: active
                         ? [
@@ -552,19 +564,14 @@ class _SalesPageState extends State<SalesPage> {
                               offset: const Offset(0, 3),
                             ),
                           ]
-                        : [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 6,
-                            ),
-                          ],
+                        : [BoxShadow(color: _softShadow, blurRadius: 6)],
                   ),
                   child: Text(
                     cat,
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: active ? Colors.white : _textSecondary,
+                      color: active ? Colors.white : _secondaryText,
                     ),
                   ),
                 ),
@@ -611,17 +618,15 @@ class _SalesPageState extends State<SalesPage> {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _panelSurface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: qty > 0 ? _primary.withValues(alpha: 0.28) : _border,
+          color: qty > 0 ? _primary.withValues(alpha: 0.28) : _lineColor,
           width: qty > 0 ? 1 : 0.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: qty > 0
-                ? _primary.withValues(alpha: 0.12)
-                : Colors.black.withValues(alpha: 0.04),
+            color: qty > 0 ? _primary.withValues(alpha: 0.12) : _softShadow,
             blurRadius: qty > 0 ? 16 : 10,
             offset: const Offset(0, 6),
           ),
@@ -637,9 +642,9 @@ class _SalesPageState extends State<SalesPage> {
                 height: 126,
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: _primary.withValues(alpha: 0.04),
-                  border: const Border(
-                    bottom: BorderSide(color: _border, width: 0.5),
+                  color: _primary.withValues(alpha: _isDark ? 0.12 : 0.04),
+                  border: Border(
+                    bottom: BorderSide(color: _lineColor, width: 0.5),
                   ),
                 ),
                 child: SizedBox.expand(
@@ -703,10 +708,10 @@ class _SalesPageState extends State<SalesPage> {
                     product['title'] as String,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: _textPrimary,
+                      color: _primaryText,
                       height: 1.3,
                     ),
                   ),
@@ -723,10 +728,10 @@ class _SalesPageState extends State<SalesPage> {
                               CurrencyFormatter.format(price),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w900,
-                                color: _textPrimary,
+                                color: _primaryText,
                                 letterSpacing: -0.3,
                               ),
                             ),
@@ -738,7 +743,7 @@ class _SalesPageState extends State<SalesPage> {
                         stock: stock,
                         quantity: qty,
                         primary: _primary,
-                        surface: _cardSurface,
+                        surface: _mutedSurface,
                         onAdd: () {
                           HapticFeedback.lightImpact();
                           _addToCart(product);
@@ -787,10 +792,10 @@ class _SalesPageState extends State<SalesPage> {
             _searchQuery.isNotEmpty
                 ? 'No products found'
                 : 'No products available',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
-              color: _textPrimary,
+              color: _primaryText,
             ),
           ),
           const SizedBox(height: 6),
@@ -798,7 +803,7 @@ class _SalesPageState extends State<SalesPage> {
             _searchQuery.isNotEmpty
                 ? 'Try another keyword'
                 : 'Add products from inventory',
-            style: const TextStyle(fontSize: 13, color: _textSecondary),
+            style: TextStyle(fontSize: 13, color: _secondaryText),
           ),
         ],
       ),
@@ -982,14 +987,21 @@ class _SortSheetState extends State<_SortSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panel = isDark ? const Color(0xFF111827) : Colors.white;
+    final muted = isDark ? const Color(0xFF1E293B) : Colors.grey[50]!;
+    final line = isDark ? const Color(0xFF253047) : Colors.grey[200]!;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.sizeOf(context).height * 0.88,
       ),
       child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        decoration: BoxDecoration(
+          color: panel,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
           top: false,
@@ -1003,19 +1015,19 @@ class _SortSheetState extends State<_SortSheet> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey[200],
+                    color: line,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
-              const Align(
+              Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
                   'Sort Products',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
-                    color: _textPrimary,
+                    color: primaryText,
                     letterSpacing: -0.4,
                   ),
                 ),
@@ -1040,10 +1052,10 @@ class _SortSheetState extends State<_SortSheet> {
                         decoration: BoxDecoration(
                           color: selected
                               ? _primary.withValues(alpha: 0.06)
-                              : Colors.grey[50],
+                              : muted,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: selected ? _primary : Colors.grey[200]!,
+                            color: selected ? _primary : line,
                             width: selected ? 1.8 : 1,
                           ),
                         ),
@@ -1054,12 +1066,12 @@ class _SortSheetState extends State<_SortSheet> {
                               decoration: BoxDecoration(
                                 color: selected
                                     ? _primary.withValues(alpha: 0.1)
-                                    : Colors.white,
+                                    : panel,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(
                                 opt['icon'] as IconData,
-                                color: selected ? _primary : _textSecondary,
+                                color: selected ? _primary : secondaryText,
                                 size: 18,
                               ),
                             ),
@@ -1073,14 +1085,14 @@ class _SortSheetState extends State<_SortSheet> {
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
-                                      color: selected ? _primary : _textPrimary,
+                                      color: selected ? _primary : primaryText,
                                     ),
                                   ),
                                   Text(
                                     opt['sub'] as String,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 11,
-                                      color: _textSecondary,
+                                      color: secondaryText,
                                     ),
                                   ),
                                 ],

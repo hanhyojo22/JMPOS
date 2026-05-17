@@ -132,8 +132,12 @@ class _AccountPageState extends State<AccountPage>
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
+      backgroundColor: isDark
+          ? const Color(0xFF0F172A)
+          : const Color(0xFFF5F6FA),
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
@@ -418,6 +422,13 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panel = isDark ? const Color(0xFF111827) : Colors.white;
+    final titleColor = isDark ? const Color(0xFF94A3B8) : Colors.grey[500]!;
+    final shadow = isDark
+        ? Colors.black.withValues(alpha: 0.22)
+        : Colors.black.withValues(alpha: 0.05);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -428,18 +439,18 @@ class _SectionCard extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
-              color: Colors.grey[500],
+              color: titleColor,
               letterSpacing: 1.2,
             ),
           ),
         ),
         Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: panel,
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
+                color: shadow,
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
@@ -466,6 +477,11 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : Colors.black87;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : Colors.grey[500]!;
+    final divider = isDark ? const Color(0xFF253047) : Colors.grey[100]!;
+
     return Column(
       children: [
         Padding(
@@ -488,14 +504,15 @@ class _InfoRow extends StatelessWidget {
                   children: [
                     Text(
                       label,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                      style: TextStyle(fontSize: 12, color: secondaryText),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       value,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
+                        color: primaryText,
                       ),
                     ),
                   ],
@@ -505,12 +522,7 @@ class _InfoRow extends StatelessWidget {
           ),
         ),
         if (!isLast)
-          Divider(
-            height: 1,
-            indent: 68,
-            endIndent: 16,
-            color: Colors.grey[100],
-          ),
+          Divider(height: 1, indent: 68, endIndent: 16, color: divider),
       ],
     );
   }
@@ -538,6 +550,12 @@ class _ActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : Colors.black87;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : Colors.grey[500]!;
+    final tertiaryText = isDark ? const Color(0xFF94A3B8) : Colors.grey[400]!;
+    final divider = isDark ? const Color(0xFF253047) : Colors.grey[100]!;
+
     return Column(
       children: [
         InkWell(
@@ -565,32 +583,28 @@ class _ActionRow extends StatelessWidget {
                     children: [
                       Text(
                         label,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
+                          color: primaryText,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
-                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                        style: TextStyle(fontSize: 12, color: secondaryText),
                       ),
                     ],
                   ),
                 ),
                 trailing ??
-                    Icon(Icons.chevron_right_rounded, color: Colors.grey[400]),
+                    Icon(Icons.chevron_right_rounded, color: tertiaryText),
               ],
             ),
           ),
         ),
         if (!isLast)
-          Divider(
-            height: 1,
-            indent: 68,
-            endIndent: 16,
-            color: Colors.grey[100],
-          ),
+          Divider(height: 1, indent: 68, endIndent: 16, color: divider),
       ],
     );
   }

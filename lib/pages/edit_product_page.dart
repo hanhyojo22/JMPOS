@@ -368,9 +368,10 @@ class _EditProductPageState extends State<EditProductPage> {
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: _surface,
+      backgroundColor: isDark ? const Color(0xFF0F172A) : _surface,
       body: SafeArea(
         child: Stack(
           children: [

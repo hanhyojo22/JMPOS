@@ -50,6 +50,16 @@ class _CartPageState extends State<CartPage> {
   final TextEditingController _cashCtrl = TextEditingController();
   bool _completing = false;
 
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
+  Color get _panelSurface => _isDark ? const Color(0xFF111827) : _cardBg;
+  Color get _mutedSurface => _isDark ? const Color(0xFF1E293B) : _surface;
+  Color get _lineColor => _isDark ? const Color(0xFF253047) : _border;
+  Color get _primaryText => _isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+  Color get _secondaryText =>
+      _isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+  Color get _tertiaryText => _isDark ? const Color(0xFF94A3B8) : _textTertiary;
+
   // ── Computed ───────────────────────────────────────────────────────────────
   List<Map<String, dynamic>> get _cart => widget.cart;
 
@@ -161,9 +171,11 @@ class _CartPageState extends State<CartPage> {
           return Padding(
             padding: EdgeInsets.only(bottom: keyboardInset),
             child: Container(
-              decoration: const BoxDecoration(
-                color: _cardBg,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              decoration: BoxDecoration(
+                color: _panelSurface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
               ),
               padding: EdgeInsets.fromLTRB(16, 0, 16, systemNavInset + 24),
               child: Column(
@@ -177,7 +189,7 @@ class _CartPageState extends State<CartPage> {
                       width: 36,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.grey[200],
+                        color: _lineColor,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -204,19 +216,19 @@ class _CartPageState extends State<CartPage> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
+                          Text(
                             'Cash payment',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
-                              color: _textPrimary,
+                              color: _primaryText,
                             ),
                           ),
                           Text(
                             'Amount due: ${CurrencyFormatter.format(_total)}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: _textSecondary,
+                              color: _secondaryText,
                             ),
                           ),
                         ],
@@ -309,10 +321,10 @@ class _CartPageState extends State<CartPage> {
                                 RegExp(r'^\d*\.?\d{0,2}'),
                               ),
                             ],
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.w700,
-                              color: _textPrimary,
+                              color: _primaryText,
                             ),
                             decoration: const InputDecoration(
                               hintText: '0.00',
@@ -504,7 +516,7 @@ class _CartPageState extends State<CartPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _surface,
+      backgroundColor: _pageSurface,
       appBar: widget.showAppBar ? _buildAppBar() : null,
       body: _cart.isEmpty ? _buildEmpty() : _buildCartBody(),
       bottomNavigationBar: _cart.isEmpty ? null : _buildBottomBar(),
@@ -514,7 +526,7 @@ class _CartPageState extends State<CartPage> {
   // ── App bar ────────────────────────────────────────────────────────────────
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: _cardBg,
+      backgroundColor: _panelSurface,
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
@@ -523,34 +535,34 @@ class _CartPageState extends State<CartPage> {
         child: Container(
           margin: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: _surface,
+            color: _mutedSurface,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: _border, width: 0.5),
+            border: Border.all(color: _lineColor, width: 0.5),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.arrow_back_ios_new_rounded,
             size: 16,
-            color: _textPrimary,
+            color: _primaryText,
           ),
         ),
       ),
       title: Column(
         children: [
-          const Text(
+          Text(
             'Shopping cart',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
-              color: _textPrimary,
+              color: _primaryText,
               letterSpacing: -0.3,
             ),
           ),
           if (_cart.isNotEmpty)
             Text(
               '${_cart.length} item${_cart.length != 1 ? 's' : ''}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
-                color: _textSecondary,
+                color: _secondaryText,
                 fontWeight: FontWeight.w400,
               ),
             ),
@@ -579,9 +591,9 @@ class _CartPageState extends State<CartPage> {
             ),
           ),
       ],
-      bottom: const PreferredSize(
+      bottom: PreferredSize(
         preferredSize: Size.fromHeight(0.5),
-        child: Divider(height: 0.5, thickness: 0.5, color: _border),
+        child: Divider(height: 0.5, thickness: 0.5, color: _lineColor),
       ),
     );
   }
@@ -642,9 +654,9 @@ class _CartPageState extends State<CartPage> {
 
     return Container(
       decoration: BoxDecoration(
-        color: _cardBg,
+        color: _panelSurface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _border, width: 0.5),
+        border: Border.all(color: _lineColor, width: 0.5),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -661,10 +673,10 @@ class _CartPageState extends State<CartPage> {
                     children: [
                       Text(
                         name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: _textPrimary,
+                          color: _primaryText,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -673,19 +685,16 @@ class _CartPageState extends State<CartPage> {
                         const SizedBox(height: 1),
                         Text(
                           cat,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: _textTertiary,
-                          ),
+                          style: TextStyle(fontSize: 10, color: _tertiaryText),
                         ),
                       ],
                       const SizedBox(height: 4),
                       Text(
                         CurrencyFormatter.format(price),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          color: _textPrimary,
+                          color: _primaryText,
                         ),
                       ),
                     ],
@@ -721,18 +730,18 @@ class _CartPageState extends State<CartPage> {
             Container(
               padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
               decoration: BoxDecoration(
-                color: _surface,
+                color: _mutedSurface,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: _border, width: 0.5),
+                border: Border.all(color: _lineColor, width: 0.5),
               ),
               child: Row(
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Subtotal',
-                        style: TextStyle(fontSize: 10, color: _textTertiary),
+                        style: TextStyle(fontSize: 10, color: _tertiaryText),
                       ),
                       Text(
                         CurrencyFormatter.format(subtotal),
@@ -749,9 +758,9 @@ class _CartPageState extends State<CartPage> {
                   Container(
                     padding: const EdgeInsets.all(3),
                     decoration: BoxDecoration(
-                      color: _cardBg,
+                      color: _panelSurface,
                       borderRadius: BorderRadius.circular(99),
-                      border: Border.all(color: _border, width: 0.5),
+                      border: Border.all(color: _lineColor, width: 0.5),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -816,18 +825,18 @@ class _CartPageState extends State<CartPage> {
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'Cart is empty',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
-              color: _textPrimary,
+              color: _primaryText,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Add products to get started',
-            style: TextStyle(fontSize: 13, color: _textSecondary),
+            style: TextStyle(fontSize: 13, color: _secondaryText),
           ),
           const SizedBox(height: 20),
           GestureDetector(
@@ -860,9 +869,9 @@ class _CartPageState extends State<CartPage> {
       minimum: const EdgeInsets.only(bottom: 10),
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
-        decoration: const BoxDecoration(
-          color: _cardBg,
-          border: Border(top: BorderSide(color: _border, width: 0.5)),
+        decoration: BoxDecoration(
+          color: _panelSurface,
+          border: Border(top: BorderSide(color: _lineColor, width: 0.5)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -871,16 +880,16 @@ class _CartPageState extends State<CartPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'Total amount',
-                  style: TextStyle(fontSize: 13, color: _textSecondary),
+                  style: TextStyle(fontSize: 13, color: _secondaryText),
                 ),
                 Text(
                   CurrencyFormatter.format(_total),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
-                    color: _textPrimary,
+                    color: _primaryText,
                     letterSpacing: -0.5,
                   ),
                 ),
@@ -951,33 +960,44 @@ class _SummaryCard extends StatelessWidget {
   final Color? valueColor;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xFFEEEEEE), width: 0.5),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 10, color: Color(0xFFAAAAAA)),
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF111827) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF253047) : const Color(0xFFEEEEEE),
+          width: 0.5,
         ),
-        const SizedBox(height: 3),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: valueColor ?? const Color(0xFF1A1F36),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFFAAAAAA),
+            ),
           ),
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
-    ),
-  );
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color:
+                  valueColor ??
+                  (isDark ? const Color(0xFFF8FAFC) : const Color(0xFF1A1F36)),
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ─── Stepper button ───────────────────────────────────────────────────────────
@@ -1004,7 +1024,11 @@ class _StepBtn extends StatelessWidget {
       child: Icon(
         icon,
         size: 14,
-        color: filled ? Colors.white : const Color(0xFF1A1F36),
+        color: filled
+            ? Colors.white
+            : Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFFF8FAFC)
+            : const Color(0xFF1A1F36),
       ),
     ),
   );

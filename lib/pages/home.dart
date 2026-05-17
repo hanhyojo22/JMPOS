@@ -51,6 +51,17 @@ class _HomePageState extends State<HomePage> {
   String? _topMessage;
   bool _topMessageSuccess = false;
 
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _pageSurface =>
+      _isDark ? const Color(0xFF0F172A) : const Color(0xFFF4F5FF);
+  Color get _panelSurface => _isDark ? const Color(0xFF111827) : Colors.white;
+  Color get _primaryText => _isDark ? const Color(0xFFF8FAFC) : Colors.black87;
+  Color get _secondaryText =>
+      _isDark ? const Color(0xFFCBD5E1) : Colors.grey.shade500;
+  Color get _softShadow => _isDark
+      ? Colors.black.withValues(alpha: 0.22)
+      : Colors.black.withValues(alpha: 0.04);
+
   @override
   void initState() {
     super.initState();
@@ -554,237 +565,250 @@ class _HomePageState extends State<HomePage> {
     // ── Home tab ─────────────────────────────────────────────────────────────
     return RefreshIndicator(
       onRefresh: loadRecentTransactions,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Revenue card ──────────────────────────────────────
-            Container(
-              margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.all(24),
-              width: double.infinity,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF667EEA).withValues(alpha: 0.35),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
+      child: ColoredBox(
+        color: _pageSurface,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Revenue card ──────────────────────────────────────
+              Container(
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(24),
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                ],
-              ),
-              child: _loadingHome
-                  ? const SizedBox(
-                      height: 120,
-                      child: Center(
-                        child: CircularProgressIndicator(color: Colors.white),
-                      ),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  "Today's Revenue",
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  Greetings.getTodayDate(),
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.75),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.2),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.trending_up,
-                                color: Colors.white,
-                                size: 26,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        Text(
-                          CurrencyFormatter.format(totalSales),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 36,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _StatPill(
-                                icon: Icons.receipt_long,
-                                label: 'Transactions',
-                                value: '$totalTransactions',
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: _StatPill(
-                                icon: Icons.calculate_outlined,
-                                label: 'Avg. Order',
-                                value: CurrencyFormatter.format(
-                                  totalTransactions == 0
-                                      ? 0
-                                      : totalSales / totalTransactions,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF667EEA).withValues(alpha: 0.35),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
                     ),
-            ),
-
-            // ── Recent Transactions header ────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Recent Transactions',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  TextButton(
-                    onPressed: () => setState(() => _selectedIndex = 3),
-                    child: const Text('View all'),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Transaction list ─────────────────────────────────
-            if (_loadingHome)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (recentTransactions.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(32),
-                child: Center(
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.receipt_long_outlined,
-                        size: 56,
-                        color: Colors.grey[300],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'No transactions today',
-                        style: TextStyle(fontSize: 15, color: Colors.grey[500]),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Completed sales will appear here',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  children: recentTransactions.map((t) {
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
+                child: _loadingHome
+                    ? const SizedBox(
+                        height: 120,
+                        child: Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    "Today's Revenue",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    Greetings.getTodayDate(),
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.75,
+                                      ),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.trending_up,
+                                  color: Colors.white,
+                                  size: 26,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            CurrencyFormatter.format(totalSales),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 36,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _StatPill(
+                                  icon: Icons.receipt_long,
+                                  label: 'Transactions',
+                                  value: '$totalTransactions',
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: _StatPill(
+                                  icon: Icons.calculate_outlined,
+                                  label: 'Avg. Order',
+                                  value: CurrencyFormatter.format(
+                                    totalTransactions == 0
+                                        ? 0
+                                        : totalSales / totalTransactions,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 6,
-                        ),
-                        leading: _buildProductImage(t['imagePath'] as String),
-                        title: Text(
-                          t['title'] as String,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          t['subtitle'] as String,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[500],
-                          ),
-                        ),
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              CurrencyFormatter.format(t['amount'] as double),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: Color(0xFF667EEA),
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'x${t['quantity']}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[400],
-                              ),
-                            ),
-                          ],
-                        ),
+              ),
+
+              // ── Recent Transactions header ────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Recent Transactions',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _primaryText,
                       ),
-                    );
-                  }).toList(),
+                    ),
+                    TextButton(
+                      onPressed: () => setState(() => _selectedIndex = 3),
+                      child: const Text('View all'),
+                    ),
+                  ],
                 ),
               ),
 
-            const SizedBox(height: 24),
-          ],
+              // ── Transaction list ─────────────────────────────────
+              if (_loadingHome)
+                const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (recentTransactions.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.receipt_long_outlined,
+                          size: 56,
+                          color: Colors.grey[300],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No transactions today',
+                          style: TextStyle(fontSize: 15, color: _secondaryText),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Completed sales will appear here',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _secondaryText.withValues(alpha: 0.72),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    children: recentTransactions.map((t) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: _panelSurface,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _softShadow,
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 6,
+                          ),
+                          leading: _buildProductImage(t['imagePath'] as String),
+                          title: Text(
+                            t['title'] as String,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: _primaryText,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            t['subtitle'] as String,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _secondaryText,
+                            ),
+                          ),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                CurrencyFormatter.format(t['amount'] as double),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: Color(0xFF667EEA),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'x${t['quantity']}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _secondaryText.withValues(alpha: 0.7),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+
+              const SizedBox(height: 24),
+            ],
+          ),
         ),
       ),
     );
@@ -801,11 +825,16 @@ class _HomePageState extends State<HomePage> {
     required int index,
   }) {
     final bool active = _selectedIndex == index;
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color inactiveIcon = isDark ? const Color(0xFF94A3B8) : Colors.grey;
+    final Color inactiveText = isDark
+        ? const Color(0xFFE2E8F0)
+        : Colors.black87;
 
     return ListTile(
       leading: Icon(
         icon,
-        color: active ? const Color(0xFF667EEA) : Colors.grey,
+        color: active ? const Color(0xFF667EEA) : inactiveIcon,
       ),
 
       title: Text(
@@ -814,13 +843,14 @@ class _HomePageState extends State<HomePage> {
         style: TextStyle(
           fontWeight: active ? FontWeight.bold : FontWeight.w500,
 
-          color: active ? const Color(0xFF667EEA) : Colors.black87,
+          color: active ? const Color(0xFF667EEA) : inactiveText,
         ),
       ),
 
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
 
       selected: active,
+      selectedTileColor: const Color(0xFF667EEA).withValues(alpha: 0.12),
 
       onTap: () {
         Navigator.pop(context);
@@ -869,6 +899,16 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color drawerSurface = isDark ? const Color(0xFF111827) : Colors.white;
+    final Color drawerText = isDark ? const Color(0xFFE2E8F0) : Colors.black87;
+    final Color drawerIcon = isDark
+        ? const Color(0xFF94A3B8)
+        : Colors.grey.shade700;
+    final Color drawerDivider = isDark
+        ? const Color(0xFF253047)
+        : Colors.grey.shade300;
+
     return Scaffold(
       appBar: AppBar(
         leading: Builder(
@@ -953,6 +993,7 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       drawer: Drawer(
+        backgroundColor: drawerSurface,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.horizontal(right: Radius.circular(24)),
         ),
@@ -979,7 +1020,7 @@ class _HomePageState extends State<HomePage> {
                     radius: 28,
                     backgroundColor: Colors.white,
 
-                    child: Icon(
+                    child: const Icon(
                       Icons.person,
                       color: Color(0xFF667EEA),
                       size: 30,
@@ -1046,18 +1087,24 @@ class _HomePageState extends State<HomePage> {
                       index: 5,
                     ),
 
-                  const Divider(),
+                  Divider(color: drawerDivider),
 
                   ListTile(
-                    leading: const Icon(Icons.person),
-                    title: const Text('Account'),
+                    leading: Icon(Icons.person, color: drawerIcon),
+                    title: Text(
+                      'Account',
+                      style: TextStyle(
+                        color: drawerText,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                     onTap: () {
                       Navigator.pop(context);
                       _openAccount();
                     },
                   ),
 
-                  const Divider(),
+                  Divider(color: drawerDivider),
 
                   ListTile(
                     leading: const Icon(
@@ -1077,12 +1124,21 @@ class _HomePageState extends State<HomePage> {
                       final confirm = await showDialog<bool>(
                         context: context,
                         builder: (_) => AlertDialog(
+                          backgroundColor: drawerSurface,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          title: const Text('Logout'),
-                          content: const Text(
+                          title: Text(
+                            'Logout',
+                            style: TextStyle(color: drawerText),
+                          ),
+                          content: Text(
                             'Are you sure you want to logout?',
+                            style: TextStyle(
+                              color: isDark
+                                  ? const Color(0xFFCBD5E1)
+                                  : Colors.black87,
+                            ),
                           ),
                           actions: [
                             TextButton(
@@ -1147,13 +1203,15 @@ class _HomePageState extends State<HomePage> {
           padding: const EdgeInsets.symmetric(horizontal: 6),
 
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: drawerSurface,
 
             borderRadius: BorderRadius.circular(26),
 
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
+                color: isDark
+                    ? Colors.black.withValues(alpha: 0.28)
+                    : Colors.black.withValues(alpha: 0.08),
 
                 blurRadius: 20,
 
@@ -1389,8 +1447,11 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final Color color = selected
         ? const Color(0xFF667EEA)
+        : isDark
+        ? const Color(0xFFCBD5E1)
         : Colors.grey.shade500;
 
     return GestureDetector(

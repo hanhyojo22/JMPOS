@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'pages/login.dart';
 
@@ -40,13 +40,47 @@ class MyAppState extends State<MyApp> {
       theme: ThemeData(
         brightness: Brightness.light,
         primarySwatch: Colors.indigo,
+        scaffoldBackgroundColor: const Color(0xFFF4F5FF),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.indigo,
+          brightness: Brightness.light,
+        ),
       ),
 
       darkTheme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        cardColor: const Color(0xFF1E1E1E),
-        appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF1E1E1E)),
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
+        cardColor: const Color(0xFF111827),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.indigo,
+          brightness: Brightness.dark,
+          surface: const Color(0xFF111827),
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF111827),
+          foregroundColor: Color(0xFFF8FAFC),
+        ),
+        dialogTheme: const DialogThemeData(
+          backgroundColor: Color(0xFF111827),
+          titleTextStyle: TextStyle(
+            color: Color(0xFFF8FAFC),
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
+          contentTextStyle: TextStyle(color: Color(0xFFCBD5E1)),
+        ),
+        bottomSheetTheme: const BottomSheetThemeData(
+          backgroundColor: Color(0xFF111827),
+          modalBackgroundColor: Color(0xFF111827),
+        ),
+        inputDecorationTheme: const InputDecorationTheme(
+          filled: true,
+          fillColor: Color(0xFF1E293B),
+        ),
+        textTheme: ThemeData.dark().textTheme.apply(
+          bodyColor: Color(0xFFF8FAFC),
+          displayColor: Color(0xFFF8FAFC),
+        ),
       ),
 
       home: const LoginPage(),

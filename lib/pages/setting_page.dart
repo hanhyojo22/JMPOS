@@ -28,12 +28,32 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _darkMode = false;
   bool _barcodeScanner = true;
   bool _keepScreenOn = false;
+  bool _loadedThemeValue = false;
+
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
+  Color get _cardSurface => _isDark ? const Color(0xFF111827) : Colors.white;
+  Color get _dividerColor => _isDark ? const Color(0xFF253047) : _border;
+  Color get _primaryText => _isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+  Color get _secondaryText =>
+      _isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+  Color get _tertiaryText => _isDark ? const Color(0xFF94A3B8) : _textTertiary;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_loadedThemeValue) return;
+    _darkMode =
+        MyApp.of(context)?.isDarkMode ??
+        Theme.of(context).brightness == Brightness.dark;
+    _loadedThemeValue = true;
+  }
 
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _surface,
+      backgroundColor: _pageSurface,
       body: SafeArea(
         child: Column(
           children: [
@@ -142,10 +162,10 @@ class _SettingsPageState extends State<SettingsPage> {
                           children: [
                             _buildBadge('On', _infoBg, _infoText),
                             const SizedBox(width: 4),
-                            const Icon(
+                            Icon(
                               Icons.chevron_right,
                               size: 18,
-                              color: _textTertiary,
+                              color: _tertiaryText,
                             ),
                           ],
                         ),
@@ -171,9 +191,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         iconBg: const Color(0xFFF1EFE8),
                         iconColor: const Color(0xFF5F5E5A),
                         label: 'App version',
-                        trailing: const Text(
+                        trailing: Text(
                           'v1.4.2',
-                          style: TextStyle(fontSize: 13, color: _textSecondary),
+                          style: TextStyle(fontSize: 13, color: _secondaryText),
                         ),
                       ),
                       _SettingsRow(
@@ -181,10 +201,10 @@ class _SettingsPageState extends State<SettingsPage> {
                         iconBg: const Color(0xFFF1EFE8),
                         iconColor: const Color(0xFF5F5E5A),
                         label: 'Privacy policy',
-                        trailing: const Icon(
+                        trailing: Icon(
                           Icons.open_in_new_rounded,
                           size: 16,
-                          color: _textTertiary,
+                          color: _tertiaryText,
                         ),
                         onTap: () {},
                       ),
@@ -219,24 +239,24 @@ class _SettingsPageState extends State<SettingsPage> {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: _cardSurface,
                 shape: BoxShape.circle,
-                border: Border.all(color: _border, width: 0.5),
+                border: Border.all(color: _dividerColor, width: 0.5),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.arrow_back_ios_new_rounded,
                 size: 16,
-                color: _textPrimary,
+                color: _primaryText,
               ),
             ),
           ),
           const SizedBox(width: 12),
-          const Text(
+          Text(
             'Settings',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
-              color: _textPrimary,
+              color: _primaryText,
               letterSpacing: -0.4,
             ),
           ),
@@ -259,10 +279,10 @@ class _SettingsPageState extends State<SettingsPage> {
               padding: const EdgeInsets.only(left: 4, bottom: 8),
               child: Text(
                 label.toUpperCase(),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: _textTertiary,
+                  color: _tertiaryText,
                   letterSpacing: 0.6,
                 ),
               ),
@@ -270,9 +290,9 @@ class _SettingsPageState extends State<SettingsPage> {
           ],
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _cardSurface,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _border, width: 0.5),
+              border: Border.all(color: _dividerColor, width: 0.5),
             ),
             clipBehavior: Clip.antiAlias,
             child: Column(children: children),
@@ -291,6 +311,8 @@ class _SettingsPageState extends State<SettingsPage> {
       onChanged: onChanged,
       activeThumbColor: _primary, // replaces activeColor
       activeTrackColor: _primary.withValues(alpha: 0.5), // optional for track
+      inactiveThumbColor: _isDark ? const Color(0xFFCBD5E1) : null,
+      inactiveTrackColor: _isDark ? const Color(0xFF334155) : null,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
@@ -373,13 +395,21 @@ class _SettingsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasChevron = onTap != null && trailing == null;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+    final tertiaryText = isDark ? const Color(0xFF94A3B8) : _textTertiary;
+    final dividerColor = isDark ? const Color(0xFF253047) : _border;
+    final highlightColor = isDark
+        ? const Color(0xFF1E293B)
+        : const Color(0xFFF4F5FF);
 
     return Column(
       children: [
         InkWell(
           onTap: onTap,
           splashColor: Colors.transparent,
-          highlightColor: const Color(0xFFF4F5FF),
+          highlightColor: highlightColor,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
             child: Row(
@@ -404,19 +434,13 @@ class _SettingsRow extends StatelessWidget {
                     children: [
                       Text(
                         label,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: _textPrimary,
-                        ),
+                        style: TextStyle(fontSize: 14, color: primaryText),
                       ),
                       if (subtitle != null) ...[
                         const SizedBox(height: 2),
                         Text(
                           subtitle!,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: _textSecondary,
-                          ),
+                          style: TextStyle(fontSize: 12, color: secondaryText),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
@@ -430,10 +454,10 @@ class _SettingsRow extends StatelessWidget {
                   trailing!,
                 ] else if (hasChevron) ...[
                   const SizedBox(width: 8),
-                  const Icon(
+                  Icon(
                     Icons.chevron_right_rounded,
                     size: 18,
-                    color: _textTertiary,
+                    color: tertiaryText,
                   ),
                 ],
               ],
@@ -445,7 +469,7 @@ class _SettingsRow extends StatelessWidget {
         if (!isLast)
           Padding(
             padding: const EdgeInsets.only(left: 58),
-            child: Divider(height: 0.5, thickness: 0.5, color: _border),
+            child: Divider(height: 0.5, thickness: 0.5, color: dividerColor),
           ),
       ],
     );

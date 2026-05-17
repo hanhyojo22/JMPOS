@@ -118,8 +118,19 @@ class _ReportsPageState extends State<ReportsPage>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pageSurface = isDark
+        ? const Color(0xFF0F172A)
+        : const Color(0xFFF5F6FA);
+    final panelSurface = isDark ? const Color(0xFF111827) : Colors.white;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : Colors.black87;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : Colors.black54;
+    final shadowColor = isDark
+        ? Colors.black.withValues(alpha: 0.22)
+        : Colors.black.withValues(alpha: 0.05);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
+      backgroundColor: pageSurface,
       body: SafeArea(
         child: Column(
           children: [
@@ -129,7 +140,7 @@ class _ReportsPageState extends State<ReportsPage>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
@@ -137,12 +148,13 @@ class _ReportsPageState extends State<ReportsPage>
                         style: TextStyle(
                           fontSize: 26,
                           fontWeight: FontWeight.bold,
+                          color: primaryText,
                         ),
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Text(
                         'Sales performance overview',
-                        style: TextStyle(fontSize: 13, color: Colors.black54),
+                        style: TextStyle(fontSize: 13, color: secondaryText),
                       ),
                     ],
                   ),
@@ -151,11 +163,11 @@ class _ReportsPageState extends State<ReportsPage>
                     child: Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: panelSurface,
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
+                            color: shadowColor,
                             blurRadius: 8,
                             offset: const Offset(0, 3),
                           ),
@@ -181,11 +193,11 @@ class _ReportsPageState extends State<ReportsPage>
               child: Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: panelSurface,
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
+                      color: shadowColor,
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -202,7 +214,7 @@ class _ReportsPageState extends State<ReportsPage>
                     borderRadius: BorderRadius.circular(14),
                   ),
                   labelColor: Colors.white,
-                  unselectedLabelColor: Colors.black54,
+                  unselectedLabelColor: secondaryText,
                   labelStyle: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
@@ -271,6 +283,9 @@ class _ReportView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool empty = data.revenue == 0 && data.orders == 0;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : Colors.black87;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : Colors.grey[500]!;
 
     if (empty) {
       return Center(
@@ -293,12 +308,16 @@ class _ReportView extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'No sales data for $period',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: primaryText,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
               'Complete a sale to see reports here',
-              style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+              style: TextStyle(fontSize: 13, color: secondaryText),
             ),
           ],
         ),
@@ -405,7 +424,7 @@ class _ReportView extends StatelessWidget {
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(20),
-                decoration: _cardDecoration(),
+                decoration: _cardDecoration(context),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -471,7 +490,7 @@ class _ReportView extends StatelessWidget {
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(20),
-                decoration: _cardDecoration(),
+                decoration: _cardDecoration(context),
                 child: Column(
                   children: data.categoryPct.entries.map((e) {
                     final color = _categoryColor(e.key);
@@ -527,7 +546,7 @@ class _ReportView extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Container(
-                decoration: _cardDecoration(),
+                decoration: _cardDecoration(context),
                 child: Column(
                   children: data.topProducts.asMap().entries.map((e) {
                     final rank = e.key + 1;
@@ -583,9 +602,10 @@ class _ReportView extends StatelessWidget {
                                   children: [
                                     Text(
                                       product.key,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.bold,
+                                        color: primaryText,
                                       ),
                                     ),
                                     const SizedBox(height: 2),
@@ -593,7 +613,7 @@ class _ReportView extends StatelessWidget {
                                       '${product.value} units sold',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.grey[500],
+                                        color: secondaryText,
                                       ),
                                     ),
                                   ],
@@ -633,7 +653,9 @@ class _ReportView extends StatelessWidget {
                             height: 1,
                             indent: 64,
                             endIndent: 16,
-                            color: Colors.grey[100],
+                            color: isDark
+                                ? const Color(0xFF253047)
+                                : Colors.grey[100],
                           ),
                       ],
                     );
@@ -647,17 +669,20 @@ class _ReportView extends StatelessWidget {
     );
   }
 
-  BoxDecoration _cardDecoration() => BoxDecoration(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(20),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withValues(alpha: 0.05),
-        blurRadius: 12,
-        offset: const Offset(0, 4),
-      ),
-    ],
-  );
+  BoxDecoration _cardDecoration(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return BoxDecoration(
+      color: isDark ? const Color(0xFF111827) : Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: isDark ? 0.22 : 0.05),
+          blurRadius: 12,
+          offset: const Offset(0, 4),
+        ),
+      ],
+    );
+  }
 
   Color _categoryColor(String cat) {
     final Map<String, Color> colors = {
