@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/utils/currency.dart';
+import 'package:pos_app/utils/message_banner.dart';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const _primary = Color(0xFF5C6BC0);
@@ -49,7 +50,7 @@ class CartPage extends StatefulWidget {
 class _CartPageState extends State<CartPage> {
   final TextEditingController _cashCtrl = TextEditingController();
   bool _completing = false;
-
+  OverlayEntry? _messageOverlay;
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
   Color get _panelSurface => _isDark ? const Color(0xFF111827) : _cardBg;
@@ -87,6 +88,29 @@ class _CartPageState extends State<CartPage> {
       );
     }
     return _placeholder(size);
+  }
+
+  void _showBanner(String message, {bool success = false}) {
+    _messageOverlay?.remove();
+
+    _messageOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        top: MediaQuery.of(context).padding.top + 14,
+        left: 16,
+        right: 16,
+        child: Material(
+          color: Colors.transparent,
+          child: MessageBanner(message: message, success: success),
+        ),
+      ),
+    );
+
+    Overlay.of(context).insert(_messageOverlay!);
+
+    Future.delayed(const Duration(seconds: 2), () {
+      _messageOverlay?.remove();
+      _messageOverlay = null;
+    });
   }
 
   Widget _placeholder(double size) => Container(
@@ -459,8 +483,16 @@ class _CartPageState extends State<CartPage> {
                               setModal(() {});
                               setState(() => _completing = true);
                               Navigator.pop(ctx);
-                              await widget.onCompleteSale();
-                              if (mounted) setState(() => _completing = false);
+                              try {
+                                await widget.onCompleteSale();
+                              } catch (e) {
+                                if (!mounted) return;
+                                _showBanner('Error: $e', success: false);
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _completing = false);
+                                }
+                              }
                             }
                           : null,
                       style: ElevatedButton.styleFrom(
@@ -490,9 +522,7 @@ class _CartPageState extends State<CartPage> {
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  sufficient
-                                      ? 'Confirm sale · Change ${CurrencyFormatter.format(change)}'
-                                      : 'Confirm sale',
+                                  'Confirm sale',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 14,
@@ -705,6 +735,8 @@ class _CartPageState extends State<CartPage> {
                   onTap: () {
                     HapticFeedback.lightImpact();
                     setState(() => widget.onDelete(i));
+
+                    _showBanner('$name removed from cart');
                   },
                   child: Container(
                     width: 30,
@@ -771,6 +803,8 @@ class _CartPageState extends State<CartPage> {
                           onTap: () {
                             HapticFeedback.lightImpact();
                             setState(() => widget.onRemove(i));
+
+                            _showBanner('Quantity updated');
                           },
                         ),
                         SizedBox(
@@ -791,6 +825,8 @@ class _CartPageState extends State<CartPage> {
                           onTap: () {
                             HapticFeedback.lightImpact();
                             setState(() => widget.onAdd(product));
+
+                            _showBanner('$name added to cart', success: true);
                           },
                         ),
                       ],

@@ -15,6 +15,7 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _invalidCredentials = false;
 
   @override
   void dispose() {
@@ -24,6 +25,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _login() async {
+    setState(() => _invalidCredentials = false);
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
@@ -47,23 +49,14 @@ class _LoginPageState extends State<LoginPage> {
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.error_outline, color: Colors.white),
-              SizedBox(width: 8),
-              Text('Invalid username or password.'),
-            ],
-          ),
-          backgroundColor: Colors.red[700],
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
+      setState(() => _invalidCredentials = true);
+      _formKey.currentState!.validate();
     }
+  }
+
+  void _clearLoginError() {
+    if (!_invalidCredentials) return;
+    setState(() => _invalidCredentials = false);
   }
 
   void _showForgotPasswordDialog() {
@@ -131,6 +124,7 @@ class _LoginPageState extends State<LoginPage> {
                         // Username field
                         TextFormField(
                           controller: _usernameController,
+                          onChanged: (_) => _clearLoginError(),
                           decoration: InputDecoration(
                             labelText: 'Username',
                             hintText: 'Enter your username',
@@ -145,6 +139,9 @@ class _LoginPageState extends State<LoginPage> {
                             if (value == null || value.trim().isEmpty) {
                               return 'Please enter your username';
                             }
+                            if (_invalidCredentials) {
+                              return 'Invalid username or password';
+                            }
                             return null;
                           },
                         ),
@@ -153,6 +150,7 @@ class _LoginPageState extends State<LoginPage> {
                         // Password field
                         TextFormField(
                           controller: _passwordController,
+                          onChanged: (_) => _clearLoginError(),
                           obscureText: _obscurePassword,
                           decoration: InputDecoration(
                             labelText: 'Password',
@@ -180,6 +178,9 @@ class _LoginPageState extends State<LoginPage> {
                             }
                             if (value.length < 6) {
                               return 'Password must be at least 6 characters';
+                            }
+                            if (_invalidCredentials) {
+                              return 'Invalid username or password';
                             }
                             return null;
                           },

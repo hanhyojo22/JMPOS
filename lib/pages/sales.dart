@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
+import 'package:pos_app/utils/message_banner.dart';
 import 'shop_cart_page.dart' as shop_cart;
 
 // ─── Stock helpers ────────────────────────────────────────────────────────────
@@ -88,6 +89,8 @@ class _SalesPageState extends State<SalesPage> {
   late List<Map<String, dynamic>> _cart;
   bool _loadingProducts = true;
   bool _barcodeHandled = false;
+  String? _topMessage;
+  bool _topMessageSuccess = true;
 
   final List<String> _categories = [
     'All',
@@ -167,7 +170,7 @@ class _SalesPageState extends State<SalesPage> {
     _barcodeHandled = true;
     widget.onBarcodeHandled?.call();
     HapticFeedback.mediumImpact();
-    _showSnack('${product['title']} added to cart');
+    _showSnack('${product['title']} added to cart', top: true);
 
     if (widget.openCartDirectly) {
       Future.delayed(const Duration(milliseconds: 250), () {
@@ -192,6 +195,7 @@ class _SalesPageState extends State<SalesPage> {
       }
     });
     _notifyCartChanged();
+    _showSnack('${product['title']} added to cart', top: true);
   }
 
   void _removeFromCart(int index) {
@@ -254,7 +258,10 @@ class _SalesPageState extends State<SalesPage> {
   // ── Computed ───────────────────────────────────────────────────────────────
   List<Map<String, dynamic>> get _filteredProducts {
     List<Map<String, dynamic>> list = List.from(_allProducts);
-    list = list.where((p) => (p['stock'] as int) > 0).toList();
+    list = list.where((p) {
+      final inCart = _cart.any((i) => i['product']['id'] == p['id']);
+      return (p['stock'] as int) > 0 || inCart;
+    }).toList();
 
     if (_selectedCategory != 'All') {
       list = list
@@ -295,10 +302,19 @@ class _SalesPageState extends State<SalesPage> {
   // ── Helpers ────────────────────────────────────────────────────────────────
   void _showSnack(String msg, {bool isError = false, bool top = false}) {
     if (!mounted) return;
+    if (top) {
+      setState(() {
+        _topMessage = msg;
+        _topMessageSuccess = !isError;
+      });
+      Future.delayed(const Duration(seconds: 2), () {
+        if (!mounted || _topMessage != msg) return;
+        setState(() => _topMessage = null);
+      });
+      return;
+    }
+
     final media = MediaQuery.of(context);
-    final bottomMargin = top
-        ? (media.size.height - media.padding.top - 112).clamp(16.0, 1000.0)
-        : 90.0;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -315,9 +331,11 @@ class _SalesPageState extends State<SalesPage> {
         ),
         backgroundColor: isError ? _danger : _success,
         behavior: SnackBarBehavior.floating,
-        margin: top
-            ? EdgeInsets.fromLTRB(16, 16, 16, bottomMargin)
-            : const EdgeInsets.only(left: 60, right: 60, bottom: 90),
+        margin: EdgeInsets.only(
+          left: 60,
+          right: 60,
+          bottom: 90 + media.padding.bottom,
+        ),
         duration: const Duration(seconds: 2),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
@@ -409,8 +427,25 @@ class _SalesPageState extends State<SalesPage> {
       backgroundColor: _pageSurface,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
 
-      body: SafeArea(
-        child: Column(children: [Expanded(child: _buildSaleTab())]),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(children: [Expanded(child: _buildSaleTab())]),
+          ),
+          if (_topMessage != null)
+            Positioned(
+              top: 12,
+              left: 16,
+              right: 16,
+              child: SafeArea(
+                bottom: false,
+                child: MessageBanner(
+                  message: _topMessage!,
+                  success: _topMessageSuccess,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -593,7 +628,7 @@ class _SalesPageState extends State<SalesPage> {
                     crossAxisCount: 2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
-                    childAspectRatio: 0.76,
+                    childAspectRatio: 0.62,
                   ),
                   itemBuilder: (_, i) => _buildProductCard(products[i]),
                 ),
@@ -716,47 +751,40 @@ class _SalesPageState extends State<SalesPage> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              CurrencyFormatter.format(price),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
-                                color: _primaryText,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      _CardAction(
-                        stock: stock,
-                        quantity: qty,
-                        primary: _primary,
-                        surface: _mutedSurface,
-                        onAdd: () {
-                          HapticFeedback.lightImpact();
-                          _addToCart(product);
-                        },
-                        onRemove: () {
-                          HapticFeedback.lightImpact();
-                          final idx = _cart.indexWhere(
-                            (c) => c['product']['id'] == product['id'],
-                          );
-                          if (idx != -1) _removeFromCart(idx);
-                        },
-                      ),
-                    ],
+                  Text(
+                    CurrencyFormatter.format(price),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: _primaryText,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: _CardAction(
+                      stock: stock,
+                      quantity: qty,
+                      primary: _primary,
+                      surface: _mutedSurface,
+                      lineColor: _lineColor,
+                      onAdd: () {
+                        HapticFeedback.lightImpact();
+                        _addToCart(product);
+                      },
+                      onRemove: () {
+                        HapticFeedback.lightImpact();
+                        final idx = _cart.indexWhere(
+                          (c) => c['product']['id'] == product['id'],
+                        );
+                        if (idx != -1) _removeFromCart(idx);
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -818,6 +846,7 @@ class _CardAction extends StatelessWidget {
     required this.quantity,
     required this.primary,
     required this.surface,
+    required this.lineColor,
     required this.onAdd,
     required this.onRemove,
   });
@@ -826,103 +855,160 @@ class _CardAction extends StatelessWidget {
   final int quantity;
   final Color primary;
   final Color surface;
+  final Color lineColor;
   final VoidCallback onAdd;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
+    final canAdd = stock > 0;
+
+    if (quantity > 0) {
+      return AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        height: 40,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: primary.withValues(alpha: 0.18)),
+        ),
+        child: Row(
+          children: [
+            _QuantityButton(
+              icon: Icons.remove_rounded,
+              foreground: primary,
+              background: Colors.white,
+              borderColor: lineColor,
+              onTap: onRemove,
+              tooltip: 'Remove one',
+            ),
+            Expanded(
+              child: Text(
+                '$quantity',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: primary,
+                ),
+              ),
+            ),
+            _QuantityButton(
+              icon: canAdd ? Icons.add_rounded : Icons.check_rounded,
+              foreground: canAdd ? Colors.white : primary,
+              background: canAdd ? primary : primary.withValues(alpha: 0.12),
+              borderColor: Colors.transparent,
+              onTap: canAdd ? onAdd : null,
+              tooltip: canAdd ? 'Add one more' : 'All stock added',
+            ),
+          ],
+        ),
+      );
+    }
+
     // Out of stock
-    if (stock == 0) {
+    if (!canAdd) {
       return Container(
-        width: 38,
-        height: 38,
+        width: double.infinity,
+        height: 40,
         decoration: BoxDecoration(
           color: surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: lineColor),
         ),
-        child: const Icon(
-          Icons.block_rounded,
-          color: Color(0xFFBBBBBB),
-          size: 17,
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.block_rounded, color: Color(0xFFBBBBBB), size: 17),
+            SizedBox(width: 8),
+            Text(
+              'Out of stock',
+              style: TextStyle(
+                color: Color(0xFF8A8A8A),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       );
     }
 
     // Add button
-    if (quantity == 0) {
-      return GestureDetector(
-        onTap: onAdd,
-        child: Container(
-          width: 42,
-          height: 38,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [primary, const Color(0xFF7C4DFF)],
+    return GestureDetector(
+      onTap: onAdd,
+      child: Container(
+        width: double.infinity,
+        height: 40,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [primary, const Color(0xFF7C4DFF)]),
+          borderRadius: BorderRadius.circular(13),
+          boxShadow: [
+            BoxShadow(
+              color: primary.withValues(alpha: 0.28),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
-            borderRadius: BorderRadius.circular(13),
-            boxShadow: [
-              BoxShadow(
-                color: primary.withValues(alpha: 0.28),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+          ],
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.add_shopping_cart_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            SizedBox(width: 8),
+            Text(
+              'Add to Cart',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
               ),
-            ],
-          ),
-          child: const Icon(
-            Icons.add_shopping_cart_rounded,
-            color: Colors.white,
-            size: 18,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuantityButton extends StatelessWidget {
+  const _QuantityButton({
+    required this.icon,
+    required this.foreground,
+    required this.background,
+    required this.borderColor,
+    required this.tooltip,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final Color foreground;
+  final Color background;
+  final Color borderColor;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: background,
+        shape: CircleBorder(side: BorderSide(color: borderColor, width: 0.5)),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 34,
+            height: 34,
+            child: Icon(icon, color: foreground, size: 18),
           ),
         ),
-      );
-    }
-
-    // Stepper
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: primary.withValues(alpha: 0.18)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GestureDetector(
-            onTap: onRemove,
-            child: Container(
-              width: 24,
-              height: 24,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.remove, color: primary, size: 13),
-            ),
-          ),
-          SizedBox(
-            width: 24,
-            child: Text(
-              '$quantity',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: primary,
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: onAdd,
-            child: Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(color: primary, shape: BoxShape.circle),
-              child: const Icon(Icons.add, color: Colors.white, size: 13),
-            ),
-          ),
-        ],
       ),
     );
   }

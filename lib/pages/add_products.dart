@@ -1,5 +1,5 @@
 import 'dart:io';
-
+import 'package:pos_app/utils/message_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -19,7 +19,7 @@ class _AddProductsPageState extends State<AddProductsPage>
     with SingleTickerProviderStateMixin {
   final ImagePicker _picker = ImagePicker();
   XFile? _pickedImage;
-
+  OverlayEntry? _messageOverlay;
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   bool _isSaving = false;
 
@@ -75,6 +75,26 @@ class _AddProductsPageState extends State<AddProductsPage>
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
+  void _showBanner(String message, {bool success = false}) {
+    _messageOverlay?.remove();
+
+    _messageOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        top: MediaQuery.of(context).padding.top + 14,
+        left: 16,
+        right: 16,
+        child: MessageBanner(message: message, success: success),
+      ),
+    );
+
+    Overlay.of(context).insert(_messageOverlay!);
+
+    Future.delayed(const Duration(seconds: 2), () {
+      _messageOverlay?.remove();
+      _messageOverlay = null;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -89,19 +109,7 @@ class _AddProductsPageState extends State<AddProductsPage>
         if (!mounted) return;
 
         if (exists) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Row(
-                children: [
-                  Icon(Icons.warning_amber_rounded, color: Colors.white),
-                  SizedBox(width: 8),
-                  Expanded(child: Text('Barcode already exists in database')),
-                ],
-              ),
-              backgroundColor: Colors.orange,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          _showBanner('Barcode already exists in database');
 
           // CLEAR FIELD
           _barcodeController.clear();
@@ -260,22 +268,7 @@ class _AddProductsPageState extends State<AddProductsPage>
     final barcode = _barcodeController.text.trim();
     if (await DatabaseHelper.instance.barcodeExists(barcode)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.error_outline, color: Colors.white),
-              SizedBox(width: 8),
-              Text('Duplicate barcode found!'),
-            ],
-          ),
-          backgroundColor: Colors.red[700],
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
+      _showBanner('Barcode Already Exists ');
       return; // stop saving
     }
 
@@ -302,29 +295,12 @@ class _AddProductsPageState extends State<AddProductsPage>
 
       if (newId > 0) {
         _resetForm();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 8),
-                Text('Product saved successfully!'),
-              ],
-            ),
-            backgroundColor: Colors.green[700],
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
+        _showBanner('Product saved successfully!', success: true);
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red[700]),
-      );
+      _showBanner('Error: $e');
     }
   }
 
