@@ -215,6 +215,92 @@ class _CartPageState extends State<CartPage> {
   }
 
   // ── Payment sheet ──────────────────────────────────────────────────────────
+  Future<bool> _confirmCompleteSale({
+    required double cashAmount,
+    required double change,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
+        final panel = isDark ? const Color(0xFF111827) : Colors.white;
+        final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+        final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+        final line = isDark ? const Color(0xFF253047) : _border;
+
+        return AlertDialog(
+          backgroundColor: panel,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(
+            'Complete sale?',
+            style: TextStyle(color: primaryText, fontWeight: FontWeight.w800),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Please confirm before saving this sale.',
+                style: TextStyle(color: secondaryText),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _mutedSurface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: line, width: 0.5),
+                ),
+                child: Column(
+                  children: [
+                    _ConfirmRow(
+                      label: 'Total',
+                      value: CurrencyFormatter.format(_total),
+                    ),
+                    const SizedBox(height: 8),
+                    _ConfirmRow(
+                      label: 'Cash',
+                      value: CurrencyFormatter.format(cashAmount),
+                    ),
+                    const SizedBox(height: 8),
+                    _ConfirmRow(
+                      label: 'Change',
+                      value: CurrencyFormatter.format(change),
+                      valueColor: _green,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text('Cancel', style: TextStyle(color: secondaryText)),
+            ),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+              label: const Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmed == true;
+  }
+
   void _showPaymentSheet() {
     _cashCtrl.clear();
     showModalBottomSheet(
@@ -520,6 +606,12 @@ class _CartPageState extends State<CartPage> {
                     child: ElevatedButton(
                       onPressed: sufficient && !_completing
                           ? () async {
+                              final confirmed = await _confirmCompleteSale(
+                                cashAmount: cashAmt,
+                                change: change,
+                              );
+                              if (!confirmed) return;
+                              if (!mounted || !ctx.mounted) return;
                               setModal(() {});
                               setState(() => _completing = true);
                               Navigator.pop(ctx);
@@ -1032,6 +1124,41 @@ class _CartPageState extends State<CartPage> {
 }
 
 // ─── Summary card ─────────────────────────────────────────────────────────────
+class _ConfirmRow extends StatelessWidget {
+  const _ConfirmRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final labelColor = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+    final textColor =
+        valueColor ?? (isDark ? const Color(0xFFF8FAFC) : _textPrimary);
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(fontSize: 13, color: labelColor)),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: textColor,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({
     required this.label,

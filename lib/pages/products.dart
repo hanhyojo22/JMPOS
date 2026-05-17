@@ -3,11 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'package:pos_app/database/database_helper.dart';
+import 'package:pos_app/utils/message_banner.dart';
 
 class ProductsPage extends StatefulWidget {
   final String? scannedBarcode;
   final Function(Map<String, dynamic>)? onEditProduct;
-  const ProductsPage({super.key, this.scannedBarcode, this.onEditProduct});
+  final VoidCallback? onBarcodeHandled;
+  const ProductsPage({
+    super.key,
+    this.scannedBarcode,
+    this.onEditProduct,
+    this.onBarcodeHandled,
+  });
 
   @override
   State<ProductsPage> createState() => _ProductsPageState();
@@ -44,6 +51,8 @@ class _ProductsPageState extends State<ProductsPage>
   String _sortBy = 'Default';
   String? _filterCategory;
   final Set<int> _selectedProductIds = {};
+  String? _topMessage;
+  bool _topMessageSuccess = false;
 
   late AnimationController _headerCtrl;
   late AnimationController _listCtrl;
@@ -62,11 +71,7 @@ class _ProductsPageState extends State<ProductsPage>
   @override
   void initState() {
     super.initState();
-    if (widget.scannedBarcode != null) {
-      _searchController.text = widget.scannedBarcode!;
-
-      _searchQuery = widget.scannedBarcode!;
-    }
+    _applyScannedBarcode();
     _headerCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
@@ -94,12 +99,26 @@ class _ProductsPageState extends State<ProductsPage>
 
     if (widget.scannedBarcode != null &&
         widget.scannedBarcode != oldWidget.scannedBarcode) {
-      _searchController.text = widget.scannedBarcode!;
-
-      setState(() {
-        _searchQuery = widget.scannedBarcode!;
-      });
+      _applyScannedBarcode(setStateAfter: true);
     }
+  }
+
+  void _applyScannedBarcode({bool setStateAfter = false}) {
+    final barcode = widget.scannedBarcode;
+    if (barcode == null || barcode.isEmpty) return;
+
+    void apply() {
+      _searchController.text = barcode;
+      _searchQuery = barcode;
+    }
+
+    if (setStateAfter) {
+      setState(apply);
+    } else {
+      apply();
+    }
+
+    widget.onBarcodeHandled?.call();
   }
 
   @override
@@ -237,6 +256,19 @@ class _ProductsPageState extends State<ProductsPage>
     setState(_selectedProductIds.clear);
   }
 
+  void _showTopMessage(String message, {bool success = false}) {
+    if (!mounted) return;
+    setState(() {
+      _topMessage = message;
+      _topMessageSuccess = success;
+    });
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (!mounted || _topMessage != message) return;
+      setState(() => _topMessage = null);
+    });
+  }
+
   Future<void> _confirmDeleteSelectedProducts() async {
     final selectedCount = _selectedProductIds.length;
     if (selectedCount == 0) return;
@@ -298,33 +330,16 @@ class _ProductsPageState extends State<ProductsPage>
       }
       if (!mounted) return;
       setState(_selectedProductIds.clear);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            selectedCount == 1
-                ? 'Product deleted'
-                : '$selectedCount products deleted',
-          ),
-          backgroundColor: _danger,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
+      _showTopMessage(
+        selectedCount == 1
+            ? 'Product deleted'
+            : '$selectedCount products deleted',
+        success: true,
       );
       await _loadProducts();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to delete: $e'),
-          backgroundColor: _danger,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
+      _showTopMessage('Failed to delete: $e');
     }
   }
 
@@ -388,33 +403,50 @@ class _ProductsPageState extends State<ProductsPage>
 
     return Scaffold(
       backgroundColor: _pageSurface,
-      body: SafeArea(
-        child: FadeTransition(
-          opacity: _headerFade,
-          child: SlideTransition(
-            position: _headerSlide,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildSearchBar(),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: FadeTransition(
+              opacity: _headerFade,
+              child: SlideTransition(
+                position: _headerSlide,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSearchBar(),
 
-                _buildCategoryChips(),
-                if (_isSelecting) _buildSelectionBar(),
+                    _buildCategoryChips(),
+                    if (_isSelecting) _buildSelectionBar(),
 
-                // ── Product list ─────────────────────────────────────
-                Expanded(
-                  child: _loading
-                      ? _buildLoader()
-                      : _error != null
-                      ? _buildError()
-                      : products.isEmpty
-                      ? _buildEmpty()
-                      : _buildList(products),
+                    // ── Product list ─────────────────────────────────────
+                    Expanded(
+                      child: _loading
+                          ? _buildLoader()
+                          : _error != null
+                          ? _buildError()
+                          : products.isEmpty
+                          ? _buildEmpty()
+                          : _buildList(products),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
+          if (_topMessage != null)
+            Positioned(
+              top: 12,
+              left: 16,
+              right: 16,
+              child: SafeArea(
+                bottom: false,
+                child: MessageBanner(
+                  message: _topMessage!,
+                  success: _topMessageSuccess,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

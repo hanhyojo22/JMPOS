@@ -233,23 +233,6 @@ class _SettingsPageState extends State<SettingsPage> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.maybePop(context),
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: _cardSurface,
-                shape: BoxShape.circle,
-                border: Border.all(color: _dividerColor, width: 0.5),
-              ),
-              child: Icon(
-                Icons.arrow_back_ios_new_rounded,
-                size: 16,
-                color: _primaryText,
-              ),
-            ),
-          ),
           const SizedBox(width: 12),
           Text(
             'Settings',

@@ -413,30 +413,69 @@ class _HomePageState extends State<HomePage> {
 
     final db = await DatabaseHelper.instance.database;
     try {
-      for (final item in sharedCart) {
-        final product = item['product'];
-        final int quantity = item['quantity'];
-        final double price = (product['price'] as num).toDouble();
+      await db.transaction((txn) async {
+        for (final item in sharedCart) {
+          final product = item['product'] as Map<String, dynamic>;
+          final productId = (product['id'] as num?)?.toInt();
+          final productName = product['title']?.toString() ?? 'Product';
+          final quantity = (item['quantity'] as num?)?.toInt() ?? 0;
+          final localRemainingStock = (product['stock'] as num?)?.toInt() ?? 0;
 
-        await db.insert('sales', {
-          'product_id': product['id'],
-          'product_name': product['title'],
-          'quantity': quantity,
-          'price': price,
-          'total': price * quantity,
-          'created_at': DateTime.now().toIso8601String(),
-        });
+          if (productId == null || quantity <= 0) {
+            throw Exception('Invalid cart item: $productName');
+          }
 
-        await db.update(
-          'products',
-          {
-            'stock_quantity': product['stock'],
-            'updated_at': DateTime.now().toIso8601String(),
-          },
-          where: 'id = ?',
-          whereArgs: [product['id']],
-        );
-      }
+          final currentRows = await txn.query(
+            'products',
+            columns: ['id', 'stock_quantity'],
+            where: 'id = ?',
+            whereArgs: [productId],
+            limit: 1,
+          );
+
+          if (currentRows.isEmpty) {
+            throw Exception('$productName was deleted. Remove it from cart.');
+          }
+
+          final dbStock =
+              (currentRows.first['stock_quantity'] as num?)?.toInt() ?? 0;
+          final expectedStock = localRemainingStock + quantity;
+
+          if (dbStock != expectedStock) {
+            throw Exception(
+              '$productName stock changed. Refresh cart before checkout.',
+            );
+          }
+
+          if (dbStock < quantity) {
+            throw Exception('$productName does not have enough stock.');
+          }
+
+          final price = (product['price'] as num).toDouble();
+          final remainingStock = dbStock - quantity;
+
+          await txn.insert('sales', {
+            'product_id': productId,
+            'product_name': productName,
+            'quantity': quantity,
+            'price': price,
+            'total': price * quantity,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+
+          await txn.update(
+            'products',
+            {
+              'stock_quantity': remainingStock,
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+            where: 'id = ?',
+            whereArgs: [productId],
+          );
+
+          product['stock'] = remainingStock;
+        }
+      });
 
       sharedCart.clear();
       await loadRecentTransactions();
@@ -444,7 +483,8 @@ class _HomePageState extends State<HomePage> {
       _showSnack('Sale completed successfully!', top: true);
       return true;
     } catch (e) {
-      _showSnack('Error: $e', isError: true);
+      final message = e.toString().replaceFirst('Exception: ', '');
+      _showSnack(message, isError: true, top: true);
       return false;
     }
   }
@@ -473,6 +513,9 @@ class _HomePageState extends State<HomePage> {
 
         return ProductsPage(
           scannedBarcode: productsScannedBarcode,
+          onBarcodeHandled: () {
+            productsScannedBarcode = null;
+          },
 
           onEditProduct: (product) {
             setState(() {

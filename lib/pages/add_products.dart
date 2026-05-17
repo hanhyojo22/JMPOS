@@ -408,7 +408,6 @@ class _AddProductsPageState extends State<AddProductsPage>
         : const Color(0xFFF5F6FA);
     final panelSurface = isDark ? const Color(0xFF111827) : Colors.white;
     final lineColor = isDark ? const Color(0xFF253047) : Colors.grey[100]!;
-    final primaryText = isDark ? const Color(0xFFF8FAFC) : Colors.black;
     final shadowColor = isDark
         ? Colors.black.withValues(alpha: 0.22)
         : Colors.black.withValues(alpha: 0.05);
@@ -420,6 +419,7 @@ class _AddProductsPageState extends State<AddProductsPage>
     return Scaffold(
       backgroundColor: pageSurface,
 
+      body: FadeTransition(
       appBar: AppBar(
         backgroundColor: panelSurface,
         elevation: 0,
@@ -441,7 +441,7 @@ class _AddProductsPageState extends State<AddProductsPage>
       ),
 
       body: FadeTransition(
-        opacity: _fadeAnim,
+      body: FadeTransition(
         child: SlideTransition(
           position: _slideAnim,
           child: Form(
