@@ -221,6 +221,60 @@ class _SalesPageState extends State<SalesPage> {
     _notifyCartChanged();
   }
 
+  Future<void> _refreshCart() async {
+    if (_cart.isEmpty) return;
+
+    final db = await DatabaseHelper.instance.database;
+    final refreshedCart = <Map<String, dynamic>>[];
+
+    for (final item in _cart) {
+      final product = item['product'];
+      if (product is! Map) continue;
+
+      final productId = (product['id'] as num?)?.toInt();
+      final quantity = (item['quantity'] as num?)?.toInt() ?? 0;
+
+      if (productId == null || quantity <= 0) continue;
+
+      final rows = await db.query(
+        'products',
+        where: 'id = ?',
+        whereArgs: [productId],
+        limit: 1,
+      );
+
+      if (rows.isEmpty) continue;
+
+      final row = rows.first;
+      final dbStock = (row['stock_quantity'] as num?)?.toInt() ?? 0;
+      final refreshedQuantity = quantity > dbStock ? dbStock : quantity;
+
+      if (refreshedQuantity <= 0) continue;
+
+      refreshedCart.add({
+        'product': {
+          'id': productId,
+          'title': row['product_name']?.toString() ?? 'Product',
+          'price': row['price'],
+          'stock': dbStock - refreshedQuantity,
+          'barcode': row['barcode'] ?? '',
+          'imagePath': row['image_url'] ?? '',
+          'category': row['category'] ?? 'Other',
+        },
+        'quantity': refreshedQuantity,
+      });
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _cart
+        ..clear()
+        ..addAll(refreshedCart);
+    });
+    _notifyCartChanged();
+  }
+
   Future<void> _completeSale() async {
     if (_cart.isEmpty) return;
     final db = await DatabaseHelper.instance.database;
@@ -398,12 +452,16 @@ class _SalesPageState extends State<SalesPage> {
   );
 
   // ── Navigation ─────────────────────────────────────────────────────────────
-  void _openCartPage() {
-    Navigator.push(
+  Future<void> _openCartPage() async {
+    await _refreshCart();
+    if (!mounted) return;
+
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => shop_cart.CartPage(
           cart: _cart,
+          onCartChanged: _notifyCartChanged,
           onAdd: _addToCart,
           onRemove: _removeFromCart,
           onDelete: _deleteFromCart,
@@ -412,7 +470,10 @@ class _SalesPageState extends State<SalesPage> {
           },
         ),
       ),
-    ).then((_) => setState(() {}));
+    );
+
+    await _loadProducts();
+    if (mounted) setState(() {});
   }
 
   void _showSortSheet() {

@@ -519,6 +519,8 @@ class _AddProductsPageState extends State<AddProductsPage>
                       label: 'Barcode / SKU',
                       hint: '8851234567890',
                       icon: Icons.qr_code_2_outlined,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       validator: (v) =>
                           v == null || v.trim().isEmpty ? 'Required' : null,
                     ),

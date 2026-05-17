@@ -9,11 +9,15 @@ class ProductsPage extends StatefulWidget {
   final String? scannedBarcode;
   final Function(Map<String, dynamic>)? onEditProduct;
   final VoidCallback? onBarcodeHandled;
+  final List<Map<String, dynamic>> cart;
+  final VoidCallback? onCartChanged;
   const ProductsPage({
     super.key,
     this.scannedBarcode,
     this.onEditProduct,
     this.onBarcodeHandled,
+    this.cart = const [],
+    this.onCartChanged,
   });
 
   @override
@@ -269,9 +273,53 @@ class _ProductsPageState extends State<ProductsPage>
     });
   }
 
+  List<Map<String, dynamic>> _cartItemsForProductIds(Set<int> productIds) {
+    return widget.cart.where((item) {
+      final product = item['product'];
+      if (product is! Map) return false;
+      final productId = (product['id'] as num?)?.toInt();
+      return productId != null && productIds.contains(productId);
+    }).toList();
+  }
+
+  void _removeDeletedProductsFromCart(Set<int> productIds) {
+    final beforeCount = widget.cart.length;
+    widget.cart.removeWhere((item) {
+      final product = item['product'];
+      if (product is! Map) return false;
+      final productId = (product['id'] as num?)?.toInt();
+      return productId != null && productIds.contains(productId);
+    });
+
+    if (widget.cart.length != beforeCount) {
+      widget.onCartChanged?.call();
+    }
+  }
+
+  String _deleteSuccessMessage({
+    required int selectedCount,
+    required bool removedCartItems,
+  }) {
+    if (removedCartItems) {
+      return selectedCount == 1
+          ? 'Product deleted and removed from cart'
+          : '$selectedCount products deleted and removed from cart';
+    }
+
+    return selectedCount == 1
+        ? 'Product deleted'
+        : '$selectedCount products deleted';
+  }
+
   Future<void> _confirmDeleteSelectedProducts() async {
     final selectedCount = _selectedProductIds.length;
     if (selectedCount == 0) return;
+    final idsToDelete = Set<int>.from(_selectedProductIds);
+    final cartItemsToRemove = _cartItemsForProductIds(idsToDelete);
+    final cartQuantityToRemove = cartItemsToRemove.fold<int>(
+      0,
+      (total, item) => total + ((item['quantity'] as num?)?.toInt() ?? 0),
+    );
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -282,6 +330,16 @@ class _ProductsPageState extends State<ProductsPage>
         final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
         final line = isDark ? const Color(0xFF253047) : Colors.grey.shade200;
 
+        final baseMessage = selectedCount == 1
+            ? 'This will remove the selected product.'
+            : 'This will remove $selectedCount selected products.';
+        String? cartWarning;
+        if (cartItemsToRemove.isNotEmpty) {
+          cartWarning = selectedCount == 1
+              ? 'This product is currently in the cart. If you continue, it will also be removed from the cart.'
+              : '$cartQuantityToRemove cart item${cartQuantityToRemove == 1 ? '' : 's'} from the selected products will also be removed from the cart.';
+        }
+
         return AlertDialog(
           backgroundColor: panel,
           shape: RoundedRectangleBorder(
@@ -291,11 +349,47 @@ class _ProductsPageState extends State<ProductsPage>
             selectedCount == 1 ? 'Delete product?' : 'Delete products?',
             style: TextStyle(color: primaryText, fontWeight: FontWeight.w800),
           ),
-          content: Text(
-            selectedCount == 1
-                ? 'This will remove the selected product.'
-                : 'This will remove $selectedCount selected products.',
-            style: TextStyle(color: secondaryText),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(baseMessage, style: TextStyle(color: secondaryText)),
+              if (cartWarning != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _warning.withValues(alpha: isDark ? 0.18 : 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _warning.withValues(alpha: isDark ? 0.45 : 0.35),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: _warning,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          cartWarning,
+                          style: TextStyle(
+                            color: primaryText,
+                            fontWeight: FontWeight.w600,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
           ),
           actions: [
             TextButton(
@@ -324,16 +418,17 @@ class _ProductsPageState extends State<ProductsPage>
     if (confirmed != true || !mounted) return;
 
     try {
-      final idsToDelete = List<int>.from(_selectedProductIds);
       for (final productId in idsToDelete) {
         await DatabaseHelper.instance.deleteProduct(productId);
       }
+      _removeDeletedProductsFromCart(idsToDelete);
       if (!mounted) return;
       setState(_selectedProductIds.clear);
       _showTopMessage(
-        selectedCount == 1
-            ? 'Product deleted'
-            : '$selectedCount products deleted',
+        _deleteSuccessMessage(
+          selectedCount: selectedCount,
+          removedCartItems: cartItemsToRemove.isNotEmpty,
+        ),
         success: true,
       );
       await _loadProducts();

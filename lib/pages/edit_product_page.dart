@@ -499,7 +499,8 @@ class _EditProductPageState extends State<EditProductPage> {
             controller: _barcodeCtrl,
             icon: Icons.qr_code_rounded,
             hint: '8851234567890',
-
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             validator: (v) =>
                 (v == null || v.trim().isEmpty) ? 'Required' : null,
           ),

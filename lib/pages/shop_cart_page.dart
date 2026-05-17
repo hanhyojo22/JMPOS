@@ -31,6 +31,7 @@ class CartPage extends StatefulWidget {
   final Future<void> Function() onCompleteSale;
   final bool showAppBar;
   final VoidCallback? onBrowseProducts;
+  final VoidCallback? onCartChanged;
   final String? initialMessage;
   final bool initialMessageSuccess;
 
@@ -43,6 +44,7 @@ class CartPage extends StatefulWidget {
     required this.onCompleteSale,
     this.showAppBar = true,
     this.onBrowseProducts,
+    this.onCartChanged,
     this.initialMessage,
     this.initialMessageSuccess = true,
   });
@@ -87,6 +89,8 @@ class _CartPageState extends State<CartPage> {
   );
 
   int get _totalUnits => _cart.fold(0, (s, i) => s + (i['quantity'] as int));
+
+  void _notifyCartChanged() => widget.onCartChanged?.call();
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   Widget _buildImage(String? path, {double size = 48}) {
@@ -180,6 +184,7 @@ class _CartPageState extends State<CartPage> {
                 }
                 _cart.clear();
               });
+              _notifyCartChanged();
             },
             child: const Text(
               'Clear',
@@ -206,6 +211,7 @@ class _CartPageState extends State<CartPage> {
       product['stock'] = availableStock - delta;
       item['quantity'] = nextQuantity;
     });
+    _notifyCartChanged();
 
     if (requestedQuantity > maxQuantity) {
       _showBanner('Only $maxQuantity available');
@@ -739,7 +745,7 @@ class _CartPageState extends State<CartPage> {
           ),
           if (_cart.isNotEmpty)
             Text(
-              '${_cart.length} item${_cart.length != 1 ? 's' : ''}',
+              '$_totalUnits item${_totalUnits != 1 ? 's' : ''}',
               style: TextStyle(
                 fontSize: 11,
                 color: _secondaryText,
@@ -789,11 +795,14 @@ class _CartPageState extends State<CartPage> {
             child: Row(
               children: [
                 Expanded(
-                  child: _SummaryCard(label: 'Items', value: '${_cart.length}'),
+                  child: _SummaryCard(label: 'Items', value: '$_totalUnits'),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _SummaryCard(label: 'Units', value: '$_totalUnits'),
+                  child: _SummaryCard(
+                    label: 'Products',
+                    value: '${_cart.length}',
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -885,6 +894,7 @@ class _CartPageState extends State<CartPage> {
                   onTap: () {
                     HapticFeedback.lightImpact();
                     setState(() => widget.onDelete(i));
+                    _notifyCartChanged();
 
                     _showBanner('$name removed from cart');
                   },
@@ -953,6 +963,7 @@ class _CartPageState extends State<CartPage> {
                           onTap: () {
                             HapticFeedback.lightImpact();
                             setState(() => widget.onRemove(i));
+                            _notifyCartChanged();
 
                             _showBanner('Quantity updated');
                           },
@@ -981,6 +992,7 @@ class _CartPageState extends State<CartPage> {
                           onTap: () {
                             HapticFeedback.lightImpact();
                             setState(() => widget.onAdd(product));
+                            _notifyCartChanged();
 
                             _showBanner('$name added to cart', success: true);
                           },

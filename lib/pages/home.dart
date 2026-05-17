@@ -62,6 +62,10 @@ class _HomePageState extends State<HomePage> {
   Color get _softShadow => _isDark
       ? Colors.black.withValues(alpha: 0.22)
       : Colors.black.withValues(alpha: 0.04);
+  int get _sharedCartItemCount => sharedCart.fold(
+    0,
+    (total, item) => total + ((item['quantity'] as num?)?.toInt() ?? 0),
+  );
 
   @override
   void initState() {
@@ -226,7 +230,7 @@ class _HomePageState extends State<HomePage> {
     final productName = await _addScannedBarcodeToSharedCart(scannedBarcode!);
     if (!mounted || productName == null) return;
 
-    _openCartPage(initialMessage: '$productName added to cart');
+    await _openCartPage(initialMessage: '$productName added to cart');
   }
 
   Widget _buildProductImage(String imagePath) {
@@ -409,6 +413,93 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<String?> _refreshSharedCart() async {
+    if (sharedCart.isEmpty) return null;
+
+    final db = await DatabaseHelper.instance.database;
+    final refreshedCart = <Map<String, dynamic>>[];
+    var removedCount = 0;
+    var adjustedCount = 0;
+
+    for (final item in sharedCart) {
+      final product = item['product'];
+      if (product is! Map) {
+        removedCount++;
+        continue;
+      }
+
+      final productId = (product['id'] as num?)?.toInt();
+      final quantity = (item['quantity'] as num?)?.toInt() ?? 0;
+
+      if (productId == null || quantity <= 0) {
+        removedCount++;
+        continue;
+      }
+
+      final rows = await db.query(
+        'products',
+        where: 'id = ?',
+        whereArgs: [productId],
+        limit: 1,
+      );
+
+      if (rows.isEmpty) {
+        removedCount++;
+        continue;
+      }
+
+      final row = rows.first;
+      final dbStock = (row['stock_quantity'] as num?)?.toInt() ?? 0;
+      final refreshedQuantity = quantity > dbStock ? dbStock : quantity;
+
+      if (refreshedQuantity <= 0) {
+        removedCount++;
+        continue;
+      }
+
+      if (refreshedQuantity != quantity) {
+        adjustedCount++;
+      }
+
+      refreshedCart.add({
+        'product': {
+          'id': productId,
+          'title': row['product_name']?.toString() ?? 'Product',
+          'price': row['price'],
+          'stock': dbStock - refreshedQuantity,
+          'barcode': row['barcode'] ?? '',
+          'imagePath': row['image_url'] ?? '',
+          'category': row['category'] ?? 'Other',
+        },
+        'quantity': refreshedQuantity,
+      });
+    }
+
+    if (!mounted) return null;
+
+    setState(() {
+      sharedCart
+        ..clear()
+        ..addAll(refreshedCart);
+    });
+
+    if (removedCount > 0 && adjustedCount > 0) {
+      return 'Cart refreshed. Removed unavailable items and adjusted stock.';
+    }
+    if (removedCount > 0) {
+      return removedCount == 1
+          ? 'Cart refreshed. Removed 1 unavailable item.'
+          : 'Cart refreshed. Removed $removedCount unavailable items.';
+    }
+    if (adjustedCount > 0) {
+      return adjustedCount == 1
+          ? 'Cart refreshed. Adjusted 1 item to current stock.'
+          : 'Cart refreshed. Adjusted $adjustedCount items to current stock.';
+    }
+
+    return null;
+  }
+
   Future<bool> _completeSharedSale() async {
     if (sharedCart.isEmpty) return false;
 
@@ -495,12 +586,16 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _openCartPage({String? initialMessage}) {
+  Future<void> _openCartPage({String? initialMessage}) async {
+    final refreshMessage = await _refreshSharedCart();
+    if (!mounted) return;
+
     setState(() => _selectedIndex = 9);
-    if (initialMessage != null && initialMessage.isNotEmpty) {
+    final message = refreshMessage ?? initialMessage;
+    if (message != null && message.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _selectedIndex != 9) return;
-        _showTopMessage(initialMessage, success: true);
+        _showTopMessage(message, success: true);
       });
     }
   }
@@ -519,6 +614,10 @@ class _HomePageState extends State<HomePage> {
 
         return ProductsPage(
           scannedBarcode: productsScannedBarcode,
+          cart: sharedCart,
+          onCartChanged: () {
+            if (mounted) setState(() {});
+          },
           onBarcodeHandled: () {
             productsScannedBarcode = null;
           },
@@ -616,6 +715,9 @@ class _HomePageState extends State<HomePage> {
         return shop_cart.CartPage(
           cart: sharedCart,
           showAppBar: false,
+          onCartChanged: () {
+            if (mounted) setState(() {});
+          },
           onAdd: _addToSharedCart,
           onRemove: _removeFromSharedCart,
           onDelete: _deleteFromSharedCart,
@@ -1028,7 +1130,7 @@ class _HomePageState extends State<HomePage> {
                 ),
 
                 // Improved Badge
-                if (sharedCart.isNotEmpty)
+                if (_sharedCartItemCount > 0)
                   Positioned(
                     right: -2,
                     top: -2,
@@ -1045,9 +1147,9 @@ class _HomePageState extends State<HomePage> {
                       ),
                       child: Center(
                         child: Text(
-                          sharedCart.length > 99
+                          _sharedCartItemCount > 99
                               ? '99+'
-                              : '${sharedCart.length}',
+                              : '$_sharedCartItemCount',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 11,
