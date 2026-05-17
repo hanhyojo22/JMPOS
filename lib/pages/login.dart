@@ -117,26 +117,24 @@ class _LoginPageState extends State<LoginPage> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Logo
+                            const SizedBox(height: 16),
+                            Image.asset(
+                              'lib/assets/appiconnobg.png',
+                              height: 150,
+                              width: 250,
+                              fit: BoxFit.cover,
+                            ),
                             const Text(
-                              'POS App',
+                              'Welcome Back!',
                               style: TextStyle(
-                                fontSize: 28,
+                                fontSize: 20,
                                 fontWeight: FontWeight.bold,
                                 color: Color(0xFF333333),
                               ),
                             ),
-                            const SizedBox(height: 16),
-                            Image.asset(
-                              'lib/assets/sari-sari-removebg-preview.png',
-                              height: 150,
-                              width: 250,
-                              fit: BoxFit.contain,
-                            ),
-
                             const SizedBox(height: 8),
                             Text(
-                              'Welcome! Please sign in to continue.',
+                              'Sign in to continue.',
                               style: TextStyle(
                                 fontSize: 15,
                                 color: Colors.grey[600],
