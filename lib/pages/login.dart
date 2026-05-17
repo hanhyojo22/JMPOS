@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'home.dart';
 import 'package:pos_app/database/database_helper.dart';
 
@@ -68,170 +69,196 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
-          ),
+    return Theme(
+      data: ThemeData(
+        brightness: Brightness.light,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF667eea),
+          brightness: Brightness.light,
         ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Card(
-                elevation: 12,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(32.0),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Logo
-                        Image.asset(
-                          'lib/assets/sari-sari-removebg-preview.png',
-                          height: 180,
-                          width: 300,
-                          fit: BoxFit.fitWidth,
-                        ),
-
-                        const SizedBox(height: 16),
-                        const Text(
-                          'POS App',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF333333),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Welcome! Please sign in to continue.',
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: Colors.grey[600],
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 28),
-
-                        // Username field
-                        TextFormField(
-                          controller: _usernameController,
-                          onChanged: (_) => _clearLoginError(),
-                          decoration: InputDecoration(
-                            labelText: 'Username',
-                            hintText: 'Enter your username',
-                            prefixIcon: const Icon(Icons.person_outline),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+        inputDecorationTheme: const InputDecorationTheme(
+          filled: true,
+          fillColor: Color(0xFFFAFAFA),
+        ),
+      ),
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarDividerColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          systemNavigationBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
+        child: Scaffold(
+          extendBody: true,
+          body: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+              ),
+            ),
+            child: SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Card(
+                    color: Colors.white,
+                    elevation: 12,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(32.0),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Logo
+                            Image.asset(
+                              'lib/assets/sari-sari-removebg-preview.png',
+                              height: 180,
+                              width: 300,
+                              fit: BoxFit.fitWidth,
                             ),
-                            filled: true,
-                            fillColor: Colors.grey[50],
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Please enter your username';
-                            }
-                            if (_invalidCredentials) {
-                              return 'Invalid username or password';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
 
-                        // Password field
-                        TextFormField(
-                          controller: _passwordController,
-                          onChanged: (_) => _clearLoginError(),
-                          obscureText: _obscurePassword,
-                          decoration: InputDecoration(
-                            labelText: 'Password',
-                            hintText: 'Enter your password',
-                            prefixIcon: const Icon(Icons.lock_outline),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                              ),
-                              onPressed: () => setState(
-                                () => _obscurePassword = !_obscurePassword,
+                            const SizedBox(height: 16),
+                            const Text(
+                              'POS App',
+                              style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF333333),
                               ),
                             ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.grey[50],
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your password';
-                            }
-                            if (value.length < 6) {
-                              return 'Password must be at least 6 characters';
-                            }
-                            if (_invalidCredentials) {
-                              return 'Invalid username or password';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 8),
-
-                        // Forgot password
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: _showForgotPasswordDialog,
-                            child: const Text('Forgot Password?'),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Login button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _login,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF667eea),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Welcome! Please sign in to continue.',
+                              style: TextStyle(
+                                fontSize: 15,
+                                color: Colors.grey[600],
                               ),
-                              elevation: 3,
+                              textAlign: TextAlign.center,
                             ),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
-                                      ),
-                                    ),
-                                  )
-                                : const Text(
-                                    'Sign In',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                            const SizedBox(height: 28),
+
+                            // Username field
+                            TextFormField(
+                              controller: _usernameController,
+                              onChanged: (_) => _clearLoginError(),
+                              decoration: InputDecoration(
+                                labelText: 'Username',
+                                hintText: 'Enter your username',
+                                prefixIcon: const Icon(Icons.person_outline),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                filled: true,
+                                fillColor: Colors.grey[50],
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Please enter your username';
+                                }
+                                if (_invalidCredentials) {
+                                  return 'Invalid username or password';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Password field
+                            TextFormField(
+                              controller: _passwordController,
+                              onChanged: (_) => _clearLoginError(),
+                              obscureText: _obscurePassword,
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                hintText: 'Enter your password',
+                                prefixIcon: const Icon(Icons.lock_outline),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
                                   ),
-                          ),
+                                  onPressed: () => setState(
+                                    () => _obscurePassword = !_obscurePassword,
+                                  ),
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                filled: true,
+                                fillColor: Colors.grey[50],
+                              ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter your password';
+                                }
+                                if (value.length < 6) {
+                                  return 'Password must be at least 6 characters';
+                                }
+                                if (_invalidCredentials) {
+                                  return 'Invalid username or password';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 8),
+
+                            // Forgot password
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _showForgotPasswordDialog,
+                                child: const Text('Forgot Password?'),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Login button
+                            SizedBox(
+                              width: double.infinity,
+                              height: 50,
+                              child: ElevatedButton(
+                                onPressed: _isLoading ? null : _login,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF667eea),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 3,
+                                ),
+                                child: _isLoading
+                                    ? const SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
+                                        ),
+                                      )
+                                    : const Text(
+                                        'Sign In',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),

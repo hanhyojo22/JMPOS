@@ -123,7 +123,7 @@ class _ReportsPageState extends State<ReportsPage>
         ? const Color(0xFF0F172A)
         : const Color(0xFFF5F6FA);
     final panelSurface = isDark ? const Color(0xFF111827) : Colors.white;
-    final primaryText = isDark ? const Color(0xFFF8FAFC) : Colors.black87;
+
     final secondaryText = isDark ? const Color(0xFFCBD5E1) : Colors.black54;
     final shadowColor = isDark
         ? Colors.black.withValues(alpha: 0.22)
@@ -134,60 +134,9 @@ class _ReportsPageState extends State<ReportsPage>
       body: SafeArea(
         child: Column(
           children: [
-            // ── Header ──────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Reports',
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                          color: primaryText,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Sales performance overview',
-                        style: TextStyle(fontSize: 13, color: secondaryText),
-                      ),
-                    ],
-                  ),
-                  GestureDetector(
-                    onTap: _loadReports,
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: panelSurface,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: shadowColor,
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: _loading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.refresh_rounded, size: 20),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // ── Tab bar ──────────────────────────────────────────────
+            const SizedBox(
+              height: 16,
+            ), // ── Tab bar ──────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(

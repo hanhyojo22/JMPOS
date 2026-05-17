@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:pos_app/database/database_helper.dart';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -65,7 +64,6 @@ Color _toneFg(_Tone t) {
 class EditProductPage extends StatefulWidget {
   final Map<String, dynamic> product;
   final String? scannedBarcode;
-  final VoidCallback? onBack;
   final VoidCallback? onSaved;
   final VoidCallback? onBarcodeHandled;
 
@@ -73,7 +71,6 @@ class EditProductPage extends StatefulWidget {
     super.key,
     required this.product,
     this.scannedBarcode,
-    this.onBack,
     this.onSaved,
     this.onBarcodeHandled,
   });
@@ -99,7 +96,6 @@ class _EditProductPageState extends State<EditProductPage> {
   String? _currentImagePath;
   XFile? _pickedImage;
   bool _saving = false;
-  bool _deleting = false;
   String? _topWarning;
   bool _topWarningIsError = true;
 
@@ -297,62 +293,6 @@ class _EditProductPageState extends State<EditProductPage> {
     }
   }
 
-  // ── Delete ─────────────────────────────────────────────────────────────────
-  void _confirmDelete() {
-    showDialog(
-      context: context,
-      builder: (_) => _DeleteDialog(
-        productName: widget.product['product_name'] ?? '',
-        onConfirm: () async {
-          Navigator.pop(context);
-          setState(() => _deleting = true);
-          try {
-            await DatabaseHelper.instance.deleteProduct(
-              widget.product['id'] as int,
-            );
-            if (!mounted) return;
-            _snack('Product deleted');
-            widget.onSaved?.call();
-          } catch (e) {
-            if (!mounted) return;
-            setState(() => _deleting = false);
-            _snack('Error: $e', error: true);
-          }
-        },
-      ),
-    );
-  }
-
-  void _snack(String msg, {bool error = false, bool top = false}) {
-    if (!mounted) return;
-    final media = MediaQuery.of(context);
-    final topMargin = media.size.height - media.padding.top - 112;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              error ? Icons.error_outline : Icons.check_circle_rounded,
-              color: Colors.white,
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            Expanded(child: Text(msg)),
-          ],
-        ),
-        backgroundColor: error
-            ? const Color(0xFFDC2626)
-            : const Color(0xFF22C55E),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: top
-            ? EdgeInsets.fromLTRB(16, 16, 16, topMargin.clamp(16, 1000))
-            : const EdgeInsets.all(16),
-      ),
-    );
-  }
-
   void _showTopWarning(String message, {bool error = true}) {
     if (!mounted) return;
     setState(() {
@@ -379,7 +319,6 @@ class _EditProductPageState extends State<EditProductPage> {
               key: _formKey,
               child: Column(
                 children: [
-                  _buildAppBar(),
                   Expanded(
                     child: ListView(
                       padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
@@ -416,59 +355,11 @@ class _EditProductPageState extends State<EditProductPage> {
     );
   }
 
-  // ── App bar ────────────────────────────────────────────────────────────────
-  Widget _buildAppBar() {
-    return Container(
-      color: _surface,
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-      child: Row(
-        children: [
-          _CircleBtn(
-            onTap: widget.onBack ?? () => Navigator.maybePop(context),
-            child: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              size: 16,
-              color: _textPrimary,
-            ),
-          ),
-          const Expanded(
-            child: Text(
-              'Edit product',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: _textPrimary,
-                letterSpacing: -0.3,
-              ),
-            ),
-          ),
-          _CircleBtn(
-            bg: _redBg,
-            border: _redBorder,
-            onTap: _deleting ? null : _confirmDelete,
-            child: _deleting
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: _red,
-                    ),
-                  )
-                : const Icon(
-                    Icons.delete_outline_rounded,
-                    size: 18,
-                    color: _red,
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ── Identity card ──────────────────────────────────────────────────────────
   Widget _buildIdentityCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final imageBg = _primary.withValues(alpha: isDark ? 0.12 : 0.07);
+
     return GestureDetector(
       onTap: _showImageSheet,
       child: ClipRRect(
@@ -482,7 +373,7 @@ class _EditProductPageState extends State<EditProductPage> {
               child: _imagePath != null && File(_imagePath!).existsSync()
                   ? Image.file(File(_imagePath!), fit: BoxFit.cover)
                   : Container(
-                      color: _purpleBg,
+                      color: imageBg,
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -775,11 +666,15 @@ class _EditProductPageState extends State<EditProductPage> {
 
   // ── Bottom bar ─────────────────────────────────────────────────────────────
   Widget _buildBottomBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panel = isDark ? const Color(0xFF111827) : _cardBg;
+    final line = isDark ? const Color(0xFF253047) : _border;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
-      decoration: const BoxDecoration(
-        color: _cardBg,
-        border: Border(top: BorderSide(color: _border, width: 0.5)),
+      decoration: BoxDecoration(
+        color: panel,
+        border: Border(top: BorderSide(color: line, width: 0.5)),
       ),
       child: SizedBox(
         width: double.infinity,
@@ -824,7 +719,6 @@ class _EditProductPageState extends State<EditProductPage> {
   }
 }
 
-// ─── _CircleBtn ───────────────────────────────────────────────────────────────
 class _TopWarning extends StatelessWidget {
   const _TopWarning({required this.message, required this.error});
 
@@ -872,28 +766,6 @@ class _TopWarning extends StatelessWidget {
   }
 }
 
-class _CircleBtn extends StatelessWidget {
-  const _CircleBtn({this.bg, this.border, this.onTap, required this.child});
-  final Color? bg, border;
-  final VoidCallback? onTap;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        color: bg ?? _cardBg,
-        shape: BoxShape.circle,
-        border: Border.all(color: border ?? _border, width: 0.5),
-      ),
-      child: child,
-    ),
-  );
-}
-
 // ─── _StatCard ────────────────────────────────────────────────────────────────
 class _StatCard extends StatelessWidget {
   const _StatCard({
@@ -905,30 +777,37 @@ class _StatCard extends StatelessWidget {
   final _Tone tone;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-    decoration: BoxDecoration(
-      color: _cardBg,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: _border, width: 0.5),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 10, color: _textTertiary)),
-        const SizedBox(height: 3),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: _toneFg(tone),
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panel = isDark ? const Color(0xFF111827) : _cardBg;
+    final line = isDark ? const Color(0xFF253047) : _border;
+    final labelColor = isDark ? const Color(0xFF94A3B8) : _textTertiary;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+      decoration: BoxDecoration(
+        color: panel,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: line, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(fontSize: 10, color: labelColor)),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: _toneFg(tone),
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
 
 // ─── _SectionCard ─────────────────────────────────────────────────────────────
@@ -946,47 +825,54 @@ class _SectionCard extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: _cardBg,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: _border, width: 0.5),
-    ),
-    clipBehavior: Clip.antiAlias,
-    child: Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: _border, width: 0.5)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  borderRadius: BorderRadius.circular(8),
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panel = isDark ? const Color(0xFF111827) : _cardBg;
+    final line = isDark ? const Color(0xFF253047) : _border;
+    final text = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: panel,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: line, width: 0.5),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: line, width: 0.5)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, size: 16, color: iconColor),
                 ),
-                child: Icon(icon, size: 16, color: iconColor),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _textPrimary,
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: text,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        Padding(padding: const EdgeInsets.all(14), child: child),
-      ],
-    ),
-  );
+          Padding(padding: const EdgeInsets.all(14), child: child),
+        ],
+      ),
+    );
+  }
 }
 
 // ─── _Field ───────────────────────────────────────────────────────────────────
@@ -1021,15 +907,22 @@ class _Field extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fieldBg = isDark ? const Color(0xFF1E293B) : const Color(0xFFF8F9FF);
+    final line = isDark ? const Color(0xFF253047) : _border;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+    final tertiaryText = isDark ? const Color(0xFF94A3B8) : _textTertiary;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w500,
-            color: _textSecondary,
+            color: secondaryText,
           ),
         ),
         const SizedBox(height: 5),
@@ -1040,27 +933,27 @@ class _Field extends StatelessWidget {
           validator: validator,
           onChanged: onChanged,
           maxLines: maxLines,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 14,
-            color: _textPrimary,
+            color: primaryText,
             fontWeight: FontWeight.w500,
           ),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(fontSize: 14, color: _textTertiary),
+            hintStyle: TextStyle(fontSize: 14, color: tertiaryText),
             prefixIcon: Padding(
               padding: const EdgeInsets.only(left: 12, right: 8),
-              child: Icon(icon, size: 17, color: iconColor ?? _textTertiary),
+              child: Icon(icon, size: 17, color: iconColor ?? tertiaryText),
             ),
             prefixIconConstraints: const BoxConstraints(
               minWidth: 0,
               minHeight: 0,
             ),
             prefixText: prefix != null ? '$prefix ' : null,
-            prefixStyle: const TextStyle(
+            prefixStyle: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              color: _textPrimary,
+              color: primaryText,
             ),
             suffixIcon: suffix != null
                 ? Padding(
@@ -1073,18 +966,18 @@ class _Field extends StatelessWidget {
               minHeight: 0,
             ),
             filled: true,
-            fillColor: const Color(0xFFF8F9FF),
+            fillColor: fieldBg,
             contentPadding: EdgeInsets.symmetric(
               horizontal: 14,
               vertical: maxLines > 1 ? 12 : 0,
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _border),
+              borderSide: BorderSide(color: line),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _border),
+              borderSide: BorderSide(color: line),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
@@ -1120,15 +1013,22 @@ class _DropdownField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fieldBg = isDark ? const Color(0xFF1E293B) : const Color(0xFFF8F9FF);
+    final line = isDark ? const Color(0xFF253047) : _border;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+    final tertiaryText = isDark ? const Color(0xFF94A3B8) : _textTertiary;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w500,
-            color: _textSecondary,
+            color: secondaryText,
           ),
         ),
         const SizedBox(height: 5),
@@ -1140,9 +1040,9 @@ class _DropdownField extends StatelessWidget {
                   value: c,
                   child: Text(
                     c,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
-                      color: _textPrimary,
+                      color: primaryText,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -1151,13 +1051,20 @@ class _DropdownField extends StatelessWidget {
               .toList(),
           onChanged: onChanged,
           validator: (v) => v == null ? 'Required' : null,
+          dropdownColor: isDark ? const Color(0xFF111827) : _cardBg,
+          style: TextStyle(
+            fontSize: 14,
+            color: primaryText,
+            fontWeight: FontWeight.w500,
+          ),
+          iconEnabledColor: tertiaryText,
           decoration: InputDecoration(
-            prefixIcon: const Padding(
-              padding: EdgeInsets.only(left: 12, right: 8),
+            prefixIcon: Padding(
+              padding: const EdgeInsets.only(left: 12, right: 8),
               child: Icon(
                 Icons.category_outlined,
                 size: 17,
-                color: _textTertiary,
+                color: tertiaryText,
               ),
             ),
             prefixIconConstraints: const BoxConstraints(
@@ -1165,15 +1072,15 @@ class _DropdownField extends StatelessWidget {
               minHeight: 0,
             ),
             filled: true,
-            fillColor: const Color(0xFFF8F9FF),
+            fillColor: fieldBg,
             contentPadding: const EdgeInsets.symmetric(horizontal: 14),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _border),
+              borderSide: BorderSide(color: line),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _border),
+              borderSide: BorderSide(color: line),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
@@ -1261,12 +1168,18 @@ class _ImageSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panel = isDark ? const Color(0xFF111827) : _cardBg;
+    final line = isDark ? const Color(0xFF253047) : Colors.grey[200]!;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+
     return SafeArea(
       top: false,
       child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: BoxDecoration(
+          color: panel,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
         child: Column(
@@ -1278,24 +1191,24 @@ class _ImageSheet extends StatelessWidget {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey[200],
+                  color: line,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
-            const Text(
+            Text(
               'Product photo',
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
-                color: _textPrimary,
+                color: primaryText,
                 letterSpacing: -0.3,
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Choose a source',
-              style: TextStyle(fontSize: 13, color: _textSecondary),
+              style: TextStyle(fontSize: 13, color: secondaryText),
             ),
             const SizedBox(height: 20),
             Row(
@@ -1368,200 +1281,42 @@ class _SheetOption extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 18),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.2), width: 0.5),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-// ─── _DeleteDialog ────────────────────────────────────────────────────────────
-class _DeleteDialog extends StatelessWidget {
-  const _DeleteDialog({required this.productName, required this.onConfirm});
-  final String productName;
-  final VoidCallback onConfirm;
-
-  @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: isDark ? 0.12 : 0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: color.withValues(alpha: isDark ? 0.28 : 0.2),
+            width: 0.5,
+          ),
+        ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 64,
-              height: 64,
-              decoration: const BoxDecoration(
-                color: _redBg,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: isDark ? 0.2 : 0.12),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.delete_forever_rounded,
-                color: _red,
-                size: 30,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Delete product?',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: _textPrimary,
-                letterSpacing: -0.3,
-              ),
+              child: Icon(icon, color: color, size: 24),
             ),
             const SizedBox(height: 8),
             Text(
-              'This will permanently remove "$productName" from inventory. This cannot be undone.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 13,
-                color: _textSecondary,
-                height: 1.5,
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: color,
               ),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      side: const BorderSide(color: _border),
-                    ),
-                    child: const Text(
-                      'Cancel',
-                      style: TextStyle(
-                        color: _textPrimary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: onConfirm,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _red,
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text(
-                      'Delete',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ─── BarcodeScannerPage ───────────────────────────────────────────────────────
-class BarcodeScannerPage extends StatefulWidget {
-  final Function(String) onDetect;
-  const BarcodeScannerPage({super.key, required this.onDetect});
-
-  @override
-  State<BarcodeScannerPage> createState() => _BarcodeScannerPageState();
-}
-
-class _BarcodeScannerPageState extends State<BarcodeScannerPage> {
-  bool _scanned = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: const Text('Scan barcode'),
-        elevation: 0,
-      ),
-      body: Stack(
-        children: [
-          MobileScanner(
-            onDetect: (capture) {
-              if (_scanned) return;
-              for (final b in capture.barcodes) {
-                final code = b.rawValue;
-                if (code != null) {
-                  _scanned = true;
-                  widget.onDetect(code);
-                  Navigator.pop(context);
-                  break;
-                }
-              }
-            },
-          ),
-          Center(
-            child: Container(
-              width: 220,
-              height: 220,
-              decoration: BoxDecoration(
-                border: Border.all(color: _primary, width: 2),
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-          const Positioned(
-            bottom: 60,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Text(
-                'Align barcode in the frame',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

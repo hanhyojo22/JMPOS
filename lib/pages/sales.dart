@@ -652,6 +652,7 @@ class _SalesPageState extends State<SalesPage> {
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: _panelSurface,
         borderRadius: BorderRadius.circular(18),

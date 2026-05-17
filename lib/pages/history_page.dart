@@ -584,20 +584,25 @@ class _HistoryStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panel = isDark ? const Color(0xFF111827) : Colors.white;
+    final labelColor = isDark
+        ? const Color(0xFFCBD5E1)
+        : _HistoryPageState._textSecondary;
+    final shadow = isDark
+        ? Colors.black.withValues(alpha: 0.22)
+        : Colors.black.withValues(alpha: 0.04);
+
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(14),
 
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: panel,
           borderRadius: BorderRadius.circular(16),
 
           boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
+            BoxShadow(color: shadow, blurRadius: 8, offset: const Offset(0, 3)),
           ],
         ),
 
@@ -635,10 +640,7 @@ class _HistoryStat extends StatelessWidget {
                   Text(
                     label,
 
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: _HistoryPageState._textSecondary,
-                    ),
+                    style: TextStyle(fontSize: 11, color: labelColor),
                   ),
                 ],
               ),
@@ -708,14 +710,21 @@ class _HistorySortSheetState extends State<_HistorySortSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panel = isDark ? const Color(0xFF111827) : Colors.white;
+    final muted = isDark ? const Color(0xFF1E293B) : Colors.grey[50]!;
+    final line = isDark ? const Color(0xFF253047) : Colors.grey[200]!;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.sizeOf(context).height * 0.88,
       ),
       child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        decoration: BoxDecoration(
+          color: panel,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
           top: false,
@@ -729,19 +738,19 @@ class _HistorySortSheetState extends State<_HistorySortSheet> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey[200],
+                    color: line,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
-              const Align(
+              Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
                   'Sort History',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
-                    color: _textPrimary,
+                    color: primaryText,
                   ),
                 ),
               ),
@@ -765,10 +774,10 @@ class _HistorySortSheetState extends State<_HistorySortSheet> {
                         decoration: BoxDecoration(
                           color: selected
                               ? _primary.withValues(alpha: 0.06)
-                              : Colors.grey[50],
+                              : muted,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: selected ? _primary : Colors.grey[200]!,
+                            color: selected ? _primary : line,
                             width: selected ? 1.8 : 1,
                           ),
                         ),
@@ -779,12 +788,12 @@ class _HistorySortSheetState extends State<_HistorySortSheet> {
                               decoration: BoxDecoration(
                                 color: selected
                                     ? _primary.withValues(alpha: 0.1)
-                                    : Colors.white,
+                                    : panel,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(
                                 opt['icon'] as IconData,
-                                color: selected ? _primary : _textSecondary,
+                                color: selected ? _primary : secondaryText,
                                 size: 18,
                               ),
                             ),
@@ -798,14 +807,14 @@ class _HistorySortSheetState extends State<_HistorySortSheet> {
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
-                                      color: selected ? _primary : _textPrimary,
+                                      color: selected ? _primary : primaryText,
                                     ),
                                   ),
                                   Text(
                                     opt['sub'] as String,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 11,
-                                      color: _textSecondary,
+                                      color: secondaryText,
                                     ),
                                   ),
                                 ],

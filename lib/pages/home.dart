@@ -52,6 +52,7 @@ class _HomePageState extends State<HomePage> {
   bool _topMessageSuccess = false;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  bool get _isStaff => widget.role.toLowerCase() == 'staff';
   Color get _pageSurface =>
       _isDark ? const Color(0xFF0F172A) : const Color(0xFFF4F5FF);
   Color get _panelSurface => _isDark ? const Color(0xFF111827) : Colors.white;
@@ -195,7 +196,7 @@ class _HomePageState extends State<HomePage> {
     }
 
     // PRODUCTS PAGE
-    if (_selectedIndex == 1) {
+    if (_selectedIndex == 1 && !_isStaff) {
       setState(() {
         productsScannedBarcode = scannedBarcode;
       });
@@ -461,6 +462,15 @@ class _HomePageState extends State<HomePage> {
   Widget _buildPageContent() {
     switch (_selectedIndex) {
       case 1:
+        if (_isStaff) {
+          return SalesPage(
+            cart: sharedCart,
+            onCartChanged: () {
+              if (mounted) setState(() {});
+            },
+          );
+        }
+
         return ProductsPage(
           scannedBarcode: productsScannedBarcode,
 
@@ -519,6 +529,15 @@ class _HomePageState extends State<HomePage> {
       case 7:
         return const SettingsPage();
       case 8:
+        if (_isStaff) {
+          return SalesPage(
+            cart: sharedCart,
+            onCartChanged: () {
+              if (mounted) setState(() {});
+            },
+          );
+        }
+
         if (selectedProduct == null) {
           return const Center(child: Text('No product selected'));
         }
@@ -530,13 +549,6 @@ class _HomePageState extends State<HomePage> {
           scannedBarcode: editProductBarcode,
           onBarcodeHandled: () {
             editProductBarcode = null;
-          },
-
-          onBack: () {
-            setState(() {
-              editProductBarcode = null;
-              _selectedIndex = 1;
-            });
           },
 
           onSaved: () {
@@ -820,6 +832,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _onNavBarTapped(int index) async {
+    if (_isStaff && index == 1) return;
+
     setState(() => _selectedIndex = index);
     if (index == 0) await loadRecentTransactions();
   }
@@ -1074,8 +1088,8 @@ class _HomePageState extends State<HomePage> {
                       index: 2,
                     ),
                   _drawerItem(
-                    icon: Icons.history_rounded,
-                    title: 'History',
+                    icon: Icons.receipt_long_rounded,
+                    title: 'Sales History',
                     index: 6,
                   ),
 
@@ -1236,12 +1250,13 @@ class _HomePageState extends State<HomePage> {
                 onTap: () => _onNavBarTapped(0),
               ),
 
-              _NavItem(
-                icon: Icons.inventory_2_rounded,
-                label: 'Products',
-                selected: _selectedIndex == 1,
-                onTap: () => _onNavBarTapped(1),
-              ),
+              if (!_isStaff)
+                _NavItem(
+                  icon: Icons.inventory_2_rounded,
+                  label: 'Products',
+                  selected: _selectedIndex == 1,
+                  onTap: () => _onNavBarTapped(1),
+                ),
 
               _scannerFab(offset: const Offset(0, -18)),
 

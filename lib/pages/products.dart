@@ -228,6 +228,7 @@ class _ProductsPageState extends State<ProductsPage>
         width: double.infinity,
         height: double.infinity,
         fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _imgPlaceholder(double.infinity),
       );
     }
 
@@ -237,6 +238,7 @@ class _ProductsPageState extends State<ProductsPage>
         width: double.infinity,
         height: double.infinity,
         fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _imgPlaceholder(double.infinity),
       );
     }
 
@@ -246,19 +248,10 @@ class _ProductsPageState extends State<ProductsPage>
   Widget _imgPlaceholder(double size) => Container(
     width: double.infinity,
     height: double.infinity,
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        colors: [
-          _primary.withValues(alpha: 0.08),
-          _primary.withValues(alpha: 0.14),
-        ],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-    ),
+    decoration: BoxDecoration(color: _primary.withValues(alpha: 0.07)),
     child: Icon(
       Icons.inventory_2_outlined,
-      color: _primary.withValues(alpha: 0.5),
+      color: _primary.withValues(alpha: 0.4),
       size: 30,
     ),
   );
@@ -553,6 +546,14 @@ class _ProductsPageState extends State<ProductsPage>
           color: _panelSurface,
 
           borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _lineColor, width: 0.5),
+          boxShadow: [
+            BoxShadow(
+              color: _softShadow,
+              blurRadius: 10,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
         clipBehavior: Clip.antiAlias,
 
