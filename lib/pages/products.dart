@@ -641,9 +641,9 @@ class _ProductsPageState extends State<ProductsPage>
   // ── Category chips ─────────────────────────────────────────────────────────
   Widget _buildCategoryChips() {
     return SizedBox(
-      height: 48,
+      height: 56,
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
         scrollDirection: Axis.horizontal,
         itemCount: _categories.length,
         separatorBuilder: (_, _) => const SizedBox(width: 8),
@@ -657,10 +657,17 @@ class _ProductsPageState extends State<ProductsPage>
                 setState(() => _filterCategory = cat == 'All' ? null : cat),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              constraints: const BoxConstraints(minHeight: 38),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
               decoration: BoxDecoration(
                 color: selected ? _primary : _panelSurface,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(
+                  color: selected
+                      ? _primary
+                      : _secondaryText.withValues(alpha: _isDark ? 0.18 : 0.1),
+                  width: 0.5,
+                ),
                 boxShadow: selected
                     ? [
                         BoxShadow(
@@ -677,12 +684,16 @@ class _ProductsPageState extends State<ProductsPage>
                         ),
                       ],
               ),
-              child: Text(
-                cat,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: selected ? Colors.white : _secondaryText,
+              child: Center(
+                child: Text(
+                  cat,
+                  maxLines: 1,
+                  overflow: TextOverflow.visible,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                    color: selected ? Colors.white : _secondaryText,
+                  ),
                 ),
               ),
             ),

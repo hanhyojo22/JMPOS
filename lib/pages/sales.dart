@@ -149,7 +149,9 @@ class _SalesPageState extends State<SalesPage> {
     );
 
     if (productIndex == -1) {
-      _showSnack('Product not found', isError: true);
+      _barcodeHandled = true;
+      widget.onBarcodeHandled?.call();
+      _showSnack('Product not found', isError: true, top: true);
       return;
     }
 
@@ -576,9 +578,9 @@ class _SalesPageState extends State<SalesPage> {
 
         // Category chips
         SizedBox(
-          height: 46,
+          height: 56,
           child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             scrollDirection: Axis.horizontal,
             itemCount: _categories.length,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
@@ -589,13 +591,22 @@ class _SalesPageState extends State<SalesPage> {
                 onTap: () => setState(() => _selectedCategory = cat),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
+                  constraints: const BoxConstraints(minHeight: 38),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 5,
+                    horizontal: 16,
+                    vertical: 9,
                   ),
                   decoration: BoxDecoration(
                     color: active ? _primary : _panelSurface,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(
+                      color: active
+                          ? _primary
+                          : _secondaryText.withValues(
+                              alpha: _isDark ? 0.18 : 0.1,
+                            ),
+                      width: 0.5,
+                    ),
                     boxShadow: active
                         ? [
                             BoxShadow(
@@ -606,12 +617,16 @@ class _SalesPageState extends State<SalesPage> {
                           ]
                         : [BoxShadow(color: _softShadow, blurRadius: 6)],
                   ),
-                  child: Text(
-                    cat,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: active ? Colors.white : _secondaryText,
+                  child: Center(
+                    child: Text(
+                      cat,
+                      maxLines: 1,
+                      overflow: TextOverflow.visible,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                        color: active ? Colors.white : _secondaryText,
+                      ),
                     ),
                   ),
                 ),
