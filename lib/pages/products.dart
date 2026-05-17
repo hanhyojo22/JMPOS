@@ -43,6 +43,7 @@ class _ProductsPageState extends State<ProductsPage>
   String? _error;
   String _sortBy = 'Default';
   String? _filterCategory;
+  final Set<int> _selectedProductIds = {};
 
   late AnimationController _headerCtrl;
   late AnimationController _listCtrl;
@@ -215,6 +216,118 @@ class _ProductsPageState extends State<ProductsPage>
     return '$stock in stock';
   }
 
+  bool get _isSelecting => _selectedProductIds.isNotEmpty;
+
+  void _toggleProductSelection(Map<String, dynamic> product) {
+    final productId = (product['id'] as num?)?.toInt();
+    if (productId == null) return;
+
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (_selectedProductIds.contains(productId)) {
+        _selectedProductIds.remove(productId);
+      } else {
+        _selectedProductIds.add(productId);
+      }
+    });
+  }
+
+  void _clearSelection() {
+    if (_selectedProductIds.isEmpty) return;
+    setState(_selectedProductIds.clear);
+  }
+
+  Future<void> _confirmDeleteSelectedProducts() async {
+    final selectedCount = _selectedProductIds.length;
+    if (selectedCount == 0) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final panel = isDark ? const Color(0xFF111827) : Colors.white;
+        final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+        final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+        final line = isDark ? const Color(0xFF253047) : Colors.grey.shade200;
+
+        return AlertDialog(
+          backgroundColor: panel,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(
+            selectedCount == 1 ? 'Delete product?' : 'Delete products?',
+            style: TextStyle(color: primaryText, fontWeight: FontWeight.w800),
+          ),
+          content: Text(
+            selectedCount == 1
+                ? 'This will remove the selected product.'
+                : 'This will remove $selectedCount selected products.',
+            style: TextStyle(color: secondaryText),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text('Cancel', style: TextStyle(color: secondaryText)),
+            ),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _danger,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: line),
+                ),
+              ),
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              label: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final idsToDelete = List<int>.from(_selectedProductIds);
+      for (final productId in idsToDelete) {
+        await DatabaseHelper.instance.deleteProduct(productId);
+      }
+      if (!mounted) return;
+      setState(_selectedProductIds.clear);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            selectedCount == 1
+                ? 'Product deleted'
+                : '$selectedCount products deleted',
+          ),
+          backgroundColor: _danger,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+      await _loadProducts();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to delete: $e'),
+          backgroundColor: _danger,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    }
+  }
+
   Widget _buildImage(String? path) {
     if (path == null || path.trim().isEmpty) {
       return _imgPlaceholder(double.infinity);
@@ -286,6 +399,7 @@ class _ProductsPageState extends State<ProductsPage>
                 _buildSearchBar(),
 
                 _buildCategoryChips(),
+                if (_isSelecting) _buildSelectionBar(),
 
                 // ── Product list ─────────────────────────────────────
                 Expanded(
@@ -310,6 +424,77 @@ class _ProductsPageState extends State<ProductsPage>
   // ── Stats row ──────────────────────────────────────────────────────────────
 
   // ── Search bar ─────────────────────────────────────────────────────────────
+  Widget _buildSelectionBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: _panelSurface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _primary.withValues(alpha: 0.28)),
+          boxShadow: [
+            BoxShadow(
+              color: _primary.withValues(alpha: _isDark ? 0.18 : 0.12),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: const BoxDecoration(
+                color: _primary,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '${_selectedProductIds.length} selected',
+                style: TextStyle(
+                  color: _primaryText,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: _clearSelection,
+              child: Text('Clear', style: TextStyle(color: _secondaryText)),
+            ),
+            const SizedBox(width: 4),
+            ElevatedButton.icon(
+              onPressed: _confirmDeleteSelectedProducts,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _danger,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              label: const Text('Delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
@@ -518,6 +703,9 @@ class _ProductsPageState extends State<ProductsPage>
   }
 
   Widget _buildProductCard(Map<String, dynamic> p) {
+    final productId = (p['id'] as num?)?.toInt();
+    final isSelected =
+        productId != null && _selectedProductIds.contains(productId);
     final name = p['product_name'] as String? ?? 'Unknown';
 
     final price = (p['price'] as num?)?.toDouble() ?? 0.0;
@@ -531,7 +719,13 @@ class _ProductsPageState extends State<ProductsPage>
     final stockBadgeFg = _stockBadgeFg(stock);
 
     return GestureDetector(
+      onLongPress: () => _toggleProductSelection(p),
       onTap: () async {
+        if (_isSelecting) {
+          _toggleProductSelection(p);
+          return;
+        }
+
         HapticFeedback.lightImpact();
 
         final updated = widget.onEditProduct?.call(p);
@@ -546,67 +740,137 @@ class _ProductsPageState extends State<ProductsPage>
           color: _panelSurface,
 
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: _lineColor, width: 0.5),
+          border: Border.all(
+            color: isSelected ? _primary : _lineColor,
+            width: isSelected ? 2 : 0.5,
+          ),
           boxShadow: [
             BoxShadow(
-              color: _softShadow,
-              blurRadius: 10,
+              color: isSelected
+                  ? _primary.withValues(alpha: 0.24)
+                  : _softShadow,
+              blurRadius: isSelected ? 16 : 10,
               offset: const Offset(0, 6),
             ),
           ],
         ),
         clipBehavior: Clip.antiAlias,
 
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-
+        child: Stack(
           children: [
-            Stack(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+
               children: [
-                Container(
-                  height: 126,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: _primary.withValues(alpha: _isDark ? 0.12 : 0.04),
-                    border: Border(
-                      bottom: BorderSide(color: _lineColor, width: 0.5),
-                    ),
-                  ),
-                  child: _buildImage(imagePath),
-                ),
-                Positioned(
-                  top: 10,
-                  right: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: stockBadgeBg,
-                      borderRadius: BorderRadius.circular(99),
-                      border: Border.all(
-                        color: stockBadgeFg.withValues(alpha: 0.16),
+                Stack(
+                  children: [
+                    Container(
+                      height: 126,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: _primary.withValues(
+                          alpha: _isDark ? 0.12 : 0.04,
+                        ),
+                        border: Border(
+                          bottom: BorderSide(color: _lineColor, width: 0.5),
+                        ),
                       ),
+                      child: _buildImage(imagePath),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: stockColor,
-                            shape: BoxShape.circle,
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: stockBadgeBg,
+                          borderRadius: BorderRadius.circular(99),
+                          border: Border.all(
+                            color: stockBadgeFg.withValues(alpha: 0.16),
                           ),
                         ),
-                        const SizedBox(width: 5),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: stockColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              _stockLabel(stock),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: stockBadgeFg,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+
+                      children: [
                         Text(
-                          _stockLabel(stock),
+                          name,
+
+                          maxLines: 2,
+
+                          overflow: TextOverflow.ellipsis,
+
                           style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: stockBadgeFg,
+                            fontWeight: FontWeight.w600,
+                            color: _primaryText,
+                            fontSize: 14,
+                          ),
+                        ),
+
+                        const SizedBox(height: 6),
+
+                        Text(
+                          CurrencyFormatter.format(price),
+
+                          style: const TextStyle(
+                            color: _primary,
+
+                            fontWeight: FontWeight.bold,
+
+                            fontSize: 16,
+                          ),
+                        ),
+
+                        const Spacer(),
+
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Container(
+                            width: 34,
+                            height: 34,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF667EEA),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.edit_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
                           ),
                         ),
                       ],
@@ -615,65 +879,40 @@ class _ProductsPageState extends State<ProductsPage>
                 ),
               ],
             ),
-
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-
-                  children: [
-                    Text(
-                      name,
-
-                      maxLines: 2,
-
-                      overflow: TextOverflow.ellipsis,
-
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: _primaryText,
-                        fontSize: 14,
-                      ),
-                    ),
-
-                    const SizedBox(height: 6),
-
-                    Text(
-                      CurrencyFormatter.format(price),
-
-                      style: const TextStyle(
-                        color: _primary,
-
-                        fontWeight: FontWeight.bold,
-
-                        fontSize: 16,
-                      ),
-                    ),
-
-                    const Spacer(),
-
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Container(
-                        width: 34,
-                        height: 34,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF667EEA),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.edit_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-                  ],
+            if (isSelected) ...[
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: _primary.withValues(alpha: 0.08),
+                  ),
                 ),
               ),
-            ),
+              Positioned(
+                top: 10,
+                left: 10,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: _primary,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.check_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
