@@ -962,24 +962,49 @@ class _HomePageState extends State<HomePage> {
                               color: _secondaryText,
                             ),
                           ),
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                CurrencyFormatter.format(t['amount'] as double),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  color: Color(0xFF667EEA),
-                                ),
+                              Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    CurrencyFormatter.format(
+                                      t['amount'] as double,
+                                    ),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: Color(0xFF667EEA),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'x${t['quantity']}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: _secondaryText.withValues(
+                                        alpha: 0.7,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'x${t['quantity']}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: _secondaryText.withValues(alpha: 0.7),
+                              const SizedBox(width: 8),
+                              Container(
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFF667EEA,
+                                  ).withValues(alpha: 0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 18,
+                                  color: Color(0xFF667EEA),
                                 ),
                               ),
                             ],

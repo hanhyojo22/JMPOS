@@ -497,6 +497,20 @@ class _HistoryPageState extends State<HistoryPage> {
                 ),
               ],
             ),
+            const SizedBox(width: 8),
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: _primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: _primary,
+              ),
+            ),
           ],
         ),
       ),
