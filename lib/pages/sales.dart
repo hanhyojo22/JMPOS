@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
+import 'package:pos_app/utils/label_text.dart';
 import 'package:pos_app/utils/message_banner.dart';
 import 'shop_cart_page.dart' as shop_cart;
 
@@ -526,9 +527,22 @@ class _SalesPageState extends State<SalesPage> {
 
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: LabelText(
+              'Sales',
+              color: _primaryText,
+              fontSize: 20,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+
         // Search + sort
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
           child: Container(
             decoration: BoxDecoration(
               color: _panelSurface,

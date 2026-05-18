@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
+import 'package:pos_app/utils/label_text.dart';
 import 'recent_sales.dart';
 
 class HistoryPage extends StatefulWidget {
@@ -208,9 +209,22 @@ class _HistoryPageState extends State<HistoryPage> {
       body: SafeArea(
         child: Column(
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: LabelText(
+                  'History',
+                  color: _primaryText,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+
             // SEARCH
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
               child: Container(
                 decoration: BoxDecoration(
                   color: _panelSurface,
@@ -424,96 +438,96 @@ class _HistoryPageState extends State<HistoryPage> {
           ],
         ),
         child: Padding(
-        padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(14),
 
-        child: Row(
-          children: [
-            _buildProductImage(imagePath),
+          child: Row(
+            children: [
+              _buildProductImage(imagePath),
 
-            const SizedBox(width: 12),
+              const SizedBox(width: 12),
 
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      sale['product'] as String,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: _primaryText,
+                      ),
+                    ),
+
+                    const SizedBox(height: 3),
+
+                    Text(
+                      '${sale['date']}  •  ${sale['time']}',
+
+                      style: TextStyle(fontSize: 12, color: _secondaryText),
+                    ),
+                  ],
+                ),
+              ),
+
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    sale['product'] as String,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    CurrencyFormatter.format(total),
 
                     style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
                       color: _primaryText,
                     ),
                   ),
 
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 4),
 
-                  Text(
-                    '${sale['date']}  •  ${sale['time']}',
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
 
-                    style: TextStyle(fontSize: 12, color: _secondaryText),
+                    decoration: BoxDecoration(
+                      color: _success.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+
+                    child: Text(
+                      'x$qty sold',
+
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: _success,
+                      ),
+                    ),
                   ),
                 ],
               ),
-            ),
-
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  CurrencyFormatter.format(total),
-
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: _primaryText,
-                  ),
+              const SizedBox(width: 8),
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: _primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
                 ),
-
-                const SizedBox(height: 4),
-
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-
-                  decoration: BoxDecoration(
-                    color: _success.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-
-                  child: Text(
-                    'x$qty sold',
-
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: _success,
-                    ),
-                  ),
+                child: const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: _primary,
                 ),
-              ],
-            ),
-            const SizedBox(width: 8),
-            Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: _primary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.chevron_right_rounded,
-                size: 18,
-                color: _primary,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }

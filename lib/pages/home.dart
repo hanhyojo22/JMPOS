@@ -43,6 +43,7 @@ class _HomePageState extends State<HomePage> {
   String? productsScannedBarcode;
   String? addProductBarcode;
   String? editProductBarcode;
+  bool _barcodeScannerEnabled = true;
   Map<String, dynamic>? selectedProduct;
   double totalSales = 0;
   int totalTransactions = 0;
@@ -132,7 +133,7 @@ class _HomePageState extends State<HomePage> {
         FROM sales
         LEFT JOIN products ON sales.product_id = products.id
         ORDER BY sales.created_at DESC
-        LIMIT 10
+        LIMIT 4
       ''');
 
       final double salesTotal =
@@ -214,6 +215,11 @@ class _HomePageState extends State<HomePage> {
 
   // ── Step 1: open scanner  Step 2: if barcode captured → open SalesPage ──────
   Future<void> _openScannerAction() async {
+    if (!_barcodeScannerEnabled) {
+      _showSnack('Barcode scanner is disabled in Settings', isError: true);
+      return;
+    }
+
     String? scannedBarcode;
 
     await Navigator.push(
@@ -351,7 +357,7 @@ class _HomePageState extends State<HomePage> {
     if (!mounted) return null;
 
     if (rows.isEmpty) {
-      _showSnack('Product not found', isError: true);
+      _showSnack('Product not found', isError: true, top: true);
       return null;
     }
 
@@ -709,7 +715,14 @@ class _HomePageState extends State<HomePage> {
         return const HistoryPage();
 
       case 7:
-        return const SettingsPage();
+        return SettingsPage(
+          barcodeScannerEnabled: _barcodeScannerEnabled,
+          onBarcodeScannerChanged: (enabled) {
+            if (mounted) {
+              setState(() => _barcodeScannerEnabled = enabled);
+            }
+          },
+        );
       case 8:
         if (_isStaff) {
           return SalesPage(
@@ -1098,36 +1111,43 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _scannerFab({Offset offset = Offset.zero}) => GestureDetector(
-    onTap: _openScannerAction,
-    child: Transform.translate(
-      offset: offset,
-      child: Container(
-        width: 68,
-        height: 68,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF667EEA).withValues(alpha: 0.45),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
+  Widget _scannerFab({Offset offset = Offset.zero}) {
+    final enabled = _barcodeScannerEnabled;
+
+    return GestureDetector(
+      onTap: enabled ? _openScannerAction : null,
+      child: Transform.translate(
+        offset: offset,
+        child: Container(
+          width: 68,
+          height: 68,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: enabled
+                  ? const [Color(0xFF667EEA), Color(0xFF764BA2)]
+                  : const [Color(0xFFCBD5E1), Color(0xFF94A3B8)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-          ],
-        ),
-        child: const Icon(
-          Icons.qr_code_scanner_rounded,
-          color: Colors.white,
-          size: 32,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: (enabled ? const Color(0xFF667EEA) : Colors.black)
+                    .withValues(alpha: enabled ? 0.45 : 0.14),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.qr_code_scanner_rounded,
+            color: Colors.white,
+            size: 32,
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1143,6 +1163,8 @@ class _HomePageState extends State<HomePage> {
 
     return Scaffold(
       appBar: AppBar(
+        leadingWidth: 44,
+        titleSpacing: 0,
         leading: Builder(
           builder: (context) => IconButton(
             icon: const Icon(Icons.menu_rounded),

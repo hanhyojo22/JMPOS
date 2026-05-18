@@ -3,6 +3,8 @@ import 'package:pos_app/utils/message_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:pos_app/utils/label_text.dart';
+
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../database/database_helper.dart';
@@ -442,6 +444,13 @@ class _AddProductsPageState extends State<AddProductsPage>
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
               children: [
+                const LabelText(
+                  "Add Product Page",
+                  fontSize: 22,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.black87,
+                  align: TextAlign.left,
+                ),
                 // ── Image + Quick Stats card ──────────────────────────
                 Container(
                   decoration: BoxDecoration(

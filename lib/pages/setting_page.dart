@@ -4,7 +4,14 @@ import 'package:pos_app/main.dart';
 
 // ─── Settings Page ────────────────────────────────────────────────────────────
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
+  const SettingsPage({
+    super.key,
+    required this.barcodeScannerEnabled,
+    required this.onBarcodeScannerChanged,
+  });
+
+  final bool barcodeScannerEnabled;
+  final ValueChanged<bool> onBarcodeScannerChanged;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -26,7 +33,7 @@ class _SettingsPageState extends State<SettingsPage> {
   // ── Preferences state ──────────────────────────────────────────────────────
   bool _notifications = true;
   bool _darkMode = false;
-  bool _barcodeScanner = true;
+  late bool _barcodeScanner;
   bool _keepScreenOn = false;
   bool _loadedThemeValue = false;
 
@@ -38,6 +45,20 @@ class _SettingsPageState extends State<SettingsPage> {
   Color get _secondaryText =>
       _isDark ? const Color(0xFFCBD5E1) : _textSecondary;
   Color get _tertiaryText => _isDark ? const Color(0xFF94A3B8) : _textTertiary;
+
+  @override
+  void initState() {
+    super.initState();
+    _barcodeScanner = widget.barcodeScannerEnabled;
+  }
+
+  @override
+  void didUpdateWidget(covariant SettingsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.barcodeScannerEnabled != widget.barcodeScannerEnabled) {
+      _barcodeScanner = widget.barcodeScannerEnabled;
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -125,6 +146,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         trailing: _buildToggle(_barcodeScanner, (v) {
                           HapticFeedback.lightImpact();
                           setState(() => _barcodeScanner = v);
+                          widget.onBarcodeScannerChanged(v);
                         }),
                       ),
                       _SettingsRow(
@@ -238,7 +260,7 @@ class _SettingsPageState extends State<SettingsPage> {
             'Settings',
             style: TextStyle(
               fontSize: 20,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w500,
               color: _primaryText,
               letterSpacing: -0.4,
             ),
@@ -288,7 +310,7 @@ class _SettingsPageState extends State<SettingsPage> {
   // ── Logout row ─────────────────────────────────────────────────────────────
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  Widget _buildToggle(bool value, ValueChanged<bool> onChanged) {
+  Widget _buildToggle(bool value, ValueChanged<bool>? onChanged) {
     return Switch.adaptive(
       value: value,
       onChanged: onChanged,

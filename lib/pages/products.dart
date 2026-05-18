@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'package:pos_app/database/database_helper.dart';
+import 'package:pos_app/utils/label_text.dart';
 import 'package:pos_app/utils/message_banner.dart';
 
 class ProductsPage extends StatefulWidget {
@@ -508,6 +509,16 @@ class _ProductsPageState extends State<ProductsPage>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                      child: LabelText(
+                        'Products',
+                        color: _primaryText,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+
                     _buildSearchBar(),
 
                     _buildCategoryChips(),
