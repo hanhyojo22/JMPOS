@@ -6,6 +6,7 @@ import 'add_products.dart';
 import 'products.dart';
 import 'sales.dart';
 import 'reports.dart';
+import 'recent_sales.dart';
 import 'account_page.dart';
 import 'staff_management.dart';
 import 'package:pos_app/utils/greetings.dart';
@@ -161,6 +162,7 @@ class _HomePageState extends State<HomePage> {
           }
 
           return {
+            'id': sale['id'],
             'title': sale['product_name'] ?? 'Unknown',
             'subtitle': subtitle,
             'amount': (sale['total'] as num?)?.toDouble() ?? 0.0,
@@ -927,6 +929,17 @@ class _HomePageState extends State<HomePage> {
                           ],
                         ),
                         child: ListTile(
+                          onTap: () {
+                            final saleId = (t['id'] as num?)?.toInt();
+                            if (saleId == null) return;
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    RecentSalesPage(saleId: saleId),
+                              ),
+                            );
+                          },
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 14,
                             vertical: 6,

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
+import 'recent_sales.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -399,21 +400,30 @@ class _HistoryPageState extends State<HistoryPage> {
     final qty = sale['quantity'] ?? 0;
     final imagePath = sale['imagePath'] as String? ?? '';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: _panelSurface,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: _softShadow,
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-
-      child: Padding(
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () {
+        final saleId = (sale['id'] as num?)?.toInt();
+        if (saleId == null) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => RecentSalesPage(saleId: saleId)),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: _panelSurface,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: _softShadow,
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Padding(
         padding: const EdgeInsets.all(14),
 
         child: Row(
@@ -489,6 +499,7 @@ class _HistoryPageState extends State<HistoryPage> {
             ),
           ],
         ),
+      ),
       ),
     );
   }
