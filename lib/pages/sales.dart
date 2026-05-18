@@ -705,11 +705,14 @@ class _SalesPageState extends State<SalesPage> {
               : GridView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   itemCount: products.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
+                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent:
+                        (MediaQuery.sizeOf(context).width - 44) / 2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
-                    childAspectRatio: 0.62,
+                    mainAxisExtent:
+                        ((MediaQuery.sizeOf(context).width - 44) / 2) / 1.04 +
+                        132,
                   ),
                   itemBuilder: (_, i) => _buildProductCard(products[i]),
                 ),
@@ -722,6 +725,7 @@ class _SalesPageState extends State<SalesPage> {
   Widget _buildProductCard(Map<String, dynamic> product) {
     final int stock = product['stock'] as int;
     final double price = (product['price'] as num).toDouble();
+    final category = product['category']?.toString() ?? '';
 
     final _StockState ss = _toStockState(stock);
 
@@ -736,7 +740,7 @@ class _SalesPageState extends State<SalesPage> {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: _panelSurface,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(5),
         border: Border.all(
           color: qty > 0 ? _primary.withValues(alpha: 0.28) : _lineColor,
           width: qty > 0 ? 1 : 0.5,
@@ -755,20 +759,22 @@ class _SalesPageState extends State<SalesPage> {
         children: [
           Stack(
             children: [
-              Container(
-                height: 126,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: _primary.withValues(alpha: _isDark ? 0.12 : 0.04),
-                  border: Border(
-                    bottom: BorderSide(color: _lineColor, width: 0.5),
+              AspectRatio(
+                aspectRatio: 1.04,
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: _primary.withValues(alpha: _isDark ? 0.12 : 0.04),
+                    border: Border(
+                      bottom: BorderSide(color: _lineColor, width: 0.5),
+                    ),
                   ),
-                ),
-                child: SizedBox.expand(
-                  child: _buildProductImage(
-                    product['imagePath'] as String?,
-                    borderRadius: 0,
-                    size: double.infinity,
+                  child: SizedBox.expand(
+                    child: _buildProductImage(
+                      product['imagePath'] as String?,
+                      borderRadius: 0,
+                      size: double.infinity,
+                    ),
                   ),
                 ),
               ),
@@ -815,61 +821,72 @@ class _SalesPageState extends State<SalesPage> {
             ],
           ),
 
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product['title'] as String,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: _primaryText,
-                      height: 1.3,
-                    ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 7, 10, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  product['title'] as String,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: _primaryText,
+                    height: 1.18,
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    CurrencyFormatter.format(price),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      color: _primaryText,
-                      letterSpacing: -0.3,
-                    ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  category.isEmpty ? 'Product' : category,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: _secondaryText,
+                    height: 1,
                   ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  CurrencyFormatter.format(price),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: _primaryText,
+                    letterSpacing: -0.3,
+                  ),
+                ),
 
-                  const SizedBox(height: 8),
+                const SizedBox(height: 5),
 
-                  SizedBox(
-                    width: double.infinity,
-                    child: _CardAction(
-                      stock: stock,
-                      quantity: qty,
-                      primary: _primary,
-                      surface: _mutedSurface,
-                      lineColor: _lineColor,
-                      onAdd: () {
-                        HapticFeedback.lightImpact();
-                        _addToCart(product);
-                      },
-                      onRemove: () {
-                        HapticFeedback.lightImpact();
-                        final idx = _cart.indexWhere(
-                          (c) => c['product']['id'] == product['id'],
-                        );
-                        if (idx != -1) _removeFromCart(idx);
-                      },
-                    ),
+                SizedBox(
+                  width: double.infinity,
+                  child: _CardAction(
+                    stock: stock,
+                    quantity: qty,
+                    primary: _primary,
+                    surface: _mutedSurface,
+                    lineColor: _lineColor,
+                    onAdd: () {
+                      HapticFeedback.lightImpact();
+                      _addToCart(product);
+                    },
+                    onRemove: () {
+                      HapticFeedback.lightImpact();
+                      final idx = _cart.indexWhere(
+                        (c) => c['product']['id'] == product['id'],
+                      );
+                      if (idx != -1) _removeFromCart(idx);
+                    },
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
@@ -948,7 +965,7 @@ class _CardAction extends StatelessWidget {
     if (quantity > 0) {
       return AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        height: 40,
+        height: 36,
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
           color: primary.withValues(alpha: 0.08),
@@ -993,7 +1010,7 @@ class _CardAction extends StatelessWidget {
     if (!canAdd) {
       return Container(
         width: double.infinity,
-        height: 40,
+        height: 36,
         decoration: BoxDecoration(
           color: surface,
           borderRadius: BorderRadius.circular(13),
@@ -1022,7 +1039,7 @@ class _CardAction extends StatelessWidget {
       onTap: onAdd,
       child: Container(
         width: double.infinity,
-        height: 40,
+        height: 36,
         decoration: BoxDecoration(
           gradient: LinearGradient(colors: [primary, const Color(0xFF7C4DFF)]),
           borderRadius: BorderRadius.circular(13),

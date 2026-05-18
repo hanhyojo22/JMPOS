@@ -808,13 +808,12 @@ class _ProductsPageState extends State<ProductsPage>
       child: GridView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
 
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-
+        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: (MediaQuery.sizeOf(context).width - 44) / 2,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-
-          childAspectRatio: 0.65,
+          mainAxisExtent:
+              ((MediaQuery.sizeOf(context).width - 44) / 2) / 1.02 + 84,
         ),
         itemCount: products.length,
         itemBuilder: (_, i) {
@@ -845,6 +844,7 @@ class _ProductsPageState extends State<ProductsPage>
     final isSelected =
         productId != null && _selectedProductIds.contains(productId);
     final name = p['product_name'] as String? ?? 'Unknown';
+    final category = (p['category'] as String?)?.trim() ?? '';
 
     final price = (p['price'] as num?)?.toDouble() ?? 0.0;
 
@@ -877,7 +877,7 @@ class _ProductsPageState extends State<ProductsPage>
         decoration: BoxDecoration(
           color: _panelSurface,
 
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(5),
           border: Border.all(
             color: isSelected ? _primary : _lineColor,
             width: isSelected ? 2 : 0.5,
@@ -902,18 +902,20 @@ class _ProductsPageState extends State<ProductsPage>
               children: [
                 Stack(
                   children: [
-                    Container(
-                      height: 126,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: _primary.withValues(
-                          alpha: _isDark ? 0.12 : 0.04,
+                    AspectRatio(
+                      aspectRatio: 1.02,
+                      child: Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: _primary.withValues(
+                            alpha: _isDark ? 0.12 : 0.04,
+                          ),
+                          border: Border(
+                            bottom: BorderSide(color: _lineColor, width: 0.5),
+                          ),
                         ),
-                        border: Border(
-                          bottom: BorderSide(color: _lineColor, width: 0.5),
-                        ),
+                        child: _buildImage(imagePath),
                       ),
-                      child: _buildImage(imagePath),
                     ),
                     Positioned(
                       top: 10,
@@ -954,65 +956,71 @@ class _ProductsPageState extends State<ProductsPage>
                         ),
                       ),
                     ),
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF667EEA),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.edit_rounded,
+                          color: Colors.white,
+                          size: 17,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
 
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-
-                      children: [
-                        Text(
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        height: 30,
+                        child: Text(
                           name,
-
                           maxLines: 2,
-
                           overflow: TextOverflow.ellipsis,
-
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             color: _primaryText,
-                            fontSize: 14,
+                            fontSize: 13,
+                            height: 1.12,
                           ),
                         ),
-
-                        const SizedBox(height: 6),
-
-                        Text(
-                          CurrencyFormatter.format(price),
-
-                          style: const TextStyle(
-                            color: _primary,
-
-                            fontWeight: FontWeight.bold,
-
-                            fontSize: 16,
-                          ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        category.isEmpty ? 'Product' : category,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _secondaryText,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          height: 1,
                         ),
-
-                        const Spacer(),
-
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Container(
-                            width: 34,
-                            height: 34,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF667EEA),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.edit_rounded,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        CurrencyFormatter.format(price),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          height: 1,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ],
