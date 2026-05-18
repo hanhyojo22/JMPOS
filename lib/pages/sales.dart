@@ -702,19 +702,28 @@ class _SalesPageState extends State<SalesPage> {
               ? const Center(child: CircularProgressIndicator(color: _primary))
               : products.isEmpty
               ? _buildEmptyState()
-              : GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  itemCount: products.length,
-                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent:
-                        (MediaQuery.sizeOf(context).width - 44) / 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    mainAxisExtent:
-                        ((MediaQuery.sizeOf(context).width - 44) / 2) / 1.04 +
-                        132,
-                  ),
-                  itemBuilder: (_, i) => _buildProductCard(products[i]),
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final cardWidth = (constraints.maxWidth - 44) / 2;
+                    final textScale = MediaQuery.textScalerOf(context).scale(1);
+                    final nameSlotHeight = 13 * 1.18 * textScale;
+                    final cardHeight = (cardWidth / 1.02) + nameSlotHeight + 96;
+
+                    return GridView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      itemCount: products.length,
+                      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: cardWidth,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        mainAxisExtent: cardHeight,
+                      ),
+                      itemBuilder: (_, i) => _buildProductCard(
+                        products[i],
+                        nameSlotHeight: nameSlotHeight,
+                      ),
+                    );
+                  },
                 ),
         ),
       ],
@@ -722,7 +731,10 @@ class _SalesPageState extends State<SalesPage> {
   }
 
   // ── Product card (new design) ──────────────────────────────────────────────
-  Widget _buildProductCard(Map<String, dynamic> product) {
+  Widget _buildProductCard(
+    Map<String, dynamic> product, {
+    required double nameSlotHeight,
+  }) {
     final int stock = product['stock'] as int;
     final double price = (product['price'] as num).toDouble();
     final category = product['category']?.toString() ?? '';
@@ -760,7 +772,7 @@ class _SalesPageState extends State<SalesPage> {
           Stack(
             children: [
               AspectRatio(
-                aspectRatio: 1.04,
+                aspectRatio: 1.02,
                 child: Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
@@ -827,15 +839,18 @@ class _SalesPageState extends State<SalesPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  product['title'] as String,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _primaryText,
-                    height: 1.18,
+                SizedBox(
+                  height: nameSlotHeight,
+                  child: Text(
+                    product['title'] as String,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _primaryText,
+                      height: 1.18,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 3),

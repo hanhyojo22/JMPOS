@@ -813,7 +813,7 @@ class _ProductsPageState extends State<ProductsPage>
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
           mainAxisExtent:
-              ((MediaQuery.sizeOf(context).width - 44) / 2) / 1.02 + 84,
+              ((MediaQuery.sizeOf(context).width - 44) / 2) / 1.02 + 70,
         ),
         itemCount: products.length,
         itemBuilder: (_, i) {
@@ -983,10 +983,10 @@ class _ProductsPageState extends State<ProductsPage>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       SizedBox(
-                        height: 30,
+                        height: 15,
                         child: Text(
                           name,
-                          maxLines: 2,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
