@@ -6,7 +6,6 @@ import 'add_products.dart';
 import 'products.dart';
 import 'sales.dart';
 import 'reports.dart';
-import 'recent_sales.dart';
 import 'account_page.dart';
 import 'staff_management.dart';
 import 'package:pos_app/utils/greetings.dart';
@@ -47,6 +46,7 @@ class _HomePageState extends State<HomePage> {
   Map<String, dynamic>? selectedProduct;
   double totalSales = 0;
   int totalTransactions = 0;
+  double yesterdaySales = 0;
   List<Map<String, dynamic>> recentTransactions = [];
   bool _loadingHome = true;
   String? _topMessage;
@@ -63,6 +63,22 @@ class _HomePageState extends State<HomePage> {
   Color get _softShadow => _isDark
       ? Colors.black.withValues(alpha: 0.22)
       : Colors.black.withValues(alpha: 0.04);
+  double get _todayVsYesterdayPercent {
+    if (yesterdaySales <= 0) {
+      return totalSales > 0 ? 100 : 0;
+    }
+    return ((totalSales - yesterdaySales) / yesterdaySales) * 100;
+  }
+
+  String get _todayVsYesterdayLabel {
+    final percent = _todayVsYesterdayPercent;
+    final sign = percent > 0 ? '+' : '';
+    final rounded = percent.abs() >= 10
+        ? percent.toStringAsFixed(0)
+        : percent.toStringAsFixed(1);
+    return '$sign$rounded%';
+  }
+
   int get _sharedCartItemCount => sharedCart.fold(
     0,
     (total, item) => total + ((item['quantity'] as num?)?.toInt() ?? 0),
@@ -83,6 +99,7 @@ class _HomePageState extends State<HomePage> {
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
       final todayEnd = todayStart.add(const Duration(days: 1));
+      final yesterdayStart = todayStart.subtract(const Duration(days: 1));
 
       final totalResult = await db.rawQuery(
         '''
@@ -93,6 +110,15 @@ class _HomePageState extends State<HomePage> {
         WHERE created_at >= ? AND created_at < ?
       ''',
         [todayStart.toIso8601String(), todayEnd.toIso8601String()],
+      );
+
+      final yesterdayResult = await db.rawQuery(
+        '''
+        SELECT COALESCE(SUM(total), 0) AS yesterday_total
+        FROM sales
+        WHERE created_at >= ? AND created_at < ?
+      ''',
+        [yesterdayStart.toIso8601String(), todayStart.toIso8601String()],
       );
 
       final transactions = await db.rawQuery('''
@@ -113,10 +139,13 @@ class _HomePageState extends State<HomePage> {
           (totalResult.first['grand_total'] as num?)?.toDouble() ?? 0.0;
       final int transactionCount =
           (totalResult.first['total_count'] as num?)?.toInt() ?? 0;
+      final double salesYesterday =
+          (yesterdayResult.first['yesterday_total'] as num?)?.toDouble() ?? 0.0;
 
       setState(() {
         totalSales = salesTotal;
         totalTransactions = transactionCount;
+        yesterdaySales = salesYesterday;
 
         recentTransactions = transactions.map((sale) {
           DateTime? createdAt;
@@ -803,15 +832,45 @@ class _HomePageState extends State<HomePage> {
                                 ],
                               ),
                               Container(
-                                padding: const EdgeInsets.all(12),
+                                constraints: const BoxConstraints(
+                                  maxWidth: 106,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.white.withValues(alpha: 0.2),
-                                  shape: BoxShape.circle,
+                                  borderRadius: BorderRadius.circular(999),
                                 ),
-                                child: const Icon(
-                                  Icons.trending_up,
-                                  color: Colors.white,
-                                  size: 26,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _todayVsYesterdayPercent < 0
+                                          ? Icons.trending_down
+                                          : Icons.trending_up,
+                                      color: Colors.white,
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          _todayVsYesterdayLabel,
+                                          maxLines: 1,
+                                          softWrap: false,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -839,12 +898,10 @@ class _HomePageState extends State<HomePage> {
                               const SizedBox(width: 14),
                               Expanded(
                                 child: _StatPill(
-                                  icon: Icons.calculate_outlined,
-                                  label: 'Avg. Order',
+                                  icon: Icons.history_rounded,
+                                  label: 'Yesterday Sales',
                                   value: CurrencyFormatter.format(
-                                    totalTransactions == 0
-                                        ? 0
-                                        : totalSales / totalTransactions,
+                                    yesterdaySales,
                                   ),
                                 ),
                               ),
@@ -929,17 +986,6 @@ class _HomePageState extends State<HomePage> {
                           ],
                         ),
                         child: ListTile(
-                          onTap: () {
-                            final saleId = (t['id'] as num?)?.toInt();
-                            if (saleId == null) return;
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    RecentSalesPage(saleId: saleId),
-                              ),
-                            );
-                          },
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 14,
                             vertical: 6,
@@ -962,49 +1008,24 @@ class _HomePageState extends State<HomePage> {
                               color: _secondaryText,
                             ),
                           ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    CurrencyFormatter.format(
-                                      t['amount'] as double,
-                                    ),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                      color: Color(0xFF667EEA),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'x${t['quantity']}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: _secondaryText.withValues(
-                                        alpha: 0.7,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                width: 24,
-                                height: 24,
-                                decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFF667EEA,
-                                  ).withValues(alpha: 0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.chevron_right_rounded,
-                                  size: 18,
+                              Text(
+                                CurrencyFormatter.format(t['amount'] as double),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
                                   color: Color(0xFF667EEA),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'x${t['quantity']}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _secondaryText.withValues(alpha: 0.7),
                                 ),
                               ),
                             ],
@@ -1605,7 +1626,7 @@ class _StatPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(18),
@@ -1618,23 +1639,37 @@ class _StatPill extends StatelessWidget {
             children: [
               Icon(icon, color: Colors.white.withValues(alpha: 0.8), size: 16),
               const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.8),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                maxLines: 1,
+                softWrap: false,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ),
         ],
