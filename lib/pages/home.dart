@@ -669,7 +669,6 @@ class _HomePageState extends State<HomePage> {
 
       case 2:
         return AddProductsPage(
-          key: ValueKey(addProductBarcode),
           initialBarcode: addProductBarcode,
           onBarcodeHandled: () {
             addProductBarcode = null;

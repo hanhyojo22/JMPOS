@@ -148,10 +148,15 @@ class _HistoryPageState extends State<HistoryPage> {
 
     // SEARCH
     if (searchQuery.isNotEmpty) {
+      final query = searchQuery.toLowerCase();
       items = items.where((sale) {
-        return sale['product'].toString().toLowerCase().contains(
-          searchQuery.toLowerCase(),
-        );
+        final product = sale['product'].toString().toLowerCase();
+        final saleId = sale['id'].toString().toLowerCase();
+        final saleLabel = 'sale #$saleId';
+
+        return product.contains(query) ||
+            saleId.contains(query) ||
+            saleLabel.contains(query);
       }).toList();
     }
 
@@ -413,11 +418,12 @@ class _HistoryPageState extends State<HistoryPage> {
     final total = (sale['total'] as num?)?.toDouble() ?? 0.0;
     final qty = sale['quantity'] ?? 0;
     final imagePath = sale['imagePath'] as String? ?? '';
+    final saleId = (sale['id'] as num?)?.toInt();
+    final saleLabel = saleId == null ? 'Sale' : 'Sale #$saleId';
 
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: () {
-        final saleId = (sale['id'] as num?)?.toInt();
         if (saleId == null) return;
         Navigator.push(
           context,
@@ -451,7 +457,7 @@ class _HistoryPageState extends State<HistoryPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      sale['product'] as String,
+                      saleLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
 

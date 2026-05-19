@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:pos_app/utils/currency.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/label_text.dart';
 import 'package:pos_app/utils/message_banner.dart';
@@ -1021,7 +1020,7 @@ class _ProductsPageState extends State<ProductsPage>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        CurrencyFormatter.format(price),
+                        '\u20B1${price.toStringAsFixed(2)}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
