@@ -106,7 +106,7 @@ class _HomePageState extends State<HomePage> {
         '''
         SELECT
           COALESCE(SUM(total), 0)  AS grand_total,
-          COUNT(*)                 AS total_count
+          COUNT(DISTINCT substr(created_at, 1, 19)) AS total_count
         FROM sales
         WHERE created_at >= ? AND created_at < ?
       ''',
@@ -124,15 +124,16 @@ class _HomePageState extends State<HomePage> {
 
       final transactions = await db.rawQuery('''
         SELECT
-          sales.id,
-          sales.product_name,
-          sales.total,
-          sales.quantity,
-          sales.created_at,
-          COALESCE(sales.image_url, products.image_url) AS image_url
+          MIN(sales.id) AS id,
+          GROUP_CONCAT(sales.product_name, ', ') AS product_name,
+          SUM(sales.total) AS total,
+          SUM(sales.quantity) AS quantity,
+          MIN(sales.created_at) AS created_at,
+          MAX(COALESCE(sales.image_url, products.image_url)) AS image_url
         FROM sales
         LEFT JOIN products ON sales.product_id = products.id
-        ORDER BY sales.created_at DESC
+        GROUP BY substr(sales.created_at, 1, 19)
+        ORDER BY MAX(sales.created_at) DESC, MAX(sales.id) DESC
         LIMIT 4
       ''');
 
@@ -193,7 +194,7 @@ class _HomePageState extends State<HomePage> {
 
           return {
             'id': sale['id'],
-            'title': sale['product_name'] ?? 'Unknown',
+            'title': 'Sale #${sale['id']}',
             'subtitle': subtitle,
             'amount': (sale['total'] as num?)?.toDouble() ?? 0.0,
             'quantity': sale['quantity'] ?? 0,

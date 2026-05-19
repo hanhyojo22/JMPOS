@@ -72,16 +72,16 @@ class _HistoryPageState extends State<HistoryPage> {
 
     final history = await db.rawQuery('''
       SELECT
-        sales.id,
-        sales.product_id,
-        sales.product_name,
-        sales.quantity,
-        sales.total,
-        sales.created_at,
-        COALESCE(sales.image_url, products.image_url) AS image_url
+        MIN(sales.id) AS id,
+        GROUP_CONCAT(sales.product_name, ', ') AS product_name,
+        SUM(sales.quantity) AS quantity,
+        SUM(sales.total) AS total,
+        MIN(sales.created_at) AS created_at,
+        MAX(COALESCE(sales.image_url, products.image_url)) AS image_url
       FROM sales
       LEFT JOIN products ON products.id = sales.product_id
-      ORDER BY sales.created_at DESC, sales.id DESC
+      GROUP BY substr(sales.created_at, 1, 19)
+      ORDER BY MAX(sales.created_at) DESC, MAX(sales.id) DESC
     ''');
 
     setState(() {

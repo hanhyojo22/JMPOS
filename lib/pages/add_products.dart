@@ -416,6 +416,42 @@ class _AddProductsPageState extends State<AddProductsPage>
 
   // ── Build ─────────────────────────────────────────────────────────────────────
 
+  Widget _saveProductButton() {
+    return SizedBox(
+      height: 56,
+      child: ElevatedButton(
+        onPressed: _isSaving ? null : _saveProduct,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF667EEA),
+          disabledBackgroundColor: const Color(
+            0xFF667EEA,
+          ).withValues(alpha: 0.6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          elevation: 0,
+        ),
+        child: _isSaving
+            ? const CircularProgressIndicator(color: Colors.white)
+            : const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.save_rounded, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text(
+                    'Save Product',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -434,6 +470,23 @@ class _AddProductsPageState extends State<AddProductsPage>
 
     return Scaffold(
       backgroundColor: pageSurface,
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: panelSurface,
+          boxShadow: [
+            BoxShadow(
+              color: shadowColor,
+              blurRadius: 16,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: _saveProductButton(),
+        ),
+      ),
 
       body: FadeTransition(
         opacity: _fadeAnim,
@@ -442,7 +495,7 @@ class _AddProductsPageState extends State<AddProductsPage>
           child: Form(
             key: _formKey,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
               children: [
                 const LabelText(
                   "Add Product Page",
@@ -713,40 +766,6 @@ class _AddProductsPageState extends State<AddProductsPage>
 
                 const SizedBox(height: 28),
 
-                // ── Save button ───────────────────────────────────────
-                SizedBox(
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isSaving ? null : _saveProduct,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF667EEA),
-                      disabledBackgroundColor: const Color(
-                        0xFF667EEA,
-                      ).withValues(alpha: 0.6),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: _isSaving
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.save_rounded, color: Colors.white),
-                              SizedBox(width: 8),
-                              Text(
-                                'Save Product',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                  ),
-                ),
               ],
             ),
           ),
