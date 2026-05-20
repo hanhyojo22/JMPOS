@@ -45,6 +45,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _isRestoring = false;
   DateTime? _lastBackupAt;
   String _storeName = 'My Sari-Sari Store';
+  bool _pinEnabled = false;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
@@ -60,6 +61,7 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     _barcodeScanner = widget.barcodeScannerEnabled;
     _loadStoreName();
+    _loadPinState();
     _loadLastBackupDate();
   }
 
@@ -68,6 +70,12 @@ class _SettingsPageState extends State<SettingsPage> {
     final storeName = prefs.getString(_storeNameKey)?.trim();
     if (!mounted || storeName == null || storeName.isEmpty) return;
     setState(() => _storeName = storeName);
+  }
+
+  Future<void> _loadPinState() async {
+    final enabled = await DatabaseHelper.instance.ownerPinExists();
+    if (!mounted) return;
+    setState(() => _pinEnabled = enabled);
   }
 
   @override
@@ -166,6 +174,16 @@ class _SettingsPageState extends State<SettingsPage> {
                           setState(() => _barcodeScanner = v);
                           widget.onBarcodeScannerChanged(v);
                         }),
+                      ),
+                      _SettingsRow(
+                        icon: Icons.pin_outlined,
+                        iconBg: const Color(0xFFE6F1FB),
+                        iconColor: const Color(0xFF185FA5),
+                        label: 'PIN login',
+                        subtitle: _pinEnabled
+                            ? '4-digit PIN is enabled'
+                            : 'Set a 4-digit PIN',
+                        onTap: _showPinDialog,
                       ),
                       _SettingsRow(
                         icon: Icons.tablet_outlined,
@@ -391,6 +409,24 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _lastBackupAt = value);
   }
 
+  Future<void> _showPinDialog() async {
+    HapticFeedback.lightImpact();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => const _PinSetupDialog(),
+    );
+
+    if (!mounted || saved != true) return;
+    await _loadPinState();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('PIN login updated'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   String _formatBackupDate(DateTime value) {
     final local = value.toLocal();
     const months = [
@@ -608,6 +644,141 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _PinSetupDialog extends StatefulWidget {
+  const _PinSetupDialog();
+
+  @override
+  State<_PinSetupDialog> createState() => _PinSetupDialogState();
+}
+
+class _PinSetupDialogState extends State<_PinSetupDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _pinController = TextEditingController();
+  final _confirmPinController = TextEditingController();
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _pinController.dispose();
+    _confirmPinController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    setState(() => _isSaving = true);
+    final saved = await DatabaseHelper.instance.setOwnerPin(
+      _pinController.text,
+    );
+
+    if (!mounted) return;
+    setState(() => _isSaving = false);
+
+    if (saved) {
+      Navigator.pop(context, true);
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Could not save PIN. Create an owner account first.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  String? _validatePin(String? value) {
+    if (value == null || value.isEmpty) return 'Enter a 4-digit PIN';
+    if (value.length != 4) return 'PIN must be exactly 4 digits';
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text(
+        'Set PIN login',
+        style: TextStyle(fontWeight: FontWeight.w700),
+      ),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: _pinController,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(4),
+              ],
+              decoration: InputDecoration(
+                labelText: 'New PIN',
+                hintText: '4 digits',
+                prefixIcon: const Icon(Icons.pin_outlined),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              validator: _validatePin,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _confirmPinController,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(4),
+              ],
+              decoration: InputDecoration(
+                labelText: 'Confirm PIN',
+                hintText: 'Re-enter PIN',
+                prefixIcon: const Icon(Icons.lock_outline),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              validator: (value) {
+                final pinError = _validatePin(value);
+                if (pinError != null) return pinError;
+                if (value != _pinController.text) return 'PINs do not match';
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSaving ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF667eea),
+            foregroundColor: Colors.white,
+          ),
+          onPressed: _isSaving ? null : _save,
+          child: _isSaving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('Save PIN'),
+        ),
+      ],
     );
   }
 }

@@ -105,8 +105,8 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
   }
 
   String? _validatePassword(String? value) {
-    if (value == null || value.isEmpty) return 'Password or PIN is required';
-    if (value.length < 4) return 'Use at least 4 characters';
+    if (value == null || value.isEmpty) return 'Password is required';
+    if (value.length < 6) return 'Use at least 6 characters';
     return null;
   }
 
@@ -253,8 +253,8 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
                           obscureText: _obscurePassword,
                           textInputAction: TextInputAction.next,
                           decoration: _fieldDecoration(
-                            label: 'Password or PIN',
-                            hint: 'At least 4 characters',
+                            label: 'Password',
+                            hint: 'At least 6 characters',
                             icon: Icons.lock_outline_rounded,
                             suffixIcon: IconButton(
                               icon: Icon(

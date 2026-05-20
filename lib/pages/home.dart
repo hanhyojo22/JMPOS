@@ -1115,7 +1115,9 @@ class _HomePageState extends State<HomePage> {
         : Colors.grey.shade300;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: _selectedIndex == 9
+          ? null
+          : AppBar(
         leadingWidth: 44,
         titleSpacing: 0,
         leading: Builder(

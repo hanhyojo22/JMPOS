@@ -42,7 +42,7 @@ class CartPage extends StatefulWidget {
     required this.onRemove,
     required this.onDelete,
     required this.onCompleteSale,
-    this.showAppBar = true,
+    this.showAppBar = false,
     this.onBrowseProducts,
     this.onCartChanged,
     this.initialMessage,
@@ -150,12 +150,32 @@ class _CartPageState extends State<CartPage> {
   );
 
   List<double> _quickCashOptions(double total) {
-    final List<double> opts = [];
-    for (final r in [1, 5, 10, 20, 50, 100, 200, 500, 1000]) {
-      final rounded = (total / r).ceil() * r.toDouble();
-      if (!opts.contains(rounded) && opts.length < 4) opts.add(rounded);
+    if (total <= 0) return [];
+
+    final options = <double>[];
+
+    void addRounded(double step) {
+      final amount = (total / step).ceil() * step;
+      if (amount >= total && !options.contains(amount)) {
+        options.add(amount);
+      }
     }
-    return opts;
+
+    for (final step in const [50.0, 100.0, 200.0, 500.0, 1000.0]) {
+      addRounded(step);
+      if (options.length == 4) break;
+    }
+
+    var next = options.isEmpty
+        ? (total / 50).ceil() * 50.0
+        : options.last + 50;
+    while (options.length < 4) {
+      if (!options.contains(next)) options.add(next);
+      next += 50;
+    }
+
+    options.sort();
+    return options.take(4).toList();
   }
 
   void _clearCart() {
@@ -198,30 +218,6 @@ class _CartPageState extends State<CartPage> {
         ],
       ),
     );
-  }
-
-  void _setCartQuantity(int index, int requestedQuantity) {
-    if (index < 0 || index >= _cart.length) return;
-
-    final item = _cart[index];
-    final product = item['product'] as Map<String, dynamic>;
-    final currentQuantity = item['quantity'] as int;
-    final availableStock = (product['stock'] as num?)?.toInt() ?? 0;
-    final maxQuantity = currentQuantity + availableStock;
-    final nextQuantity = requestedQuantity.clamp(1, maxQuantity);
-
-    setState(() {
-      final delta = nextQuantity - currentQuantity;
-      product['stock'] = availableStock - delta;
-      item['quantity'] = nextQuantity;
-    });
-    _notifyCartChanged();
-
-    if (requestedQuantity > maxQuantity) {
-      _showBanner('Only $maxQuantity available');
-    } else {
-      _showBanner('Quantity updated', success: true);
-    }
   }
 
   // ── Payment sheet ──────────────────────────────────────────────────────────
@@ -409,63 +405,9 @@ class _CartPageState extends State<CartPage> {
                               color: _primaryText,
                             ),
                           ),
-                          Text(
-                            'Amount due: ${CurrencyFormatter.format(_total)}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _secondaryText,
-                            ),
-                          ),
                         ],
                       ),
                     ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Total banner
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _primary,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Total due',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.white.withValues(alpha: 0.75),
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              CurrencyFormatter.format(_total),
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const Spacer(),
-                        Icon(
-                          Icons.receipt_long_outlined,
-                          color: Colors.white.withValues(alpha: 0.35),
-                          size: 32,
-                        ),
-                      ],
-                    ),
                   ),
 
                   const SizedBox(height: 14),
@@ -529,36 +471,44 @@ class _CartPageState extends State<CartPage> {
                   const SizedBox(height: 10),
 
                   // Quick amounts
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: quickAmounts.map((amt) {
+                  Row(
+                    children: quickAmounts.asMap().entries.map((entry) {
+                      final i = entry.key;
+                      final amt = entry.value;
                       final isSelected =
                           _cashCtrl.text == amt.toStringAsFixed(0);
-                      return GestureDetector(
-                        onTap: () {
-                          _cashCtrl.text = amt.toStringAsFixed(0);
-                          setModal(() {});
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 7,
+                      return Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            left: i == 0 ? 0 : 3,
+                            right: i == quickAmounts.length - 1 ? 0 : 3,
                           ),
-                          decoration: BoxDecoration(
-                            color: isSelected ? _primary : accentBg,
-                            borderRadius: BorderRadius.circular(99),
-                            border: Border.all(
-                              color: isSelected ? _primary : accentBorder,
-                              width: 0.5,
-                            ),
-                          ),
-                          child: Text(
+                          child: GestureDetector(
+                            onTap: () {
+                              _cashCtrl.text = amt.toStringAsFixed(0);
+                              setModal(() {});
+                            },
+                            child: Container(
+                              height: 34,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: isSelected ? _primary : accentBg,
+                                borderRadius: BorderRadius.circular(99),
+                                border: Border.all(
+                                  color: isSelected ? _primary : accentBorder,
+                                  width: 0.5,
+                                ),
+                              ),
+                              child: Text(
                             '₱${amt.toStringAsFixed(0)}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: isSelected ? Colors.white : accentFg,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSelected ? Colors.white : accentFg,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -790,47 +740,50 @@ class _CartPageState extends State<CartPage> {
 
   // ── Cart body ──────────────────────────────────────────────────────────────
   Widget _buildCartBody() {
-    return CustomScrollView(
-      slivers: [
-        // Summary strip
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _SummaryCard(label: 'Items', value: '$_totalUnits'),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _SummaryCard(
-                    label: 'Products',
-                    value: '${_cart.length}',
+    return SafeArea(
+      bottom: false,
+      child: CustomScrollView(
+        slivers: [
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _CartSummaryHeaderDelegate(
+              backgroundColor: _pageSurface,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _SummaryCard(label: 'Items', value: '$_totalUnits'),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _SummaryCard(
-                    label: 'Total',
-                    value: CurrencyFormatter.format(_total),
-                    valueColor: _purple,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _SummaryCard(
+                      label: 'Products',
+                      value: '${_cart.length}',
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _SummaryCard(
+                      label: 'Total',
+                      value: CurrencyFormatter.format(_total),
+                      valueColor: _purple,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
 
-        // Item list
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(14, 0, 14, 120),
-          sliver: SliverList.separated(
-            itemCount: _cart.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (_, i) => _buildCartItem(i),
+          // Item list
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 120),
+            sliver: SliverList.separated(
+              itemCount: _cart.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (_, i) => _buildCartItem(i),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -841,9 +794,7 @@ class _CartPageState extends State<CartPage> {
     final String name = product['title'] as String? ?? '';
     final String cat = product['category'] as String? ?? '';
     final double price = (product['price'] as num).toDouble();
-    final int qty = item['quantity'] as int;
     final String? path = product['imagePath'] as String?;
-    final double subtotal = price * qty;
 
     return Container(
       decoration: BoxDecoration(
@@ -897,115 +848,24 @@ class _CartPageState extends State<CartPage> {
                 GestureDetector(
                   onTap: () {
                     HapticFeedback.lightImpact();
-                    setState(() => widget.onDelete(i));
-                    _notifyCartChanged();
-
-                    _showBanner('$name removed from cart');
+                    _showCartItemSheet(i);
                   },
                   child: Container(
-                    width: 30,
-                    height: 30,
+                    width: 34,
+                    height: 34,
                     decoration: BoxDecoration(
-                      color: _redBg,
+                      color: _purpleBg,
                       shape: BoxShape.circle,
-                      border: Border.all(color: _redBorder, width: 0.5),
+                      border: Border.all(color: _purpleBorder, width: 0.5),
                     ),
                     child: const Icon(
-                      Icons.delete_outline_rounded,
-                      size: 15,
-                      color: _red,
+                      Icons.edit_outlined,
+                      size: 17,
+                      color: _purple,
                     ),
                   ),
                 ),
               ],
-            ),
-
-            const SizedBox(height: 10),
-
-            // Bottom row: subtotal + stepper
-            Container(
-              padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
-              decoration: BoxDecoration(
-                color: _mutedSurface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: _lineColor, width: 0.5),
-              ),
-              child: Row(
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Subtotal',
-                        style: TextStyle(fontSize: 10, color: _tertiaryText),
-                      ),
-                      Text(
-                        CurrencyFormatter.format(subtotal),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: _purple,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  // Stepper
-                  Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      color: _panelSurface,
-                      borderRadius: BorderRadius.circular(99),
-                      border: Border.all(color: _lineColor, width: 0.5),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _StepBtn(
-                          icon: Icons.remove,
-                          filled: false,
-                          onTap: () {
-                            HapticFeedback.lightImpact();
-                            setState(() => widget.onRemove(i));
-                            _notifyCartChanged();
-
-                            _showBanner('Quantity updated');
-                          },
-                        ),
-                        SizedBox(
-                          width: 44,
-                          height: 30,
-                          child: _CartQuantityField(
-                            key: ValueKey('cart_qty_${product['id']}_$qty'),
-                            quantity: qty,
-                            onSubmit: (value, reset) {
-                              final parsed = int.tryParse(value.trim());
-                              if (parsed == null || parsed <= 0) {
-                                reset();
-                                _showBanner('Enter a valid quantity');
-                                return;
-                              }
-                              HapticFeedback.lightImpact();
-                              _setCartQuantity(i, parsed);
-                            },
-                          ),
-                        ),
-                        _StepBtn(
-                          icon: Icons.add,
-                          filled: true,
-                          onTap: () {
-                            HapticFeedback.lightImpact();
-                            setState(() => widget.onAdd(product));
-                            _notifyCartChanged();
-
-                            _showBanner('$name added to cart', success: true);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
             ),
           ],
         ),
@@ -1014,58 +874,260 @@ class _CartPageState extends State<CartPage> {
   }
 
   // ── Empty state ────────────────────────────────────────────────────────────
-  Widget _buildEmpty() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: const BoxDecoration(
-              color: _purpleBg,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.shopping_cart_outlined,
-              size: 38,
-              color: _purple,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Cart is empty',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: _primaryText,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Add products to get started',
-            style: TextStyle(fontSize: 13, color: _secondaryText),
-          ),
-          const SizedBox(height: 20),
-          GestureDetector(
-            onTap: widget.onBrowseProducts ?? () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: _primary,
-                borderRadius: BorderRadius.circular(12),
+  void _showCartItemSheet(int index) {
+    if (index < 0 || index >= _cart.length) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      useSafeArea: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            if (index >= _cart.length) {
+              Navigator.pop(sheetContext);
+              return const SizedBox.shrink();
+            }
+
+            final item = _cart[index];
+            final product = item['product'] as Map<String, dynamic>;
+            final name = product['title'] as String? ?? '';
+            final category = product['category'] as String? ?? '';
+            final price = (product['price'] as num).toDouble();
+            final quantity = item['quantity'] as int;
+            final stock = (product['stock'] as num?)?.toInt() ?? 0;
+            final imagePath = product['imagePath'] as String?;
+            final subtotal = price * quantity;
+
+            void refreshSheet() {
+              if (!mounted) return;
+              setState(() {});
+              _notifyCartChanged();
+              if (index >= _cart.length) {
+                Navigator.pop(sheetContext);
+                return;
+              }
+              setSheetState(() {});
+            }
+
+            return SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                decoration: BoxDecoration(
+                  color: _panelSurface,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        margin: const EdgeInsets.only(top: 12, bottom: 18),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: _lineColor,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        _buildImage(imagePath, size: 58),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: _primaryText,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              if (category.isNotEmpty)
+                                Text(
+                                  category,
+                                  style: TextStyle(
+                                    color: _secondaryText,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              const SizedBox(height: 4),
+                              Text(
+                                CurrencyFormatter.format(price),
+                                style: const TextStyle(
+                                  color: _purple,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: _mutedSurface,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _lineColor, width: 0.5),
+                      ),
+                      child: Row(
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Quantity',
+                                style: TextStyle(
+                                  color: _secondaryText,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '$quantity in cart',
+                                style: TextStyle(
+                                  color: _primaryText,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Spacer(),
+                          _CartSheetQtyButton(
+                            icon: Icons.remove_rounded,
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              widget.onRemove(index);
+                              refreshSheet();
+                            },
+                          ),
+                          Container(
+                            width: 48,
+                            alignment: Alignment.center,
+                            child: Text(
+                              '$quantity',
+                              style: TextStyle(
+                                color: _primaryText,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          _CartSheetQtyButton(
+                            icon: Icons.add_rounded,
+                            enabled: stock > 0,
+                            filled: true,
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              widget.onAdd(product);
+                              refreshSheet();
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Subtotal',
+                          style: TextStyle(color: _secondaryText),
+                        ),
+                        Text(
+                          CurrencyFormatter.format(subtotal),
+                          style: TextStyle(
+                            color: _primaryText,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      stock > 0 ? '$stock more available' : 'No more stock',
+                      style: TextStyle(color: _tertiaryText, fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
-              child: const Text(
-                'Browse products',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildEmpty() {
+    return SafeArea(
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: const BoxDecoration(
+                color: _purpleBg,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.shopping_cart_outlined,
+                size: 38,
+                color: _purple,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Cart is empty',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: _primaryText,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Add products to get started',
+              style: TextStyle(fontSize: 13, color: _secondaryText),
+            ),
+            const SizedBox(height: 20),
+            GestureDetector(
+              onTap: widget.onBrowseProducts ?? () => Navigator.pop(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: _primary,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Browse products',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1074,83 +1136,49 @@ class _CartPageState extends State<CartPage> {
   Widget _buildBottomBar() {
     return SafeArea(
       top: false,
-      minimum: const EdgeInsets.only(bottom: 10),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
-        decoration: BoxDecoration(
-          color: _panelSurface,
-          border: Border(top: BorderSide(color: _lineColor, width: 0.5)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Total row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Total amount',
-                  style: TextStyle(fontSize: 13, color: _secondaryText),
-                ),
-                Text(
-                  CurrencyFormatter.format(_total),
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: _primaryText,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-              ],
+      minimum: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+      child: SizedBox(
+        width: double.infinity,
+        height: 50,
+        child: ElevatedButton(
+          onPressed: _completing ? null : _showPaymentSheet,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _primary,
+            disabledBackgroundColor: Colors.grey[300],
+            elevation: 8,
+            shadowColor: _primary.withValues(alpha: 0.35),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-
-            const SizedBox(height: 10),
-
-            // Pay button
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _completing ? null : _showPaymentSheet,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _primary,
-                  disabledBackgroundColor: Colors.grey[300],
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+          ),
+          child: _completing
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
                   ),
-                ),
-                child: _completing
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.credit_card_outlined,
-                            color: Colors.white,
-                            size: 18,
-                          ),
-                          SizedBox(width: 8),
-                          Text(
-                            'Pay now',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                )
+              : const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.credit_card_outlined,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Pay now',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
                       ),
-              ),
-            ),
-          ],
+                    ),
+                  ],
+                ),
         ),
       ),
     );
@@ -1243,106 +1271,95 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
-// ─── Stepper button ───────────────────────────────────────────────────────────
-class _CartQuantityField extends StatefulWidget {
-  const _CartQuantityField({
-    super.key,
-    required this.quantity,
-    required this.onSubmit,
+class _CartSheetQtyButton extends StatelessWidget {
+  const _CartSheetQtyButton({
+    required this.icon,
+    required this.onTap,
+    this.enabled = true,
+    this.filled = false,
   });
 
-  final int quantity;
-  final void Function(String value, VoidCallback reset) onSubmit;
-
-  @override
-  State<_CartQuantityField> createState() => _CartQuantityFieldState();
-}
-
-class _CartQuantityFieldState extends State<_CartQuantityField> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: '${widget.quantity}');
-  }
-
-  @override
-  void didUpdateWidget(covariant _CartQuantityField oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.quantity != widget.quantity) {
-      _reset();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _reset() {
-    _controller.text = '${widget.quantity}';
-    _controller.selection = TextSelection.collapsed(
-      offset: _controller.text.length,
-    );
-  }
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool enabled;
+  final bool filled;
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
-      controller: _controller,
-      textAlign: TextAlign.center,
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      style: const TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w800,
-        color: _primary,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fg = filled
+        ? Colors.white
+        : isDark
+        ? const Color(0xFFF8FAFC)
+        : const Color(0xFF1A1F36);
+
+    return Opacity(
+      opacity: enabled ? 1 : 0.4,
+      child: GestureDetector(
+        onTap: enabled ? onTap : null,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: filled ? _primary : Colors.transparent,
+            shape: BoxShape.circle,
+            border: filled ? null : Border.all(color: _border, width: 0.5),
+          ),
+          child: Icon(icon, color: fg, size: 18),
+        ),
       ),
-      decoration: const InputDecoration(
-        isDense: true,
-        border: InputBorder.none,
-        contentPadding: EdgeInsets.symmetric(horizontal: 2, vertical: 7),
-      ),
-      onFieldSubmitted: (value) => widget.onSubmit(value, _reset),
-      onTapOutside: (_) {
-        final parsed = int.tryParse(_controller.text.trim());
-        if (parsed == null || parsed <= 0) _reset();
-      },
     );
   }
 }
 
-class _StepBtn extends StatelessWidget {
-  const _StepBtn({
-    required this.icon,
-    required this.filled,
-    required this.onTap,
+class _CartSummaryHeaderDelegate extends SliverPersistentHeaderDelegate {
+  const _CartSummaryHeaderDelegate({
+    required this.backgroundColor,
+    required this.child,
   });
-  final IconData icon;
-  final bool filled;
-  final VoidCallback onTap;
+
+  final Color backgroundColor;
+  final Widget child;
+
+  static const double _height = 84;
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      width: 28,
-      height: 28,
+  double get minExtent => _height;
+
+  @override
+  double get maxExtent => _height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return DecoratedBox(
       decoration: BoxDecoration(
-        color: filled ? const Color(0xFF5C6BC0) : Colors.transparent,
-        shape: BoxShape.circle,
+        color: backgroundColor,
+        boxShadow: overlapsContent
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
       ),
-      child: Icon(
-        icon,
-        size: 14,
-        color: filled
-            ? Colors.white
-            : Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFFF8FAFC)
-            : const Color(0xFF1A1F36),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+        child: child,
       ),
-    ),
-  );
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _CartSummaryHeaderDelegate oldDelegate) {
+    return oldDelegate.backgroundColor != backgroundColor ||
+        oldDelegate.child != child;
+  }
 }
+
+// ─── Stepper button ───────────────────────────────────────────────────────────

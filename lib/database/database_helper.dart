@@ -19,7 +19,7 @@ class RestoreDatabaseException implements Exception {
 
 class DatabaseHelper {
   static Database? _database;
-  static const int _dbVersion = 3;
+  static const int _dbVersion = 4;
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
@@ -464,6 +464,7 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
+        pin_hash TEXT,
         full_name TEXT,
         email TEXT,
         role TEXT DEFAULT 'staff',
@@ -479,6 +480,9 @@ class DatabaseHelper {
     }
     if (oldVersion < 3) {
       await db.execute('ALTER TABLE sales ADD COLUMN image_url TEXT');
+    }
+    if (oldVersion < 4) {
+      await db.execute('ALTER TABLE users ADD COLUMN pin_hash TEXT');
     }
   }
 
@@ -535,7 +539,7 @@ class DatabaseHelper {
 
     final result = await db.query(
       'users',
-      where: 'password_hash = ?',
+      where: 'pin_hash = ?',
       whereArgs: [hash],
       orderBy: "CASE role WHEN 'admin' THEN 0 ELSE 1 END, created_at ASC",
       limit: 1,
@@ -543,6 +547,29 @@ class DatabaseHelper {
 
     if (result.isNotEmpty) return result.first;
     return null;
+  }
+
+  Future<bool> ownerPinExists() async {
+    final db = await database;
+    final result = await db.query(
+      'users',
+      columns: ['id'],
+      where: "role = ? AND pin_hash IS NOT NULL AND TRIM(pin_hash) != ''",
+      whereArgs: ['admin'],
+      limit: 1,
+    );
+    return result.isNotEmpty;
+  }
+
+  Future<bool> setOwnerPin(String pin) async {
+    final db = await database;
+    final result = await db.update(
+      'users',
+      {'pin_hash': _hashPassword(pin)},
+      where: 'id = (SELECT id FROM users WHERE role = ? ORDER BY created_at ASC LIMIT 1)',
+      whereArgs: ['admin'],
+    );
+    return result > 0;
   }
 
   Future<bool> hasOwnerAccount() async {
