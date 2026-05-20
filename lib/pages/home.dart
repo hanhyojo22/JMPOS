@@ -281,7 +281,7 @@ class _HomePageState extends State<HomePage> {
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(
-          Icons.shopping_bag_outlined,
+          Icons.image_not_supported_outlined,
           color: Colors.grey.shade400,
           size: 26,
         ),
@@ -311,7 +311,7 @@ class _HomePageState extends State<HomePage> {
       borderRadius: BorderRadius.circular(12),
     ),
     child: Icon(
-      Icons.shopping_bag_outlined,
+      Icons.image_not_supported_outlined,
       color: Colors.grey.shade400,
       size: 26,
     ),

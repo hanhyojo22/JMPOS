@@ -473,7 +473,7 @@ class _ProductsPageState extends State<ProductsPage>
     height: double.infinity,
     decoration: BoxDecoration(color: _primary.withValues(alpha: 0.07)),
     child: Icon(
-      Icons.inventory_2_outlined,
+      Icons.image_not_supported_outlined,
       color: _primary.withValues(alpha: 0.4),
       size: 30,
     ),

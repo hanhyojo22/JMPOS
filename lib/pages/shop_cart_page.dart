@@ -142,7 +142,11 @@ class _CartPageState extends State<CartPage> {
       borderRadius: BorderRadius.circular(10),
       border: Border.all(color: _purpleBorder, width: 0.5),
     ),
-    child: Icon(Icons.inventory_2_outlined, size: size * 0.42, color: _purple),
+    child: Icon(
+      Icons.image_not_supported_outlined,
+      size: size * 0.42,
+      color: _purple,
+    ),
   );
 
   List<double> _quickCashOptions(double total) {

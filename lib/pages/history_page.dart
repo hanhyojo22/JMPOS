@@ -611,7 +611,11 @@ class _HistoryPageState extends State<HistoryPage> {
         color: _success.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(13),
       ),
-      child: const Icon(Icons.receipt_rounded, color: _success, size: 22),
+      child: const Icon(
+        Icons.image_not_supported_outlined,
+        color: _success,
+        size: 22,
+      ),
     );
   }
 }

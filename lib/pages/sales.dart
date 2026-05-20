@@ -409,7 +409,9 @@ class _SalesPageState extends State<SalesPage> {
     double size = 70,
     double borderRadius = 10,
   }) {
-    if (path == null || path.isEmpty) return _placeholder(size);
+    if (path == null || path.isEmpty) {
+      return _placeholder(size, borderRadius: borderRadius);
+    }
     final file = File(path);
     if (file.existsSync()) {
       return ClipRRect(
@@ -419,7 +421,8 @@ class _SalesPageState extends State<SalesPage> {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _placeholder(size),
+          errorBuilder: (_, _, _) =>
+              _placeholder(size, borderRadius: borderRadius),
         ),
       );
     }
@@ -431,24 +434,25 @@ class _SalesPageState extends State<SalesPage> {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _placeholder(size),
+          errorBuilder: (_, _, _) =>
+              _placeholder(size, borderRadius: borderRadius),
         ),
       );
     }
-    return _placeholder(size);
+    return _placeholder(size, borderRadius: borderRadius);
   }
 
-  Widget _placeholder(double size) => Container(
+  Widget _placeholder(double size, {double borderRadius = 10}) => Container(
     width: size,
     height: size,
     decoration: BoxDecoration(
       color: _primary.withValues(alpha: 0.07),
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(borderRadius),
     ),
     child: Icon(
-      Icons.inventory_2_outlined,
+      Icons.image_not_supported_outlined,
       color: _primary.withValues(alpha: 0.4),
-      size: size * 0.38,
+      size: size.isFinite ? size * 0.38 : 44,
     ),
   );
 

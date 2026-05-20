@@ -691,7 +691,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
     return Container(
       color: _primary.withValues(alpha: 0.08),
       child: Icon(
-        Icons.receipt_long_outlined,
+        Icons.image_not_supported_outlined,
         color: _primary.withValues(alpha: 0.5),
         size: 42,
       ),

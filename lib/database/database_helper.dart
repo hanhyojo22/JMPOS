@@ -1,14 +1,18 @@
-import 'package:sqflite/sqflite.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:crypto/crypto.dart';
 import 'package:archive/archive_io.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 class DatabaseHelper {
   static Database? _database;
   static const int _dbVersion = 3;
+  static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   static final DatabaseHelper instance = DatabaseHelper._init();
 
@@ -231,13 +235,95 @@ class DatabaseHelper {
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
+    final password = await _databasePassword();
+    await _encryptExistingPlaintextDatabaseIfNeeded(path, password);
+
     return await openDatabase(
       path,
+      password: password,
       version: _dbVersion,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
   }
+
+  Future<String> _databasePassword() async {
+    final existing = await _secureStorage.read(key: _dbPasswordKey);
+    if (existing != null && existing.isNotEmpty) {
+      return existing;
+    }
+
+    final random = Random.secure();
+    final keyBytes = List<int>.generate(32, (_) => random.nextInt(256));
+    final password = base64UrlEncode(keyBytes);
+    await _secureStorage.write(key: _dbPasswordKey, value: password);
+    return password;
+  }
+
+  Future<void> _encryptExistingPlaintextDatabaseIfNeeded(
+    String path,
+    String password,
+  ) async {
+    final dbFile = File(path);
+    if (!await dbFile.exists() || !await _isPlaintextSqliteDatabase(dbFile)) {
+      return;
+    }
+
+    final encryptedPath = '$path.encrypted';
+    final plaintextBackupPath = '$path.plaintext_backup';
+    await _deleteIfExists(encryptedPath);
+    await _deleteIfExists('$encryptedPath-wal');
+    await _deleteIfExists('$encryptedPath-shm');
+    await _deleteIfExists(plaintextBackupPath);
+
+    final plainDb = await openDatabase(path);
+    try {
+      await plainDb.rawQuery('PRAGMA wal_checkpoint(TRUNCATE)');
+      await plainDb.execute(
+        'ATTACH DATABASE ${_sqlString(encryptedPath)} AS encrypted '
+        'KEY ${_sqlString(password)}',
+      );
+      await plainDb.rawQuery("SELECT sqlcipher_export('encrypted')");
+
+      final userVersion = Sqflite.firstIntValue(
+            await plainDb.rawQuery('PRAGMA user_version'),
+          ) ??
+          _dbVersion;
+      await plainDb.execute('PRAGMA encrypted.user_version = $userVersion');
+      await plainDb.execute('DETACH DATABASE encrypted');
+    } finally {
+      await plainDb.close();
+    }
+
+    await dbFile.rename(plaintextBackupPath);
+    try {
+      await File(encryptedPath).rename(path);
+      await _deleteIfExists('$path-wal');
+      await _deleteIfExists('$path-shm');
+      await _deleteIfExists('$encryptedPath-wal');
+      await _deleteIfExists('$encryptedPath-shm');
+      await _deleteIfExists(plaintextBackupPath);
+    } catch (_) {
+      if (await File(path).exists()) {
+        await File(path).delete();
+      }
+      if (await File(plaintextBackupPath).exists()) {
+        await File(plaintextBackupPath).rename(path);
+      }
+      rethrow;
+    }
+  }
+
+  Future<bool> _isPlaintextSqliteDatabase(File file) async {
+    final header = await file.openRead(0, 16).fold<List<int>>(
+      <int>[],
+      (bytes, chunk) => bytes..addAll(chunk),
+    );
+    return header.length == 16 &&
+        ascii.decode(header, allowInvalid: true) == 'SQLite format 3\u0000';
+  }
+
+  String _sqlString(String value) => "'${value.replaceAll("'", "''")}'";
 
   Future _createDB(Database db, int version) async {
     // Products table
