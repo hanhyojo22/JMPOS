@@ -8,6 +8,15 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+class RestoreDatabaseException implements Exception {
+  const RestoreDatabaseException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class DatabaseHelper {
   static Database? _database;
   static const int _dbVersion = 3;
@@ -74,17 +83,42 @@ class DatabaseHelper {
         .toIso8601String()
         .replaceAll(RegExp(r'[:.]'), '-');
     final archivePath = join(backupDir.path, 'pos_backup_$timestamp.posbackup');
+    final portableDbPath = join(backupDir.path, 'pos_backup_$timestamp.db');
 
-    final encoder = ZipFileEncoder();
-    encoder.create(archivePath);
-    encoder.addFile(File(dbPath), 'pos.db');
+    try {
+      await _createPortableDatabaseCopy(portableDbPath);
+      final archive = Archive();
+      final databaseBytes = await File(portableDbPath).readAsBytes();
+      archive.addFile(
+        ArchiveFile('pos.db', databaseBytes.length, databaseBytes),
+      );
 
-    final imageDir = Directory(await productImagesDirectoryPath());
-    if (await imageDir.exists()) {
-      encoder.addDirectory(imageDir, includeDirName: true);
+      final imageDir = Directory(await productImagesDirectoryPath());
+      if (await imageDir.exists()) {
+        final imageFiles = imageDir
+            .listSync(recursive: true)
+            .whereType<File>();
+        for (final imageFile in imageFiles) {
+          final relativePath = relative(
+            imageFile.path,
+            from: imageDir.path,
+          ).replaceAll('\\', '/');
+          final imageBytes = await imageFile.readAsBytes();
+          archive.addFile(
+            ArchiveFile(
+              'product_images/$relativePath',
+              imageBytes.length,
+              imageBytes,
+            ),
+          );
+        }
+      }
+
+      await File(archivePath).writeAsBytes(ZipEncoder().encode(archive));
+    } finally {
+      await _deleteIfExists(portableDbPath);
     }
 
-    encoder.close();
     return archivePath;
   }
 
@@ -122,7 +156,7 @@ class DatabaseHelper {
   Future<void> restoreDatabaseFromPath(String backupPath) async {
     final backup = File(backupPath);
     if (!await backup.exists()) {
-      throw Exception('Backup file was not found.');
+      throw const RestoreDatabaseException('Backup file was not found.');
     }
 
     if (backupPath.toLowerCase().endsWith('.posbackup') ||
@@ -138,7 +172,7 @@ class DatabaseHelper {
 
   Future<void> restoreDatabaseFromBytes(Uint8List bytes) async {
     if (bytes.isEmpty) {
-      throw Exception('Backup file is empty.');
+      throw const RestoreDatabaseException('Backup file is empty.');
     }
 
     if (_looksLikeZip(bytes)) {
@@ -156,46 +190,38 @@ class DatabaseHelper {
   }
 
   Future<void> _restoreBackupArchiveBytes(Uint8List bytes) async {
-    final currentDb = await database;
-    final targetPath = currentDb.path;
-    final dbDir = dirname(targetPath);
-    await currentDb.close();
-    _database = null;
-
     try {
       final archive = ZipDecoder().decodeBytes(bytes);
-      final dbFile = archive.files.firstWhere(
-        (file) => file.isFile && basename(file.name) == 'pos.db',
+      final dbFile = _databaseFileFromArchive(archive);
+      if (dbFile == null) {
+        throw const RestoreDatabaseException(
+          'This backup does not contain a database file.',
+        );
+      }
+
+      await _replaceDatabase((targetPath) async {
+        await File(targetPath).writeAsBytes(dbFile.content as List<int>);
+      });
+      await _restoreProductImagesFromArchive(archive);
+    } on RestoreDatabaseException {
+      rethrow;
+    } on ArchiveException {
+      throw const RestoreDatabaseException(
+        'The selected backup file is damaged or is not a valid POS backup.',
       );
-
-      await File(targetPath).writeAsBytes(dbFile.content as List<int>);
-      await _deleteIfExists('$targetPath-wal');
-      await _deleteIfExists('$targetPath-shm');
-
-      final imageDir = Directory(join(dbDir, 'product_images'));
-      if (await imageDir.exists()) {
-        await imageDir.delete(recursive: true);
-      }
-      await imageDir.create(recursive: true);
-
-      for (final file in archive.files) {
-        if (!file.isFile || !file.name.startsWith('product_images/')) {
-          continue;
-        }
-
-        final relativePath = file.name.substring('product_images/'.length);
-        if (relativePath.isEmpty) continue;
-
-        final targetImage = File(join(imageDir.path, relativePath));
-        await targetImage.parent.create(recursive: true);
-        await targetImage.writeAsBytes(file.content as List<int>);
-      }
-
-      _database = await _initDB('pos.db');
     } catch (e) {
-      _database = await _initDB('pos.db');
-      throw Exception('Failed to restore backup archive: $e');
+      throw RestoreDatabaseException(_restoreFailureMessage(e));
     }
+  }
+
+  ArchiveFile? _databaseFileFromArchive(Archive archive) {
+    for (final file in archive.files) {
+      final normalizedName = file.name.replaceAll('\\', '/');
+      if (file.isFile && basename(normalizedName) == 'pos.db') {
+        return file;
+      }
+    }
+    return null;
   }
 
   bool _looksLikeZip(Uint8List bytes) {
@@ -211,17 +237,92 @@ class DatabaseHelper {
   ) async {
     final currentDb = await database;
     final targetPath = currentDb.path;
+    final restoreBackupPath = '$targetPath.restore_backup';
     await currentDb.close();
     _database = null;
 
     try {
+      await _deleteIfExists(restoreBackupPath);
+      if (await File(targetPath).exists()) {
+        await File(targetPath).rename(restoreBackupPath);
+      }
+
       await writeBackup(targetPath);
       await _deleteIfExists('$targetPath-wal');
       await _deleteIfExists('$targetPath-shm');
       _database = await _initDB('pos.db');
+      await _deleteIfExists(restoreBackupPath);
     } catch (e) {
+      await _deleteIfExists(targetPath);
+      if (await File(restoreBackupPath).exists()) {
+        await File(restoreBackupPath).rename(targetPath);
+      }
       _database = await _initDB('pos.db');
-      throw Exception('Failed to restore database: $e');
+      throw RestoreDatabaseException(_restoreFailureMessage(e));
+    }
+  }
+
+  String _restoreFailureMessage(Object error) {
+    final details = error.toString().toLowerCase();
+    if (details.contains('file is not a database') ||
+        details.contains('not a database') ||
+        details.contains('file is encrypted') ||
+        details.contains('cipher') ||
+        details.contains('malformed')) {
+      return 'This backup is encrypted with a different app key or is damaged. '
+          'Create a new backup from the original app, then restore that new .posbackup file.';
+    }
+
+    if (details.contains('permission') || details.contains('access is denied')) {
+      return 'The app could not read or write the selected backup file. Move it to a folder you can access and try again.';
+    }
+
+    return 'Failed to restore backup. Please select a valid .posbackup or .db file.';
+  }
+
+  Future<void> _createPortableDatabaseCopy(String targetPath) async {
+    final db = await database;
+    await _deleteIfExists(targetPath);
+    await db.execute(
+      'ATTACH DATABASE ${_sqlString(targetPath)} AS backup '
+      "KEY ''",
+    );
+
+    try {
+      await db.rawQuery("SELECT sqlcipher_export('backup')");
+      final userVersion = Sqflite.firstIntValue(
+            await db.rawQuery('PRAGMA user_version'),
+          ) ??
+          _dbVersion;
+      await db.execute('PRAGMA backup.user_version = $userVersion');
+    } finally {
+      await db.execute('DETACH DATABASE backup');
+    }
+  }
+
+  Future<void> _restoreProductImagesFromArchive(Archive archive) async {
+    final db = await database;
+    final imageDir = Directory(join(dirname(db.path), 'product_images'));
+    if (await imageDir.exists()) {
+      await imageDir.delete(recursive: true);
+    }
+    await imageDir.create(recursive: true);
+
+    for (final file in archive.files) {
+      final normalizedName = file.name.replaceAll('\\', '/');
+      if (!file.isFile || !normalizedName.startsWith('product_images/')) {
+        continue;
+      }
+
+      final relativePath = normalizedName.substring('product_images/'.length);
+      if (relativePath.isEmpty ||
+          relativePath.split('/').any((segment) => segment == '..')) {
+        continue;
+      }
+
+      final targetImage = File(join(imageDir.path, relativePath));
+      await targetImage.parent.create(recursive: true);
+      await targetImage.writeAsBytes(file.content as List<int>);
     }
   }
 

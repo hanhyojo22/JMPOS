@@ -548,7 +548,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Restore failed: $e'),
+          content: Text('Restore failed: ${_restoreErrorMessage(e)}'),
           behavior: SnackBarBehavior.floating,
           backgroundColor: _danger,
         ),
@@ -558,6 +558,14 @@ class _SettingsPageState extends State<SettingsPage> {
         setState(() => _isRestoring = false);
       }
     }
+  }
+
+  String _restoreErrorMessage(Object error) {
+    if (error is RestoreDatabaseException) {
+      return error.message;
+    }
+
+    return error.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
   }
 
   void _showClearDataDialog() {
