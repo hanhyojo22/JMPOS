@@ -166,9 +166,7 @@ class _CartPageState extends State<CartPage> {
       if (options.length == 4) break;
     }
 
-    var next = options.isEmpty
-        ? (total / 50).ceil() * 50.0
-        : options.last + 50;
+    var next = options.isEmpty ? (total / 50).ceil() * 50.0 : options.last + 50;
     while (options.length < 4) {
       if (!options.contains(next)) options.add(next);
       next += 50;
@@ -500,7 +498,7 @@ class _CartPageState extends State<CartPage> {
                                 ),
                               ),
                               child: Text(
-                            '₱${amt.toStringAsFixed(0)}',
+                                '₱${amt.toStringAsFixed(0)}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -891,6 +889,7 @@ class _CartPageState extends State<CartPage> {
 
             final item = _cart[index];
             final product = item['product'] as Map<String, dynamic>;
+
             final name = product['title'] as String? ?? '';
             final category = product['category'] as String? ?? '';
             final price = (product['price'] as num).toDouble();
@@ -901,12 +900,15 @@ class _CartPageState extends State<CartPage> {
 
             void refreshSheet() {
               if (!mounted) return;
+
               setState(() {});
               _notifyCartChanged();
+
               if (index >= _cart.length) {
                 Navigator.pop(sheetContext);
                 return;
               }
+
               setSheetState(() {});
             }
 
@@ -935,10 +937,12 @@ class _CartPageState extends State<CartPage> {
                         ),
                       ),
                     ),
+
                     Row(
                       children: [
                         _buildImage(imagePath, size: 58),
                         const SizedBox(width: 12),
+
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -953,6 +957,7 @@ class _CartPageState extends State<CartPage> {
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
+
                               if (category.isNotEmpty)
                                 Text(
                                   category,
@@ -961,7 +966,9 @@ class _CartPageState extends State<CartPage> {
                                     fontSize: 12,
                                   ),
                                 ),
+
                               const SizedBox(height: 4),
+
                               Text(
                                 CurrencyFormatter.format(price),
                                 style: const TextStyle(
@@ -974,37 +981,23 @@ class _CartPageState extends State<CartPage> {
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 18),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: _mutedSurface,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _lineColor, width: 0.5),
-                      ),
-                      child: Row(
+
+                    _CartSheetField(
+                      label: 'Selling Price',
+                      value: CurrencyFormatter.format(price),
+                      icon: Icons.sell_outlined,
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    _CartSheetField(
+                      label: 'Quantity',
+                      icon: Icons.format_list_numbered_rounded,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Quantity',
-                                style: TextStyle(
-                                  color: _secondaryText,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '$quantity in cart',
-                                style: TextStyle(
-                                  color: _primaryText,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Spacer(),
                           _CartSheetQtyButton(
                             icon: Icons.remove_rounded,
                             onTap: () {
@@ -1013,6 +1006,7 @@ class _CartPageState extends State<CartPage> {
                               refreshSheet();
                             },
                           ),
+
                           Container(
                             width: 48,
                             alignment: Alignment.center,
@@ -1025,6 +1019,7 @@ class _CartPageState extends State<CartPage> {
                               ),
                             ),
                           ),
+
                           _CartSheetQtyButton(
                             icon: Icons.add_rounded,
                             enabled: stock > 0,
@@ -1038,28 +1033,24 @@ class _CartPageState extends State<CartPage> {
                         ],
                       ),
                     ),
+
                     const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Subtotal',
-                          style: TextStyle(color: _secondaryText),
-                        ),
-                        Text(
-                          CurrencyFormatter.format(subtotal),
-                          style: TextStyle(
-                            color: _primaryText,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
+
+                    _CartSheetField(
+                      label: 'Total Price',
+                      value: CurrencyFormatter.format(subtotal),
+                      icon: Icons.receipt_long_outlined,
+                      valueColor: _purple,
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      stock > 0 ? '$stock more available' : 'No more stock',
-                      style: TextStyle(color: _tertiaryText, fontSize: 12),
+
+                    const SizedBox(height: 8),
+
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        stock > 0 ? '$stock more available' : 'No more stock',
+                        style: TextStyle(color: _tertiaryText, fontSize: 12),
+                      ),
                     ),
                   ],
                 ),
@@ -1265,6 +1256,65 @@ class _SummaryCard extends StatelessWidget {
             ),
             overflow: TextOverflow.ellipsis,
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CartSheetField extends StatelessWidget {
+  const _CartSheetField({
+    required this.label,
+    required this.icon,
+    this.value,
+    this.valueColor,
+    this.trailing,
+  });
+
+  final String label;
+  final IconData icon;
+  final String? value;
+  final Color? valueColor;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+    final mutedSurface = isDark ? const Color(0xFF1E293B) : _surface;
+    final lineColor = isDark ? const Color(0xFF253047) : _border;
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 62),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: mutedSurface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: lineColor, width: 0.5),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: secondaryText),
+          const SizedBox(width: 10),
+          Text(
+            label,
+            style: TextStyle(
+              color: secondaryText,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          trailing ??
+              Text(
+                value ?? '',
+                style: TextStyle(
+                  color: valueColor ?? primaryText,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
         ],
       ),
     );
