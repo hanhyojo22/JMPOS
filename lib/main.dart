@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'pages/login.dart';
 
@@ -41,59 +41,58 @@ class MyAppState extends State<MyApp> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
+    final overlayStyle = isDarkMode
+        ? SystemUiOverlayStyle.light.copyWith(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarDividerColor: Colors.transparent,
+          )
+        : SystemUiOverlayStyle.dark.copyWith(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarDividerColor: Colors.transparent,
+          );
 
-      themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
 
-      theme: ThemeData(
-        brightness: Brightness.light,
-        primarySwatch: Colors.indigo,
-        scaffoldBackgroundColor: const Color(0xFFF4F5FF),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.indigo,
+        theme: ThemeData(
           brightness: Brightness.light,
-        ),
-      ),
-
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0F172A),
-        cardColor: const Color(0xFF111827),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.indigo,
-          brightness: Brightness.dark,
-          surface: const Color(0xFF111827),
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF111827),
-          foregroundColor: Color(0xFFF8FAFC),
-        ),
-        dialogTheme: const DialogThemeData(
-          backgroundColor: Color(0xFF111827),
-          titleTextStyle: TextStyle(
-            color: Color(0xFFF8FAFC),
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
+          primarySwatch: Colors.indigo,
+          scaffoldBackgroundColor: const Color(0xFFF4F5FF),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            systemOverlayStyle: SystemUiOverlayStyle.dark,
           ),
-          contentTextStyle: TextStyle(color: Color(0xFFCBD5E1)),
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.indigo,
+            brightness: Brightness.light,
+          ),
         ),
-        bottomSheetTheme: const BottomSheetThemeData(
-          backgroundColor: Color(0xFF111827),
-          modalBackgroundColor: Color(0xFF111827),
-        ),
-        inputDecorationTheme: const InputDecorationTheme(
-          filled: true,
-          fillColor: Color(0xFF1E293B),
-        ),
-        textTheme: ThemeData.dark().textTheme.apply(
-          bodyColor: Color(0xFFF8FAFC),
-          displayColor: Color(0xFFF8FAFC),
-        ),
-      ),
 
-      home: const LoginPage(),
+        darkTheme: ThemeData(
+          brightness: Brightness.dark,
+          scaffoldBackgroundColor: const Color(0xFF0F172A),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            foregroundColor: Color(0xFFF8FAFC),
+            systemOverlayStyle: SystemUiOverlayStyle.light,
+          ),
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.indigo,
+            brightness: Brightness.dark,
+          ),
+        ),
+
+        home: const LoginPage(),
+      ),
     );
   }
 }

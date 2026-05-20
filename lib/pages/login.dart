@@ -91,7 +91,9 @@ class _LoginPageState extends State<LoginPage> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: _loginSystemOverlayStyle,
       child: Scaffold(
+        backgroundColor: Colors.transparent,
         extendBody: true,
+        extendBodyBehindAppBar: true,
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -100,10 +102,15 @@ class _LoginPageState extends State<LoginPage> {
               colors: [Color(0xFF667eea), Color(0xFF764ba2)],
             ),
           ),
-          child: SafeArea(
+          child: Center(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24.0),
+                padding: EdgeInsets.fromLTRB(
+                  24,
+                  MediaQuery.of(context).padding.top + 24,
+                  24,
+                  MediaQuery.of(context).padding.bottom + 24,
+                ),
                 child: Card(
                   color: cardColor,
                   elevation: 12,
