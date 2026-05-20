@@ -8,6 +8,7 @@ import 'package:pos_app/utils/message_banner.dart';
 class ProductsPage extends StatefulWidget {
   final String? scannedBarcode;
   final Function(Map<String, dynamic>)? onEditProduct;
+  final VoidCallback? onAddProduct;
   final VoidCallback? onBarcodeHandled;
   final List<Map<String, dynamic>> cart;
   final VoidCallback? onCartChanged;
@@ -15,6 +16,7 @@ class ProductsPage extends StatefulWidget {
     super.key,
     this.scannedBarcode,
     this.onEditProduct,
+    this.onAddProduct,
     this.onBarcodeHandled,
     this.cart = const [],
     this.onCartChanged,
@@ -498,6 +500,17 @@ class _ProductsPageState extends State<ProductsPage>
 
     return Scaffold(
       backgroundColor: _pageSurface,
+      floatingActionButton: !_isSelecting && widget.onAddProduct != null
+          ? FloatingActionButton(
+              heroTag: 'products_add_product',
+              onPressed: widget.onAddProduct,
+              backgroundColor: _primary,
+              foregroundColor: Colors.white,
+              elevation: 8,
+              tooltip: 'Add product',
+              child: const Icon(Icons.add_rounded),
+            )
+          : null,
       body: Stack(
         children: [
           SafeArea(

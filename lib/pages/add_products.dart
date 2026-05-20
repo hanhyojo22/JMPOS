@@ -422,6 +422,7 @@ class _AddProductsPageState extends State<AddProductsPage>
 
   Widget _saveProductButton() {
     return SizedBox(
+      width: double.infinity,
       height: 56,
       child: ElevatedButton(
         onPressed: _isSaving ? null : _saveProduct,
@@ -433,7 +434,8 @@ class _AddProductsPageState extends State<AddProductsPage>
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          elevation: 0,
+          elevation: 10,
+          shadowColor: const Color(0xFF667EEA).withValues(alpha: 0.36),
         ),
         child: _isSaving
             ? const CircularProgressIndicator(color: Colors.white)
@@ -474,22 +476,11 @@ class _AddProductsPageState extends State<AddProductsPage>
 
     return Scaffold(
       backgroundColor: pageSurface,
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: panelSurface,
-          boxShadow: [
-            BoxShadow(
-              color: shadowColor,
-              blurRadius: 16,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          top: false,
-          minimum: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: _saveProductButton(),
-        ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: _saveProductButton(),
       ),
 
       body: FadeTransition(
@@ -502,7 +493,7 @@ class _AddProductsPageState extends State<AddProductsPage>
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
               children: [
                 const LabelText(
-                  "Add Product Page",
+                  "Add Product",
                   fontSize: 22,
                   fontWeight: FontWeight.w500,
                   color: Colors.black87,
@@ -769,7 +760,6 @@ class _AddProductsPageState extends State<AddProductsPage>
                 ),
 
                 const SizedBox(height: 28),
-
               ],
             ),
           ),

@@ -610,6 +610,9 @@ class _HomePageState extends State<HomePage> {
           onBarcodeHandled: () {
             productsScannedBarcode = null;
           },
+          onAddProduct: () {
+            setState(() => _selectedIndex = 2);
+          },
 
           onEditProduct: (product) {
             setState(() {

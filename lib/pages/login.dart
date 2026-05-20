@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'home.dart';
 import 'package:pos_app/database/database_helper.dart';
+
+import 'home.dart';
+import 'pin_login.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -78,6 +80,12 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  void _openPinLogin() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const PinLoginPage()));
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -103,166 +111,170 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
           child: Center(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(
-                  24,
-                  MediaQuery.of(context).padding.top + 24,
-                  24,
-                  MediaQuery.of(context).padding.bottom + 24,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                MediaQuery.of(context).padding.top + 24,
+                24,
+                MediaQuery.of(context).padding.bottom + 24,
+              ),
+              child: Card(
+                color: cardColor,
+                elevation: 12,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: Card(
-                  color: cardColor,
-                  elevation: 12,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(32.0),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(height: 16),
-                          Image.asset(
-                            'lib/assets/appiconnobg.png',
-                            height: 150,
-                            width: 250,
-                            fit: BoxFit.cover,
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(height: 16),
+                        Image.asset(
+                          'lib/assets/appiconnobg.png',
+                          height: 150,
+                          width: 250,
+                          fit: BoxFit.cover,
+                        ),
+                        Text(
+                          'Welcome Back!',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: primaryText,
                           ),
-                          Text(
-                            'Welcome Back!',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: primaryText,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Sign in to continue.',
+                          style: TextStyle(fontSize: 15, color: secondaryText),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 28),
+                        TextFormField(
+                          controller: _usernameController,
+                          onChanged: (_) => _clearLoginError(),
+                          decoration: InputDecoration(
+                            labelText: 'Username',
+                            hintText: 'Enter your username',
+                            prefixIcon: const Icon(Icons.person_outline),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
+                            filled: true,
+                            fillColor: fieldColor,
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Sign in to continue.',
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: secondaryText,
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Please enter your username';
+                            }
+                            if (_invalidCredentials) {
+                              return 'Invalid username or password';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _passwordController,
+                          onChanged: (_) => _clearLoginError(),
+                          obscureText: _obscurePassword,
+                          keyboardType: TextInputType.visiblePassword,
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            hintText: 'Enter your password',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                              onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
                             ),
-                            textAlign: TextAlign.center,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            filled: true,
+                            fillColor: fieldColor,
                           ),
-                          const SizedBox(height: 28),
-
-                          // Username field
-                          TextFormField(
-                            controller: _usernameController,
-                            onChanged: (_) => _clearLoginError(),
-                            decoration: InputDecoration(
-                              labelText: 'Username',
-                              hintText: 'Enter your username',
-                              prefixIcon: const Icon(Icons.person_outline),
-                              border: OutlineInputBorder(
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter your password';
+                            }
+                            if (value.length < 6) {
+                              return 'Password must be at least 6 characters';
+                            }
+                            if (_invalidCredentials) {
+                              return 'Invalid username or password';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: _showForgotPasswordDialog,
+                            child: const Text('Forgot Password?'),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _login,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF667eea),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              filled: true,
-                              fillColor: fieldColor,
+                              elevation: 3,
                             ),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Please enter your username';
-                              }
-                              if (_invalidCredentials) {
-                                return 'Invalid username or password';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Password field
-                          TextFormField(
-                            controller: _passwordController,
-                            onChanged: (_) => _clearLoginError(),
-                            obscureText: _obscurePassword,
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              hintText: 'Enter your password',
-                              prefixIcon: const Icon(Icons.lock_outline),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscurePassword
-                                      ? Icons.visibility_off
-                                      : Icons.visibility,
-                                ),
-                                onPressed: () => setState(
-                                  () => _obscurePassword = !_obscurePassword,
-                                ),
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              fillColor: fieldColor,
-                            ),
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Please enter your password';
-                              }
-                              if (value.length < 6) {
-                                return 'Password must be at least 6 characters';
-                              }
-                              if (_invalidCredentials) {
-                                return 'Invalid username or password';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 8),
-
-                          // Forgot password
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: _showForgotPasswordDialog,
-                              child: const Text('Forgot Password?'),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Login button
-                          SizedBox(
-                            width: double.infinity,
-                            height: 50,
-                            child: ElevatedButton(
-                              onPressed: _isLoading ? null : _login,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF667eea),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                elevation: 3,
-                              ),
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              Colors.white,
-                                            ),
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Sign In',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
                                       ),
                                     ),
+                                  )
+                                : const Text(
+                                    'Sign In',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: OutlinedButton.icon(
+                            onPressed: _openPinLogin,
+                            icon: const Icon(Icons.pin_outlined),
+                            label: const Text('PIN Login'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF667eea),
+                              side: const BorderSide(color: Color(0xFF667eea)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -275,10 +287,6 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-// ─── Forgot Password Dialog ───────────────────────────────────────────────────
-// Separate StatefulWidget so the controller is tied to its own lifecycle.
-// This prevents the "dependents.isEmpty" error that happens when you dispose
-// a controller that a still-mounted TextFormField is listening to.
 class _ForgotPasswordDialog extends StatefulWidget {
   const _ForgotPasswordDialog();
 
@@ -287,13 +295,12 @@ class _ForgotPasswordDialog extends StatefulWidget {
 }
 
 class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
-  // Controller lives here — disposed in dispose(), never prematurely
   final _emailController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   @override
   void dispose() {
-    _emailController.dispose(); // safe: called only after widget is gone
+    _emailController.dispose();
     super.dispose();
   }
 
@@ -334,7 +341,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             if (value == null || value.isEmpty) {
               return 'Please enter your email';
             }
-            if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+            if (!RegExp(r'^[\w\-.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
               return 'Please enter a valid email';
             }
             return null;

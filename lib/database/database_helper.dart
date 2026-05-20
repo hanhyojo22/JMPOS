@@ -471,15 +471,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // Insert default admin user (password: jmsolution)
-    await db.insert('users', {
-      'username': 'admin',
-      'password_hash': _hashPassword('jmsolution'),
-      'full_name': 'Juan dela Cruz',
-      'email': 'admin@posapp.com',
-      'role': 'admin',
-      'created_at': DateTime.now().toIso8601String(),
-    });
   }
 
   Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
@@ -536,6 +527,58 @@ class DatabaseHelper {
 
     if (result.isNotEmpty) return result.first;
     return null;
+  }
+
+  Future<Map<String, dynamic>?> loginWithPin(String pin) async {
+    final db = await database;
+    final hash = _hashPassword(pin);
+
+    final result = await db.query(
+      'users',
+      where: 'password_hash = ?',
+      whereArgs: [hash],
+      orderBy: "CASE role WHEN 'admin' THEN 0 ELSE 1 END, created_at ASC",
+      limit: 1,
+    );
+
+    if (result.isNotEmpty) return result.first;
+    return null;
+  }
+
+  Future<bool> hasOwnerAccount() async {
+    final db = await database;
+    final result = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'role = ?',
+      whereArgs: ['admin'],
+      limit: 1,
+    );
+    return result.isNotEmpty;
+  }
+
+  Future<int> createOwner({
+    required String username,
+    required String password,
+    String? email,
+    String? storeName,
+  }) async {
+    final db = await database;
+    final trimmedStoreName = storeName?.trim();
+    try {
+      return await db.insert('users', {
+        'username': username.trim().toLowerCase(),
+        'password_hash': _hashPassword(password),
+        'full_name': trimmedStoreName == null || trimmedStoreName.isEmpty
+            ? username.trim()
+            : trimmedStoreName,
+        'email': email?.trim(),
+        'role': 'admin',
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    } catch (_) {
+      return -1;
+    }
   }
 
   /// Changes password for a given user. Returns true on success.

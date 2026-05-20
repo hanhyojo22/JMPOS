@@ -23,6 +23,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   static const _lastBackupKey = 'last_database_backup_at';
+  static const _storeNameKey = 'store_name';
 
   // ── Design tokens ──────────────────────────────────────────────────────────
   static const Color _primary = Color(0xFF5C6BC0);
@@ -43,6 +44,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _isBackingUp = false;
   bool _isRestoring = false;
   DateTime? _lastBackupAt;
+  String _storeName = 'My Sari-Sari Store';
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
@@ -57,7 +59,15 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _barcodeScanner = widget.barcodeScannerEnabled;
+    _loadStoreName();
     _loadLastBackupDate();
+  }
+
+  Future<void> _loadStoreName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final storeName = prefs.getString(_storeNameKey)?.trim();
+    if (!mounted || storeName == null || storeName.isEmpty) return;
+    setState(() => _storeName = storeName);
   }
 
   @override
@@ -99,7 +109,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         iconBg: const Color(0xFFEEEDFE),
                         iconColor: const Color(0xFF534AB7),
                         label: 'Store name',
-                        subtitle: 'My Sari-Sari Store',
+                        subtitle: _storeName,
                         onTap: () {},
                       ),
                       _SettingsRow(

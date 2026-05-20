@@ -1,6 +1,8 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pos_app/database/database_helper.dart';
 import 'pages/login.dart';
+import 'pages/owner_setup.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +42,6 @@ class MyAppState extends State<MyApp> {
     });
   }
 
-  @override
   @override
   Widget build(BuildContext context) {
     final overlayStyle = isDarkMode
@@ -91,8 +92,35 @@ class MyAppState extends State<MyApp> {
           ),
         ),
 
-        home: const LoginPage(),
+        home: const StartupGate(),
       ),
+    );
+  }
+}
+
+class StartupGate extends StatelessWidget {
+  const StartupGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: DatabaseHelper.instance.hasOwnerAccount(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            backgroundColor: Color(0xFFF4F5FF),
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const LoginPage();
+        }
+
+        return snapshot.data == true
+            ? const LoginPage()
+            : const OwnerSetupPage();
+      },
     );
   }
 }
