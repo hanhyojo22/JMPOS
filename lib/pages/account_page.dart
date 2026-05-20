@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 
 class AccountPage extends StatefulWidget {
@@ -12,13 +11,6 @@ class AccountPage extends StatefulWidget {
 
 class _AccountPageState extends State<AccountPage>
     with TickerProviderStateMixin {
-  static const _accountOverlayStyle = SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    statusBarBrightness: Brightness.dark,
-    systemStatusBarContrastEnforced: false,
-  );
-
   late AnimationController _headerController;
   late AnimationController _cardController;
   late Animation<double> _headerFade;
@@ -35,7 +27,6 @@ class _AccountPageState extends State<AccountPage>
   @override
   void initState() {
     super.initState();
-    _setAccountOverlayStyle();
     _headerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -54,16 +45,6 @@ class _AccountPageState extends State<AccountPage>
         );
 
     _loadUser();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _setAccountOverlayStyle();
-  }
-
-  void _setAccountOverlayStyle() {
-    SystemChrome.setSystemUIOverlayStyle(_accountOverlayStyle);
   }
 
   Future<void> _loadUser() async {
@@ -153,14 +134,12 @@ class _AccountPageState extends State<AccountPage>
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: _accountOverlayStyle,
-      child: Scaffold(
-        backgroundColor: isDark
-            ? const Color(0xFF0F172A)
-            : const Color(0xFFF5F6FA),
-        body: CustomScrollView(
-          slivers: [
+    return Scaffold(
+      backgroundColor: isDark
+          ? const Color(0xFF0F172A)
+          : const Color(0xFFF5F6FA),
+      body: CustomScrollView(
+        slivers: [
             SliverToBoxAdapter(
               child: FadeTransition(
                 opacity: _headerFade,
@@ -301,8 +280,7 @@ class _AccountPageState extends State<AccountPage>
                 ),
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

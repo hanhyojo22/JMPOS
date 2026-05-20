@@ -1206,7 +1206,7 @@ class _HomePageState extends State<HomePage> {
           children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(20, 60, 20, 24),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
 
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
@@ -1216,43 +1216,46 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
 
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: SafeArea(
+                bottom: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
 
-                children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.white,
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: Colors.white,
 
-                    child: const Icon(
-                      Icons.person,
-                      color: Color(0xFF667EEA),
-                      size: 30,
+                      child: const Icon(
+                        Icons.person,
+                        color: Color(0xFF667EEA),
+                        size: 30,
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 14),
+                    const SizedBox(height: 14),
 
-                  Text(
-                    widget.username,
+                    Text(
+                      widget.username,
 
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 4),
+                    const SizedBox(height: 4),
 
-                  Text(
-                    widget.role.toUpperCase(),
+                    Text(
+                      widget.role.toUpperCase(),
 
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
 
