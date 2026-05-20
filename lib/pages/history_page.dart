@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
@@ -76,8 +74,7 @@ class _HistoryPageState extends State<HistoryPage> {
         GROUP_CONCAT(sales.product_name, ', ') AS product_name,
         SUM(sales.quantity) AS quantity,
         SUM(sales.total) AS total,
-        MIN(sales.created_at) AS created_at,
-        MAX(COALESCE(sales.image_url, products.image_url)) AS image_url
+        MIN(sales.created_at) AS created_at
       FROM sales
       LEFT JOIN products ON products.id = sales.product_id
       GROUP BY substr(sales.created_at, 1, 19)
@@ -129,7 +126,6 @@ class _HistoryPageState extends State<HistoryPage> {
           'createdAt': createdAt,
           'quantity': sale['quantity'],
           'total': sale['total'],
-          'imagePath': sale['image_url'] ?? '',
         };
       }).toList();
 
@@ -417,7 +413,6 @@ class _HistoryPageState extends State<HistoryPage> {
   Widget _buildHistoryCard(Map<String, dynamic> sale) {
     final total = (sale['total'] as num?)?.toDouble() ?? 0.0;
     final qty = sale['quantity'] ?? 0;
-    final imagePath = sale['imagePath'] as String? ?? '';
     final saleId = (sale['id'] as num?)?.toInt();
     final saleLabel = saleId == null ? 'Sale' : 'Sale #$saleId';
 
@@ -448,10 +443,6 @@ class _HistoryPageState extends State<HistoryPage> {
 
           child: Row(
             children: [
-              _buildProductImage(imagePath),
-
-              const SizedBox(width: 12),
-
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -583,41 +574,6 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  Widget _buildProductImage(String imagePath) {
-    if (imagePath.isNotEmpty) {
-      final file = File(imagePath);
-      if (file.existsSync()) {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(13),
-          child: Image.file(
-            file,
-            width: 46,
-            height: 46,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => _historyImageFallback(),
-          ),
-        );
-      }
-    }
-
-    return _historyImageFallback();
-  }
-
-  Widget _historyImageFallback() {
-    return Container(
-      width: 46,
-      height: 46,
-      decoration: BoxDecoration(
-        color: _success.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(13),
-      ),
-      child: const Icon(
-        Icons.image_not_supported_outlined,
-        color: _success,
-        size: 22,
-      ),
-    );
-  }
 }
 
 class _HistoryStat extends StatelessWidget {

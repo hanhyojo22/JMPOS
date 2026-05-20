@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'history_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -128,8 +127,7 @@ class _HomePageState extends State<HomePage> {
           GROUP_CONCAT(sales.product_name, ', ') AS product_name,
           SUM(sales.total) AS total,
           SUM(sales.quantity) AS quantity,
-          MIN(sales.created_at) AS created_at,
-          MAX(COALESCE(sales.image_url, products.image_url)) AS image_url
+          MIN(sales.created_at) AS created_at
         FROM sales
         LEFT JOIN products ON sales.product_id = products.id
         GROUP BY substr(sales.created_at, 1, 19)
@@ -198,7 +196,6 @@ class _HomePageState extends State<HomePage> {
             'subtitle': subtitle,
             'amount': (sale['total'] as num?)?.toDouble() ?? 0.0,
             'quantity': sale['quantity'] ?? 0,
-            'imagePath': sale['image_url'] ?? '',
           };
         }).toList();
 
@@ -270,52 +267,6 @@ class _HomePageState extends State<HomePage> {
 
     await _openCartPage(initialMessage: '$productName added to cart');
   }
-
-  Widget _buildProductImage(String imagePath) {
-    if (imagePath.isEmpty) {
-      return Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Icon(
-          Icons.image_not_supported_outlined,
-          color: Colors.grey.shade400,
-          size: 26,
-        ),
-      );
-    }
-    final file = File(imagePath);
-    if (file.existsSync()) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.file(
-          file,
-          width: 56,
-          height: 56,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _imageFallback(),
-        ),
-      );
-    }
-    return _imageFallback();
-  }
-
-  Widget _imageFallback() => Container(
-    width: 56,
-    height: 56,
-    decoration: BoxDecoration(
-      color: Colors.grey.shade100,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Icon(
-      Icons.image_not_supported_outlined,
-      color: Colors.grey.shade400,
-      size: 26,
-    ),
-  );
 
   void _showSnack(String message, {bool isError = false, bool top = false}) {
     if (!mounted) return;
@@ -1003,7 +954,6 @@ class _HomePageState extends State<HomePage> {
                             horizontal: 14,
                             vertical: 6,
                           ),
-                          leading: _buildProductImage(t['imagePath'] as String),
                           title: Text(
                             t['title'] as String,
                             style: TextStyle(

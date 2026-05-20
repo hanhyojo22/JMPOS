@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
@@ -58,7 +56,6 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
           sales.price,
           sales.total,
           sales.created_at,
-          COALESCE(sales.image_url, products.image_url) AS image_url,
           products.category AS category,
           products.barcode AS barcode
         FROM sales
@@ -91,7 +88,6 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
               sales.price,
               sales.total,
               sales.created_at,
-              COALESCE(sales.image_url, products.image_url) AS image_url,
               products.category AS category,
               products.barcode AS barcode
             FROM sales
@@ -370,8 +366,6 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
           const SizedBox(height: 18),
           Row(
             children: [
-              const SizedBox(width: 38),
-              const SizedBox(width: 10),
               Expanded(
                 flex: 6,
                 child: Text(
@@ -408,22 +402,12 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
     final quantity = (item['quantity'] as num?)?.toInt() ?? 0;
     final price = (item['price'] as num?)?.toDouble() ?? 0.0;
     final total = (item['total'] as num?)?.toDouble() ?? 0.0;
-    final imagePath = item['image_url']?.toString() ?? '';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: 38,
-              height: 48,
-              child: _imageFromPath(imagePath),
-            ),
-          ),
-          const SizedBox(width: 10),
           Expanded(
             flex: 6,
             child: Column(
@@ -660,41 +644,6 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
         ],
       ),
       child: child,
-    );
-  }
-
-  Widget _imageFromPath(String path) {
-    if (path.isEmpty) return _imageFallback();
-    final file = File(path);
-    if (file.existsSync()) {
-      return Image.file(
-        file,
-        width: 108,
-        height: 108,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _imageFallback(),
-      );
-    }
-    if (path.startsWith('http')) {
-      return Image.network(
-        path,
-        width: 108,
-        height: 108,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _imageFallback(),
-      );
-    }
-    return _imageFallback();
-  }
-
-  Widget _imageFallback() {
-    return Container(
-      color: _primary.withValues(alpha: 0.08),
-      child: Icon(
-        Icons.image_not_supported_outlined,
-        color: _primary.withValues(alpha: 0.5),
-        size: 42,
-      ),
     );
   }
 

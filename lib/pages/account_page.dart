@@ -161,143 +161,146 @@ class _AccountPageState extends State<AccountPage>
             : const Color(0xFFF5F6FA),
         body: CustomScrollView(
           slivers: [
-          SliverToBoxAdapter(
-            child: FadeTransition(
-              opacity: _headerFade,
-              child: _ProfileHeader(
-                name: userName,
-                email: userEmail,
-                role: userRole,
-                initials: avatarInitials,
+            SliverToBoxAdapter(
+              child: FadeTransition(
+                opacity: _headerFade,
+                child: _ProfileHeader(
+                  name: userName,
+                  email: userEmail,
+                  role: userRole,
+                  initials: avatarInitials,
+                ),
               ),
             ),
-          ),
-          SliverToBoxAdapter(
-            child: SlideTransition(
-              position: _cardSlide,
-              child: FadeTransition(
-                opacity: _cardController,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-                  child: Column(
-                    children: [
-                      _SectionCard(
-                        title: 'Account Info',
-                        children: [
-                          _InfoRow(
-                            icon: Icons.person_outline_rounded,
-                            label: 'Full Name',
-                            value: userName,
-                          ),
-                          _InfoRow(
-                            icon: Icons.email_outlined,
-                            label: 'Email',
-                            value: userEmail,
-                          ),
-                          _InfoRow(
-                            icon: Icons.badge_outlined,
-                            label: 'Role',
-                            value: userRole,
-                          ),
-                          _InfoRow(
-                            icon: Icons.calendar_today_outlined,
-                            label: 'Member Since',
-                            value: memberSince,
-                            isLast: true,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _SectionCard(
-                        title: 'Security',
-                        children: [
-                          _ActionRow(
-                            icon: Icons.lock_outline_rounded,
-                            label: 'Change Password',
-                            subtitle: 'Update your account password',
-                            iconColor: const Color(0xFF667EEA),
-                            iconBg: const Color(
-                              0xFF667EEA,
-                            ).withValues(alpha: 0.1),
-                            onTap: _showChangePasswordSheet,
-                          ),
-                          _ActionRow(
-                            icon: Icons.security_outlined,
-                            label: 'Two-Factor Auth',
-                            subtitle: 'Add extra layer of security',
-                            iconColor: const Color(0xFF43B89C),
-                            iconBg: const Color(
-                              0xFF43B89C,
-                            ).withValues(alpha: 0.1),
-                            onTap: () {},
-                            isLast: true,
-                            trailing: Switch(
-                              value: false,
-                              onChanged: (_) {},
-                              activeThumbColor: const Color(
-                                0xFF43B89C,
-                              ), // new property
+            SliverToBoxAdapter(
+              child: SlideTransition(
+                position: _cardSlide,
+                child: FadeTransition(
+                  opacity: _cardController,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+                    child: Column(
+                      children: [
+                        _SectionCard(
+                          title: 'Account Info',
+                          children: [
+                            _InfoRow(
+                              icon: Icons.person_outline_rounded,
+                              label: 'Full Name',
+                              value: userName,
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _SectionCard(
-                        title: 'Preferences',
-                        children: [
-                          _ActionRow(
-                            icon: Icons.notifications_outlined,
-                            label: 'Notifications',
-                            subtitle: 'Manage notification settings',
-                            iconColor: const Color(0xFFF59E0B),
-                            iconBg: const Color(
-                              0xFFF59E0B,
-                            ).withValues(alpha: 0.1),
-                            onTap: () {},
-                          ),
-                          _ActionRow(
-                            icon: Icons.language_outlined,
-                            label: 'Language',
-                            subtitle: 'English (Philippines)',
-                            iconColor: const Color(0xFF8B5CF6),
-                            iconBg: const Color(
-                              0xFF8B5CF6,
-                            ).withValues(alpha: 0.1),
-                            onTap: () {},
-                            isLast: true,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _SectionCard(
-                        title: 'About',
-                        children: [
-                          _ActionRow(
-                            icon: Icons.info_outline_rounded,
-                            label: 'App Version',
-                            subtitle: 'v1.0.0 (Build 42)',
-                            iconColor: const Color(0xFF64748B),
-                            iconBg: const Color(
-                              0xFF64748B,
-                            ).withValues(alpha: 0.1),
-                            onTap: () {},
-                            isLast: true,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
+                            _InfoRow(
+                              icon: Icons.email_outlined,
+                              label: 'Email',
+                              value: userEmail,
+                            ),
+                            _InfoRow(
+                              icon: Icons.badge_outlined,
+                              label: 'Role',
+                              value: userRole,
+                            ),
+                            _InfoRow(
+                              icon: Icons.calendar_today_outlined,
+                              label: 'Member Since',
+                              value: memberSince,
+                              isLast: true,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _SectionCard(
+                          title: 'Security',
+                          children: [
+                            _ActionRow(
+                              icon: Icons.lock_outline_rounded,
+                              label: 'Change Password',
+                              subtitle: 'Update your account password',
+                              iconColor: const Color(0xFF667EEA),
+                              iconBg: const Color(
+                                0xFF667EEA,
+                              ).withValues(alpha: 0.1),
+                              onTap: _showChangePasswordSheet,
+                            ),
+                            _ActionRow(
+                              icon: Icons.security_outlined,
+                              label: 'Two-Factor Auth',
+                              subtitle: 'Add extra layer of security',
+                              iconColor: const Color(0xFF43B89C),
+                              iconBg: const Color(
+                                0xFF43B89C,
+                              ).withValues(alpha: 0.1),
+                              onTap: () {},
+                              isLast: true,
+                              trailing: Switch(
+                                value: false,
+                                onChanged: (_) {},
+                                activeThumbColor: const Color(
+                                  0xFF43B89C,
+                                ), // new property
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _SectionCard(
+                          title: 'Preferences',
+                          children: [
+                            _ActionRow(
+                              icon: Icons.notifications_outlined,
+                              label: 'Notifications',
+                              subtitle: 'Manage notification settings',
+                              iconColor: const Color(0xFFF59E0B),
+                              iconBg: const Color(
+                                0xFFF59E0B,
+                              ).withValues(alpha: 0.1),
+                              onTap: () {},
+                            ),
+                            _ActionRow(
+                              icon: Icons.language_outlined,
+                              label: 'Language',
+                              subtitle: 'English (Philippines)',
+                              iconColor: const Color(0xFF8B5CF6),
+                              iconBg: const Color(
+                                0xFF8B5CF6,
+                              ).withValues(alpha: 0.1),
+                              onTap: () {},
+                              isLast: true,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _SectionCard(
+                          title: 'About',
+                          children: [
+                            _ActionRow(
+                              icon: Icons.info_outline_rounded,
+                              label: 'App Version',
+                              subtitle: 'v1.0.0 (Build 42)',
+                              iconColor: const Color(0xFF64748B),
+                              iconBg: const Color(
+                                0xFF64748B,
+                              ).withValues(alpha: 0.1),
+                              onTap: () {},
+                              isLast: true,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
 
-                      const SizedBox(height: 8),
-                      Text(
-                        'POS App © 2026',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+                        Text(
+                          'POS App © 2026',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[400],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
           ],
         ),
       ),
