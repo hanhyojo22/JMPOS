@@ -291,6 +291,10 @@ class _AddProductsPageState extends State<AddProductsPage>
     setState(() => _isSaving = true);
 
     try {
+      final savedImagePath = await DatabaseHelper.instance.saveProductImage(
+        _pickedImage?.path,
+      );
+
       final newId = await DatabaseHelper.instance.addProduct(
         barcode: barcode,
         productName: _nameController.text.trim(),
@@ -301,7 +305,7 @@ class _AddProductsPageState extends State<AddProductsPage>
         price: double.parse(_sellingPriceController.text),
         costPrice: double.parse(_costPriceController.text),
         stockQuantity: int.parse(_stockQuantityController.text),
-        imageUrl: _pickedImage?.path,
+        imageUrl: savedImagePath,
       );
 
       // rest of your success/error handling...

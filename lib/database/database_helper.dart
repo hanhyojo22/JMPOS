@@ -1,7 +1,10 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:crypto/crypto.dart';
+import 'package:archive/archive_io.dart';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 class DatabaseHelper {
   static Database? _database;
@@ -15,6 +18,214 @@ class DatabaseHelper {
     if (_database != null) return _database!;
     _database = await _initDB('pos.db');
     return _database!;
+  }
+
+  Future<String> prepareDatabaseForBackup() async {
+    final db = await database;
+    await _migrateImageColumn(db, 'products');
+    await _migrateImageColumn(db, 'sales');
+    await db.rawQuery('PRAGMA wal_checkpoint(TRUNCATE)');
+
+    final source = File(db.path);
+    if (!await source.exists()) {
+      throw Exception('Database file was not found.');
+    }
+
+    return source.path;
+  }
+
+  Future<void> _migrateImageColumn(Database db, String table) async {
+    final rows = await db.query(
+      table,
+      columns: ['id', 'image_url'],
+      where: "image_url IS NOT NULL AND TRIM(image_url) != ''",
+    );
+
+    for (final row in rows) {
+      final imagePath = row['image_url']?.toString();
+      final id = row['id'];
+      if (imagePath == null || id == null) continue;
+
+      final savedPath = await saveProductImage(imagePath);
+      if (savedPath == null || savedPath == imagePath) continue;
+
+      await db.update(
+        table,
+        {'image_url': savedPath},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+  }
+
+  Future<String> createBackupArchive() async {
+    final dbPath = await prepareDatabaseForBackup();
+    final dbDir = dirname(dbPath);
+    final backupDir = Directory(join(dbDir, 'backups'));
+    if (!await backupDir.exists()) {
+      await backupDir.create(recursive: true);
+    }
+
+    final timestamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(RegExp(r'[:.]'), '-');
+    final archivePath = join(backupDir.path, 'pos_backup_$timestamp.posbackup');
+
+    final encoder = ZipFileEncoder();
+    encoder.create(archivePath);
+    encoder.addFile(File(dbPath), 'pos.db');
+
+    final imageDir = Directory(await productImagesDirectoryPath());
+    if (await imageDir.exists()) {
+      encoder.addDirectory(imageDir, includeDirName: true);
+    }
+
+    encoder.close();
+    return archivePath;
+  }
+
+  Future<String> productImagesDirectoryPath() async {
+    final db = await database;
+    return join(dirname(db.path), 'product_images');
+  }
+
+  Future<String?> saveProductImage(String? imagePath) async {
+    if (imagePath == null || imagePath.trim().isEmpty) return null;
+
+    final source = File(imagePath);
+    if (!await source.exists()) return imagePath;
+
+    final imageDir = Directory(await productImagesDirectoryPath());
+    if (!await imageDir.exists()) {
+      await imageDir.create(recursive: true);
+    }
+
+    if (dirname(source.path) == imageDir.path) {
+      return source.path;
+    }
+
+    final imageExtension = extension(source.path);
+    final timestamp = DateTime.now().microsecondsSinceEpoch;
+    final targetPath = join(
+      imageDir.path,
+      'product_$timestamp${imageExtension.isEmpty ? '.jpg' : imageExtension}',
+    );
+
+    await source.copy(targetPath);
+    return targetPath;
+  }
+
+  Future<void> restoreDatabaseFromPath(String backupPath) async {
+    final backup = File(backupPath);
+    if (!await backup.exists()) {
+      throw Exception('Backup file was not found.');
+    }
+
+    if (backupPath.toLowerCase().endsWith('.posbackup') ||
+        backupPath.toLowerCase().endsWith('.zip')) {
+      await _restoreBackupArchive(backup);
+      return;
+    }
+
+    await _replaceDatabase((targetPath) async {
+      await backup.copy(targetPath);
+    });
+  }
+
+  Future<void> restoreDatabaseFromBytes(Uint8List bytes) async {
+    if (bytes.isEmpty) {
+      throw Exception('Backup file is empty.');
+    }
+
+    if (_looksLikeZip(bytes)) {
+      await _restoreBackupArchiveBytes(bytes);
+      return;
+    }
+
+    await _replaceDatabase((targetPath) async {
+      await File(targetPath).writeAsBytes(bytes);
+    });
+  }
+
+  Future<void> _restoreBackupArchive(File backup) async {
+    await _restoreBackupArchiveBytes(await backup.readAsBytes());
+  }
+
+  Future<void> _restoreBackupArchiveBytes(Uint8List bytes) async {
+    final currentDb = await database;
+    final targetPath = currentDb.path;
+    final dbDir = dirname(targetPath);
+    await currentDb.close();
+    _database = null;
+
+    try {
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final dbFile = archive.files.firstWhere(
+        (file) => file.isFile && basename(file.name) == 'pos.db',
+      );
+
+      await File(targetPath).writeAsBytes(dbFile.content as List<int>);
+      await _deleteIfExists('$targetPath-wal');
+      await _deleteIfExists('$targetPath-shm');
+
+      final imageDir = Directory(join(dbDir, 'product_images'));
+      if (await imageDir.exists()) {
+        await imageDir.delete(recursive: true);
+      }
+      await imageDir.create(recursive: true);
+
+      for (final file in archive.files) {
+        if (!file.isFile || !file.name.startsWith('product_images/')) {
+          continue;
+        }
+
+        final relativePath = file.name.substring('product_images/'.length);
+        if (relativePath.isEmpty) continue;
+
+        final targetImage = File(join(imageDir.path, relativePath));
+        await targetImage.parent.create(recursive: true);
+        await targetImage.writeAsBytes(file.content as List<int>);
+      }
+
+      _database = await _initDB('pos.db');
+    } catch (e) {
+      _database = await _initDB('pos.db');
+      throw Exception('Failed to restore backup archive: $e');
+    }
+  }
+
+  bool _looksLikeZip(Uint8List bytes) {
+    return bytes.length >= 4 &&
+        bytes[0] == 0x50 &&
+        bytes[1] == 0x4B &&
+        bytes[2] == 0x03 &&
+        bytes[3] == 0x04;
+  }
+
+  Future<void> _replaceDatabase(
+    Future<void> Function(String targetPath) writeBackup,
+  ) async {
+    final currentDb = await database;
+    final targetPath = currentDb.path;
+    await currentDb.close();
+    _database = null;
+
+    try {
+      await writeBackup(targetPath);
+      await _deleteIfExists('$targetPath-wal');
+      await _deleteIfExists('$targetPath-shm');
+      _database = await _initDB('pos.db');
+    } catch (e) {
+      _database = await _initDB('pos.db');
+      throw Exception('Failed to restore database: $e');
+    }
+  }
+
+  Future<void> _deleteIfExists(String path) async {
+    final file = File(path);
+    if (await file.exists()) {
+      await file.delete();
+    }
   }
 
   Future<Database> _initDB(String filePath) async {

@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_saver/file_saver.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ─── Settings Page ────────────────────────────────────────────────────────────
 class SettingsPage extends StatefulWidget {
@@ -18,6 +22,8 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  static const _lastBackupKey = 'last_database_backup_at';
+
   // ── Design tokens ──────────────────────────────────────────────────────────
   static const Color _primary = Color(0xFF5C6BC0);
   static const Color _surface = Color(0xFFF4F5FF);
@@ -27,8 +33,6 @@ class _SettingsPageState extends State<SettingsPage> {
   static const Color _textTertiary = Color(0xFFAAAAAA);
   static const Color _danger = Color(0xFFDC2626);
   static const Color _dangerBg = Color(0xFFFEE2E2);
-  static const Color _infoBg = Color(0xFFE6F1FB);
-  static const Color _infoText = Color(0xFF185FA5);
 
   // ── Preferences state ──────────────────────────────────────────────────────
   bool _notifications = true;
@@ -36,6 +40,9 @@ class _SettingsPageState extends State<SettingsPage> {
   late bool _barcodeScanner;
   bool _keepScreenOn = false;
   bool _loadedThemeValue = false;
+  bool _isBackingUp = false;
+  bool _isRestoring = false;
+  DateTime? _lastBackupAt;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
@@ -50,6 +57,7 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _barcodeScanner = widget.barcodeScannerEnabled;
+    _loadLastBackupDate();
   }
 
   @override
@@ -174,24 +182,38 @@ class _SettingsPageState extends State<SettingsPage> {
                         onTap: () {},
                       ),
                       _SettingsRow(
-                        icon: Icons.cloud_upload_outlined,
+                        icon: Icons.backup_outlined,
                         iconBg: const Color(0xFFEAF3DE),
                         iconColor: const Color(0xFF3B6D11),
-                        label: 'Backup data',
-                        subtitle: 'Auto-backup is on',
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildBadge('On', _infoBg, _infoText),
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.chevron_right,
-                              size: 18,
-                              color: _tertiaryText,
-                            ),
-                          ],
-                        ),
-                        onTap: () {},
+                        label: 'Backup database',
+                        subtitle: _lastBackupSubtitle,
+                        trailing: _isBackingUp
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : null,
+                        onTap: _isBackingUp ? null : _backupDatabase,
+                      ),
+                      _SettingsRow(
+                        icon: Icons.restore_outlined,
+                        iconBg: const Color(0xFFFFF4DE),
+                        iconColor: const Color(0xFF9A5B00),
+                        label: 'Restore database',
+                        subtitle: 'Import a saved backup file',
+                        trailing: _isRestoring
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : null,
+                        onTap: _isRestoring ? null : _restoreDatabase,
                       ),
                       _SettingsRow(
                         icon: Icons.delete_outline_rounded,
@@ -334,6 +356,208 @@ class _SettingsPageState extends State<SettingsPage> {
         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg),
       ),
     );
+  }
+
+  String get _lastBackupSubtitle {
+    final lastBackupAt = _lastBackupAt;
+    if (lastBackupAt == null) return 'No backup yet';
+    return 'Last backup: ${_formatBackupDate(lastBackupAt)}';
+  }
+
+  Future<void> _loadLastBackupDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_lastBackupKey);
+    final parsed = value == null ? null : DateTime.tryParse(value);
+
+    if (!mounted) return;
+    setState(() => _lastBackupAt = parsed);
+  }
+
+  Future<void> _saveLastBackupDate(DateTime value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastBackupKey, value.toIso8601String());
+
+    if (!mounted) return;
+    setState(() => _lastBackupAt = value);
+  }
+
+  String _formatBackupDate(DateTime value) {
+    final local = value.toLocal();
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final hour = local.hour == 0
+        ? 12
+        : local.hour > 12
+        ? local.hour - 12
+        : local.hour;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+    return '${months[local.month - 1]} ${local.day}, ${local.year} $hour:$minute $period';
+  }
+
+  Future<void> _backupDatabase() async {
+    HapticFeedback.lightImpact();
+    setState(() => _isBackingUp = true);
+
+    try {
+      final databasePath =
+          await DatabaseHelper.instance.createBackupArchive();
+      final timestamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(RegExp(r'[:.]'), '-');
+      final savedPath = await FileSaver.instance.saveAs(
+        name: 'pos_backup_$timestamp',
+        filePath: databasePath,
+        fileExtension: 'posbackup',
+        mimeType: MimeType.other,
+        customMimeType: 'application/zip',
+      );
+      if (!mounted) return;
+      await _saveLastBackupDate(DateTime.now());
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Backup created',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          content: SelectableText(
+            savedPath ?? 'Database backup was saved.',
+            style: TextStyle(color: _secondaryText),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Backup failed: $e'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _danger,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isBackingUp = false);
+      }
+    }
+  }
+
+  Future<void> _restoreDatabase() async {
+    HapticFeedback.lightImpact();
+
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['posbackup', 'db', 'zip'],
+      allowMultiple: false,
+      withData: true,
+    );
+
+    if (!mounted || result == null || result.files.isEmpty) return;
+
+    final backup = result.files.single;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Restore database?',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'This will replace the current products, sales, users, and settings with "${backup.name}". This action cannot be undone.',
+          style: TextStyle(color: _secondaryText),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Restore',
+              style: TextStyle(color: _danger, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || confirmed != true) return;
+
+    setState(() => _isRestoring = true);
+
+    try {
+      final backupPath = backup.path;
+      if (backupPath != null) {
+        await DatabaseHelper.instance.restoreDatabaseFromPath(backupPath);
+      } else if (backup.bytes != null) {
+        await DatabaseHelper.instance.restoreDatabaseFromBytes(backup.bytes!);
+      } else {
+        throw Exception('Selected backup could not be read.');
+      }
+
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Restore complete',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          content: Text(
+            'The database has been restored. Reopen pages that were already loaded to see the latest data.',
+            style: TextStyle(color: _secondaryText),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Restore failed: $e'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _danger,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isRestoring = false);
+      }
+    }
   }
 
   void _showClearDataDialog() {

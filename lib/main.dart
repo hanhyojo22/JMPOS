@@ -51,6 +51,9 @@ class MyAppState extends State<MyApp> {
         brightness: Brightness.light,
         primarySwatch: Colors.indigo,
         scaffoldBackgroundColor: const Color(0xFFF4F5FF),
+        appBarTheme: const AppBarTheme(
+          systemOverlayStyle: SystemUiOverlayStyle.dark,
+        ),
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.indigo,
           brightness: Brightness.light,
@@ -69,6 +72,7 @@ class MyAppState extends State<MyApp> {
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF111827),
           foregroundColor: Color(0xFFF8FAFC),
+          systemOverlayStyle: SystemUiOverlayStyle.light,
         ),
         dialogTheme: const DialogThemeData(
           backgroundColor: Color(0xFF111827),

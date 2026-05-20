@@ -261,6 +261,10 @@ class _EditProductPageState extends State<EditProductPage> {
 
     setState(() => _saving = true);
     try {
+      final savedImagePath = await DatabaseHelper.instance.saveProductImage(
+        _imagePath,
+      );
+
       final updated = {
         'id': productId,
         'product_name': _nameCtrl.text.trim(),
@@ -272,7 +276,7 @@ class _EditProductPageState extends State<EditProductPage> {
         'price': double.parse(_priceCtrl.text),
         'cost_price': double.parse(_costCtrl.text),
         'stock_quantity': int.parse(_stockCtrl.text),
-        'image_url': _imagePath,
+        'image_url': savedImagePath,
         'updated_at': DateTime.now().toIso8601String(),
       };
       final result = await DatabaseHelper.instance.updateProduct(updated);
