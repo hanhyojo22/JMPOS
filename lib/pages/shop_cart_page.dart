@@ -410,6 +410,42 @@ class _CartPageState extends State<CartPage> {
 
                   const SizedBox(height: 14),
 
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accentBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: accentBorder, width: 0.5),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Total price',
+                          style: TextStyle(
+                            color: _secondaryText,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          CurrencyFormatter.format(_total),
+                          style: TextStyle(
+                            color: accentFg,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
                   // Cash input
                   Container(
                     decoration: BoxDecoration(
@@ -792,6 +828,8 @@ class _CartPageState extends State<CartPage> {
     final String name = product['title'] as String? ?? '';
     final String cat = product['category'] as String? ?? '';
     final double price = (product['price'] as num).toDouble();
+    final int quantity = item['quantity'] as int;
+    final double itemTotal = price * quantity;
     final String? path = product['imagePath'] as String?;
 
     return Container(
@@ -832,7 +870,7 @@ class _CartPageState extends State<CartPage> {
                       ],
                       const SizedBox(height: 4),
                       Text(
-                        CurrencyFormatter.format(price),
+                        CurrencyFormatter.format(itemTotal),
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -857,7 +895,7 @@ class _CartPageState extends State<CartPage> {
                       border: Border.all(color: _purpleBorder, width: 0.5),
                     ),
                     child: const Icon(
-                      Icons.edit_outlined,
+                      Icons.edit_note,
                       size: 17,
                       color: _purple,
                     ),
@@ -878,6 +916,7 @@ class _CartPageState extends State<CartPage> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       useSafeArea: true,
       builder: (sheetContext) {
         return StatefulBuilder(
@@ -912,9 +951,140 @@ class _CartPageState extends State<CartPage> {
               setSheetState(() {});
             }
 
+            Future<void> showQuantityInput() async {
+              final maxQuantity = quantity + stock;
+              final controller = TextEditingController(text: '$quantity');
+
+              void closeQuantityDialog(
+                BuildContext dialogContext, [
+                int? value,
+              ]) {
+                FocusScope.of(dialogContext).unfocus();
+                Navigator.of(dialogContext, rootNavigator: true).pop(value);
+              }
+
+              final nextQuantity = await showDialog<int>(
+                context: context,
+                builder: (dialogContext) {
+                  String? errorText;
+
+                  return StatefulBuilder(
+                    builder: (context, setDialogState) {
+                      return AlertDialog(
+                        backgroundColor: _panelSurface,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        title: Text(
+                          'Enter quantity',
+                          style: TextStyle(
+                            color: _primaryText,
+                            fontSize: 2,
+                            fontWeight: FontWeight.w300,
+                          ),
+                        ),
+                        content: TextField(
+                          controller: controller,
+                          autofocus: true,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          style: TextStyle(
+                            color: _primaryText,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Quantity',
+                            helperText: 'Max $maxQuantity',
+                            errorText: errorText,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onSubmitted: (_) {
+                            final parsed = int.tryParse(controller.text);
+                            if (parsed == null ||
+                                parsed < 1 ||
+                                parsed > maxQuantity) {
+                              setDialogState(() {
+                                errorText = 'Enter 1 to $maxQuantity';
+                              });
+                              return;
+                            }
+
+                            closeQuantityDialog(dialogContext, parsed);
+                          },
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => closeQuantityDialog(dialogContext),
+                            child: Text(
+                              'Cancel',
+                              style: TextStyle(color: _secondaryText),
+                            ),
+                          ),
+                          ElevatedButton(
+                            onPressed: () {
+                              final parsed = int.tryParse(controller.text);
+                              if (parsed == null ||
+                                  parsed < 1 ||
+                                  parsed > maxQuantity) {
+                                setDialogState(() {
+                                  errorText = 'Enter 1 to $maxQuantity';
+                                });
+                                return;
+                              }
+
+                              closeQuantityDialog(dialogContext, parsed);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _primary,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text(
+                              'Update',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              );
+
+              if (nextQuantity == null ||
+                  nextQuantity == quantity ||
+                  index >= _cart.length) {
+                return;
+              }
+
+              HapticFeedback.lightImpact();
+
+              if (nextQuantity > quantity) {
+                for (var i = 0; i < nextQuantity - quantity; i++) {
+                  widget.onAdd(product);
+                }
+              } else {
+                for (var i = 0; i < quantity - nextQuantity; i++) {
+                  widget.onRemove(index);
+                }
+              }
+
+              refreshSheet();
+            }
+
             return SafeArea(
               top: false,
               child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.88,
+                ),
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
                 decoration: BoxDecoration(
                   color: _panelSurface,
@@ -922,137 +1092,187 @@ class _CartPageState extends State<CartPage> {
                     top: Radius.circular(24),
                   ),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        margin: const EdgeInsets.only(top: 12, bottom: 18),
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: _lineColor,
-                          borderRadius: BorderRadius.circular(99),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          margin: const EdgeInsets.only(top: 8, bottom: 10),
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: _lineColor,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
                         ),
                       ),
-                    ),
 
-                    Row(
-                      children: [
-                        _buildImage(imagePath, size: 58),
-                        const SizedBox(width: 12),
+                      Text(
+                        'Update Quantity',
+                        style: TextStyle(
+                          color: _primaryText,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
 
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: _primaryText,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
+                      const SizedBox(height: 18),
 
-                              if (category.isNotEmpty)
+                      Row(
+                        children: [
+                          _buildImage(imagePath, size: 58),
+                          const SizedBox(width: 12),
+
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                                 Text(
-                                  category,
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    color: _secondaryText,
-                                    fontSize: 12,
+                                    color: _primaryText,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
 
-                              const SizedBox(height: 4),
+                                if (category.isNotEmpty)
+                                  Text(
+                                    category,
+                                    style: TextStyle(
+                                      color: _secondaryText,
+                                      fontSize: 12,
+                                    ),
+                                  ),
 
-                              Text(
-                                CurrencyFormatter.format(price),
-                                style: const TextStyle(
-                                  color: _purple,
-                                  fontWeight: FontWeight.w800,
+                                const SizedBox(height: 4),
+
+                                Text(
+                                  CurrencyFormatter.format(price),
+                                  style: const TextStyle(
+                                    color: _purple,
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    _CartSheetField(
-                      label: 'Selling Price',
-                      value: CurrencyFormatter.format(price),
-                      icon: Icons.sell_outlined,
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    _CartSheetField(
-                      label: 'Quantity',
-                      icon: Icons.format_list_numbered_rounded,
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _CartSheetQtyButton(
-                            icon: Icons.remove_rounded,
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              widget.onRemove(index);
-                              refreshSheet();
-                            },
-                          ),
-
-                          Container(
-                            width: 48,
-                            alignment: Alignment.center,
-                            child: Text(
-                              '$quantity',
-                              style: TextStyle(
-                                color: _primaryText,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                              ),
+                              ],
                             ),
-                          ),
-
-                          _CartSheetQtyButton(
-                            icon: Icons.add_rounded,
-                            enabled: stock > 0,
-                            filled: true,
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              widget.onAdd(product);
-                              refreshSheet();
-                            },
                           ),
                         ],
                       ),
-                    ),
 
-                    const SizedBox(height: 12),
+                      const SizedBox(height: 18),
 
-                    _CartSheetField(
-                      label: 'Total Price',
-                      value: CurrencyFormatter.format(subtotal),
-                      icon: Icons.receipt_long_outlined,
-                      valueColor: _purple,
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        stock > 0 ? '$stock more available' : 'No more stock',
-                        style: TextStyle(color: _tertiaryText, fontSize: 12),
+                      _CartSheetField(
+                        label: 'Selling Price',
+                        value: CurrencyFormatter.format(price),
+                        icon: Icons.sell_outlined,
                       ),
-                    ),
-                  ],
+
+                      const SizedBox(height: 12),
+
+                      _CartSheetField(
+                        label: 'Quantity',
+                        icon: Icons.format_list_numbered_rounded,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _CartSheetQtyButton(
+                              icon: Icons.remove_rounded,
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                widget.onRemove(index);
+                                refreshSheet();
+                              },
+                            ),
+
+                            GestureDetector(
+                              onTap: showQuantityInput,
+                              child: Container(
+                                width: 54,
+                                height: 34,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: _mutedSurface,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: _lineColor,
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  '$quantity',
+                                  style: TextStyle(
+                                    color: _primaryText,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            _CartSheetQtyButton(
+                              icon: Icons.add_rounded,
+                              enabled: stock > 0,
+                              filled: true,
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                widget.onAdd(product);
+                                refreshSheet();
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      _CartSheetField(
+                        label: 'Total Price',
+                        value: CurrencyFormatter.format(subtotal),
+                        icon: Icons.receipt_long_outlined,
+                        valueColor: _purple,
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          stock > 0 ? '$stock more available' : 'No more stock',
+                          style: TextStyle(color: _tertiaryText, fontSize: 12),
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _primary,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: const Text(
+                            'Done',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
