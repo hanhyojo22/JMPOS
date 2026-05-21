@@ -240,10 +240,11 @@ class _CartPageState extends State<CartPage> {
   }
 
   Future<void> _deleteSelectedCartItems() async {
-    final selected = _selectedCartIndexes
-        .where((index) => index >= 0 && index < _cart.length)
-        .toList()
-      ..sort((a, b) => b.compareTo(a));
+    final selected =
+        _selectedCartIndexes
+            .where((index) => index >= 0 && index < _cart.length)
+            .toList()
+          ..sort((a, b) => b.compareTo(a));
 
     if (selected.isEmpty) {
       setState(_selectedCartIndexes.clear);
@@ -457,7 +458,7 @@ class _CartPageState extends State<CartPage> {
                   // Handle
                   Center(
                     child: Container(
-                      margin: const EdgeInsets.only(top: 12, bottom: 18),
+                      margin: const EdgeInsets.only(top: 10, bottom: 14),
                       width: 36,
                       height: 4,
                       decoration: BoxDecoration(
@@ -471,8 +472,8 @@ class _CartPageState extends State<CartPage> {
                   Row(
                     children: [
                       Container(
-                        width: 38,
-                        height: 38,
+                        width: 34,
+                        height: 34,
                         decoration: BoxDecoration(
                           color: accentBg,
                           borderRadius: BorderRadius.circular(10),
@@ -480,34 +481,45 @@ class _CartPageState extends State<CartPage> {
                         ),
                         child: Icon(
                           Icons.payments_outlined,
-                          size: 20,
+                          size: 18,
                           color: accentFg,
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Cash payment',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: _primaryText,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Cash payment',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: _primaryText,
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 2),
+                            Text(
+                              'Enter cash received',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: _secondaryText,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
 
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
 
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
+                      horizontal: 12,
+                      vertical: 10,
                     ),
                     decoration: BoxDecoration(
                       color: accentBg,
@@ -520,7 +532,7 @@ class _CartPageState extends State<CartPage> {
                           'Total price',
                           style: TextStyle(
                             color: _secondaryText,
-                            fontSize: 13,
+                            fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -529,7 +541,7 @@ class _CartPageState extends State<CartPage> {
                           CurrencyFormatter.format(_total),
                           style: TextStyle(
                             color: accentFg,
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
@@ -539,24 +551,27 @@ class _CartPageState extends State<CartPage> {
 
                   const SizedBox(height: 12),
 
-                  // Cash input
-                  Container(
+                  // Cash input + change
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
                     decoration: BoxDecoration(
                       color: cashFieldBg,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: cashFieldBorder),
                     ),
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 4,
+                      horizontal: 12,
+                      vertical: 2,
                     ),
                     child: Row(
                       children: [
                         Text(
                           '₱ ',
                           style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
                             color: _primary,
                           ),
                         ),
@@ -572,7 +587,7 @@ class _CartPageState extends State<CartPage> {
                               ),
                             ],
                             style: TextStyle(
-                              fontSize: 22,
+                              fontSize: 19,
                               fontWeight: FontWeight.w700,
                               color: _primaryText,
                             ),
@@ -580,12 +595,12 @@ class _CartPageState extends State<CartPage> {
                               hintText: '0.00',
                               hintStyle: TextStyle(
                                 color: _tertiaryText,
-                                fontSize: 22,
+                                fontSize: 19,
                               ),
                               border: InputBorder.none,
                               isDense: true,
                               contentPadding: const EdgeInsets.symmetric(
-                                vertical: 10,
+                                vertical: 9,
                               ),
                             ),
                             onChanged: (v) => setModal(() {}),
@@ -593,6 +608,68 @@ class _CartPageState extends State<CartPage> {
                         ),
                       ],
                     ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          height: 54,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: cashAmt > 0 ? statusBg : _mutedSurface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: cashAmt > 0 ? statusBorder : _lineColor,
+                              width: 0.5,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                cashAmt <= 0
+                                    ? 'Change'
+                                    : sufficient
+                                    ? 'Change'
+                                    : 'Need more',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: cashAmt <= 0
+                                      ? _secondaryText
+                                      : sufficient
+                                      ? successFg
+                                      : dangerFg,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                cashAmt <= 0
+                                    ? CurrencyFormatter.format(0)
+                                    : sufficient
+                                    ? CurrencyFormatter.format(change)
+                                    : CurrencyFormatter.format(-change),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: cashAmt <= 0
+                                      ? _primaryText
+                                      : sufficient
+                                      ? successFg
+                                      : dangerFg,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
 
                   const SizedBox(height: 10),
@@ -631,8 +708,8 @@ class _CartPageState extends State<CartPage> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
                                   color: isSelected ? Colors.white : accentFg,
                                 ),
                               ),
@@ -643,66 +720,7 @@ class _CartPageState extends State<CartPage> {
                     }).toList(),
                   ),
 
-                  const SizedBox(height: 12),
-
-                  // Change / insufficient
-                  if (cashAmt > 0) ...[
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: statusBg,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: statusBorder, width: 0.5),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            sufficient
-                                ? Icons.check_circle_outline_rounded
-                                : Icons.error_outline_rounded,
-                            color: sufficient ? successFg : dangerFg,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            sufficient ? 'Change' : 'Insufficient cash',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: sufficient ? successFg : dangerFg,
-                            ),
-                          ),
-                          const Spacer(),
-                          if (sufficient)
-                            Text(
-                              CurrencyFormatter.format(change),
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                                color: successFg,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                          if (!sufficient)
-                            Text(
-                              'Need ${CurrencyFormatter.format(-change)} more',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: dangerFg,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                  ] else
-                    const SizedBox(height: 14),
+                  const SizedBox(height: 14),
 
                   // Confirm button
                   SizedBox(
@@ -1057,7 +1075,11 @@ class _CartPageState extends State<CartPage> {
                         : _purpleBg,
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: const Icon(Icons.edit_outlined, size: 15, color: _purple),
+                  child: const Icon(
+                    Icons.edit_outlined,
+                    size: 15,
+                    color: _purple,
+                  ),
                 ),
               ],
             ),
@@ -1111,7 +1133,7 @@ class _CartPageState extends State<CartPage> {
 
             Future<void> showQuantityInput() async {
               final maxQuantity = quantity + stock;
-              final controller = TextEditingController(text: '$quantity');
+              final controller = TextEditingController();
 
               void closeQuantityDialog(
                 BuildContext dialogContext, [
@@ -1130,16 +1152,47 @@ class _CartPageState extends State<CartPage> {
                     builder: (context, setDialogState) {
                       return AlertDialog(
                         backgroundColor: _panelSurface,
+                        insetPadding: const EdgeInsets.symmetric(
+                          horizontal: 28,
+                          vertical: 24,
+                        ),
+                        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                        contentPadding: const EdgeInsets.fromLTRB(
+                          20,
+                          12,
+                          20,
+                          4,
+                        ),
+                        actionsPadding: const EdgeInsets.fromLTRB(
+                          16,
+                          8,
+                          16,
+                          14,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(18),
                         ),
-                        title: Text(
-                          'Enter quantity',
-                          style: TextStyle(
-                            color: _primaryText,
-                            fontSize: 2,
-                            fontWeight: FontWeight.w300,
-                          ),
+                        title: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Enter quantity',
+                              style: TextStyle(
+                                color: _primaryText,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Available up to $maxQuantity',
+                              style: TextStyle(
+                                color: _secondaryText,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
                         content: TextField(
                           controller: controller,
@@ -1150,15 +1203,39 @@ class _CartPageState extends State<CartPage> {
                           ],
                           style: TextStyle(
                             color: _primaryText,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
                           ),
                           decoration: InputDecoration(
-                            labelText: 'Quantity',
-                            helperText: 'Max $maxQuantity',
+                            hintText: '0',
                             errorText: errorText,
+                            isDense: true,
+                            filled: true,
+                            fillColor: _mutedSurface,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 14,
+                            ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: _lineColor,
+                                width: 0.5,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: _lineColor,
+                                width: 0.5,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(
+                                color: _primary,
+                                width: 1.2,
+                              ),
                             ),
                           ),
                           onSubmitted: (_) {
@@ -1178,6 +1255,12 @@ class _CartPageState extends State<CartPage> {
                         actions: [
                           TextButton(
                             onPressed: () => closeQuantityDialog(dialogContext),
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(82, 42),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
                             child: Text(
                               'Cancel',
                               style: TextStyle(color: _secondaryText),
@@ -1199,6 +1282,7 @@ class _CartPageState extends State<CartPage> {
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: _primary,
+                              minimumSize: const Size(92, 42),
                               elevation: 0,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -1271,8 +1355,8 @@ class _CartPageState extends State<CartPage> {
                         'Update Quantity',
                         style: TextStyle(
                           color: _primaryText,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
 
@@ -1365,7 +1449,7 @@ class _CartPageState extends State<CartPage> {
                                   '$quantity',
                                   style: TextStyle(
                                     color: _primaryText,
-                                    fontSize: 18,
+                                    fontSize: 16,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
@@ -1623,8 +1707,9 @@ class _BottomMetric extends StatelessWidget {
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment:
-          alignCenter ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+      crossAxisAlignment: alignCenter
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.start,
       children: [
         Text(
           label,
@@ -1689,88 +1774,6 @@ class _ConfirmRow extends StatelessWidget {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({
-    required this.label,
-    required this.value,
-    this.valueColor,
-  });
-  final String label, value;
-  final Color? valueColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF111827) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark ? const Color(0xFF253047) : const Color(0xFFEEEEEE),
-          width: 0.5,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFFAAAAAA),
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color:
-                  valueColor ??
-                  (isDark ? const Color(0xFFF8FAFC) : const Color(0xFF1A1F36)),
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CartHeaderCell extends StatelessWidget {
-  const _CartHeaderCell({
-    required this.label,
-    this.flex = 1,
-    this.alignEnd = false,
-  });
-
-  final String label;
-  final int flex;
-  final bool alignEnd;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Expanded(
-      flex: flex,
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        textAlign: alignEnd ? TextAlign.end : TextAlign.start,
-        style: TextStyle(
-          color: isDark ? const Color(0xFFCBD5E1) : _textSecondary,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
 class _CartSheetField extends StatelessWidget {
   const _CartSheetField({
     required this.label,
@@ -1795,8 +1798,8 @@ class _CartSheetField extends StatelessWidget {
     final lineColor = isDark ? const Color(0xFF253047) : _border;
 
     return Container(
-      constraints: const BoxConstraints(minHeight: 62),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      constraints: const BoxConstraints(minHeight: 54),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: mutedSurface,
         borderRadius: BorderRadius.circular(14),
@@ -1804,13 +1807,13 @@ class _CartSheetField extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: secondaryText),
-          const SizedBox(width: 10),
+          Icon(icon, size: 18, color: secondaryText),
+          const SizedBox(width: 8),
           Text(
             label,
             style: TextStyle(
               color: secondaryText,
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -1820,7 +1823,7 @@ class _CartSheetField extends StatelessWidget {
                 value ?? '',
                 style: TextStyle(
                   color: valueColor ?? primaryText,
-                  fontSize: 16,
+                  fontSize: 14,
                   fontWeight: FontWeight.w800,
                 ),
               ),
