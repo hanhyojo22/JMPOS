@@ -55,6 +55,7 @@ class CartPage extends StatefulWidget {
 
 class _CartPageState extends State<CartPage> {
   final TextEditingController _cashCtrl = TextEditingController();
+  final Set<int> _selectedCartIndexes = <int>{};
   bool _completing = false;
 
   @override
@@ -89,6 +90,7 @@ class _CartPageState extends State<CartPage> {
   );
 
   int get _totalUnits => _cart.fold(0, (s, i) => s + (i['quantity'] as int));
+  bool get _isSelectingCartItems => _selectedCartIndexes.isNotEmpty;
 
   void _notifyCartChanged() => widget.onCartChanged?.call();
 
@@ -205,6 +207,7 @@ class _CartPageState extends State<CartPage> {
                   item['product']['stock'] += item['quantity'];
                 }
                 _cart.clear();
+                _selectedCartIndexes.clear();
               });
               _notifyCartChanged();
             },
@@ -219,6 +222,96 @@ class _CartPageState extends State<CartPage> {
   }
 
   // ── Payment sheet ──────────────────────────────────────────────────────────
+  void _toggleCartItemSelection(int index) {
+    if (index < 0 || index >= _cart.length) return;
+
+    setState(() {
+      if (_selectedCartIndexes.contains(index)) {
+        _selectedCartIndexes.remove(index);
+      } else {
+        _selectedCartIndexes.add(index);
+      }
+    });
+  }
+
+  void _startCartItemSelection(int index) {
+    HapticFeedback.mediumImpact();
+    _toggleCartItemSelection(index);
+  }
+
+  Future<void> _deleteSelectedCartItems() async {
+    final selected = _selectedCartIndexes
+        .where((index) => index >= 0 && index < _cart.length)
+        .toList()
+      ..sort((a, b) => b.compareTo(a));
+
+    if (selected.isEmpty) {
+      setState(_selectedCartIndexes.clear);
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: _panelSurface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          title: Text(
+            'Remove selected?',
+            style: TextStyle(
+              color: _primaryText,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          content: Text(
+            'Remove ${selected.length} selected product${selected.length == 1 ? '' : 's'} from the cart?',
+            style: TextStyle(color: _secondaryText),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text('Cancel', style: TextStyle(color: _secondaryText)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _red,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Remove'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    for (final index in selected) {
+      if (index >= 0 && index < _cart.length) {
+        widget.onDelete(index);
+      }
+    }
+
+    setState(_selectedCartIndexes.clear);
+    _notifyCartChanged();
+  }
+
+  void _handleSummaryDelete() {
+    if (_isSelectingCartItems) {
+      _deleteSelectedCartItems();
+    } else {
+      _clearCart();
+    }
+  }
+
   Future<bool> _confirmCompleteSale({
     required double cashAmount,
     required double change,
@@ -785,21 +878,52 @@ class _CartPageState extends State<CartPage> {
               child: Row(
                 children: [
                   Expanded(
-                    child: _SummaryCard(label: 'Items', value: '$_totalUnits'),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _SummaryCard(
-                      label: 'Products',
-                      value: '${_cart.length}',
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _isSelectingCartItems ? 'Selected' : 'Checkout',
+                          style: TextStyle(
+                            color: _primaryText,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _isSelectingCartItems
+                              ? '${_selectedCartIndexes.length} product${_selectedCartIndexes.length != 1 ? 's' : ''}'
+                              : '$_totalUnits item${_totalUnits != 1 ? 's' : ''}',
+                          style: TextStyle(
+                            color: _secondaryText,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _SummaryCard(
-                      label: 'Total',
-                      value: CurrencyFormatter.format(_total),
-                      valueColor: _purple,
+                  GestureDetector(
+                    onTap: _handleSummaryDelete,
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: _isDark ? _red.withValues(alpha: 0.18) : _redBg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _isDark
+                              ? _red.withValues(alpha: 0.34)
+                              : _redBorder,
+                          width: 0.5,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.delete_outline_rounded,
+                        size: 22,
+                        color: _red,
+                      ),
                     ),
                   ),
                 ],
@@ -826,80 +950,114 @@ class _CartPageState extends State<CartPage> {
     final item = _cart[i];
     final product = item['product'];
     final String name = product['title'] as String? ?? '';
-    final String cat = product['category'] as String? ?? '';
     final double price = (product['price'] as num).toDouble();
     final int quantity = item['quantity'] as int;
-    final double itemTotal = price * quantity;
+    final double discount = (item['discount'] as num?)?.toDouble() ?? 0;
+    final double itemTotal = (price * quantity) - discount;
     final String? path = product['imagePath'] as String?;
+    final isSelected = _selectedCartIndexes.contains(i);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: _panelSurface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _lineColor, width: 0.5),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        if (_isSelectingCartItems) {
+          _toggleCartItemSelection(i);
+        } else {
+          _showCartItemSheet(i);
+        }
+      },
+      onLongPress: () => _startCartItemSelection(i),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 86),
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (_isDark ? _purple.withValues(alpha: 0.18) : _purpleBg)
+              : _panelSurface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected ? _purpleBorder : _lineColor,
+            width: isSelected ? 1 : 0.5,
+          ),
+        ),
+        child: Row(
           children: [
-            // Top row: image + info + delete
-            Row(
+            if (_isSelectingCartItems) ...[
+              Icon(
+                isSelected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: isSelected ? _purple : _tertiaryText,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+            ],
+            _buildImage(path, size: 56),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _primaryText,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '$quantity x ${CurrencyFormatter.format(price)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _secondaryText,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    discount > 0
+                        ? '- ${CurrencyFormatter.format(discount)} discount'
+                        : 'No discount',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: _tertiaryText, fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                _buildImage(path),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: _primaryText,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (cat.isNotEmpty) ...[
-                        const SizedBox(height: 1),
-                        Text(
-                          cat,
-                          style: TextStyle(fontSize: 10, color: _tertiaryText),
-                        ),
-                      ],
-                      const SizedBox(height: 4),
-                      Text(
-                        CurrencyFormatter.format(itemTotal),
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: _primaryText,
-                        ),
-                      ),
-                    ],
+                Text(
+                  CurrencyFormatter.format(itemTotal),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _primaryText,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    _showCartItemSheet(i);
-                  },
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: _purpleBg,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: _purpleBorder, width: 0.5),
-                    ),
-                    child: const Icon(
-                      Icons.edit_note,
-                      size: 17,
-                      color: _purple,
-                    ),
+                const SizedBox(height: 14),
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: _isDark
+                        ? _purple.withValues(alpha: 0.18)
+                        : _purpleBg,
+                    borderRadius: BorderRadius.circular(9),
                   ),
+                  child: const Icon(Icons.edit_outlined, size: 15, color: _purple),
                 ),
               ],
             ),
@@ -1347,49 +1505,97 @@ class _CartPageState extends State<CartPage> {
   Widget _buildBottomBar() {
     return SafeArea(
       top: false,
-      minimum: const EdgeInsets.fromLTRB(14, 0, 14, 16),
-      child: SizedBox(
-        width: double.infinity,
-        height: 50,
-        child: ElevatedButton(
-          onPressed: _completing ? null : _showPaymentSheet,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _primary,
-            disabledBackgroundColor: Colors.grey[300],
-            elevation: 8,
-            shadowColor: _primary.withValues(alpha: 0.35),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+      minimum: const EdgeInsets.fromLTRB(8, 0, 8, 14),
+      child: Container(
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: _panelSurface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _lineColor, width: 0.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: _isDark ? 0.24 : 0.08),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
             ),
-          ),
-          child: _completing
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: Colors.white,
+          ],
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 68,
+              child: _BottomMetric(
+                label: 'Total Items',
+                value: '$_totalUnits',
+                valueColor: _primaryText,
+              ),
+            ),
+            Container(
+              width: 1,
+              height: 38,
+              margin: const EdgeInsets.symmetric(horizontal: 8),
+              color: _lineColor,
+            ),
+            Expanded(
+              child: _BottomMetric(
+                label: 'Grand Total',
+                value: CurrencyFormatter.format(_total),
+                valueColor: _purple,
+                alignCenter: true,
+              ),
+            ),
+            Container(
+              width: 1,
+              height: 38,
+              margin: const EdgeInsets.symmetric(horizontal: 8),
+              color: _lineColor,
+            ),
+            SizedBox(
+              width: 120,
+              height: 46,
+              child: ElevatedButton(
+                onPressed: _completing ? null : _showPaymentSheet,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _primary,
+                  disabledBackgroundColor: Colors.grey[300],
+                  elevation: 6,
+                  shadowColor: _primary.withValues(alpha: 0.28),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                )
-              : const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.credit_card_outlined,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      'Pay now',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
                 ),
+                child: _completing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.credit_card_outlined,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'Pay now',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1397,6 +1603,57 @@ class _CartPageState extends State<CartPage> {
 }
 
 // ─── Summary card ─────────────────────────────────────────────────────────────
+class _BottomMetric extends StatelessWidget {
+  const _BottomMetric({
+    required this.label,
+    required this.value,
+    required this.valueColor,
+    this.alignCenter = false,
+  });
+
+  final String label;
+  final String value;
+  final Color valueColor;
+  final bool alignCenter;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final labelColor = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment:
+          alignCenter ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: alignCenter ? TextAlign.center : TextAlign.start,
+          style: TextStyle(
+            color: labelColor,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: alignCenter ? TextAlign.center : TextAlign.start,
+          style: TextStyle(
+            color: valueColor,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ConfirmRow extends StatelessWidget {
   const _ConfirmRow({
     required this.label,
@@ -1477,6 +1734,38 @@ class _SummaryCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CartHeaderCell extends StatelessWidget {
+  const _CartHeaderCell({
+    required this.label,
+    this.flex = 1,
+    this.alignEnd = false,
+  });
+
+  final String label;
+  final int flex;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Expanded(
+      flex: flex,
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: alignEnd ? TextAlign.end : TextAlign.start,
+        style: TextStyle(
+          color: isDark ? const Color(0xFFCBD5E1) : _textSecondary,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -1591,7 +1880,7 @@ class _CartSummaryHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Color backgroundColor;
   final Widget child;
 
-  static const double _height = 84;
+  static const double _height = 58;
 
   @override
   double get minExtent => _height;
@@ -1619,7 +1908,7 @@ class _CartSummaryHeaderDelegate extends SliverPersistentHeaderDelegate {
             : null,
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 6),
         child: child,
       ),
     );
