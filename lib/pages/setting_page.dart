@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_saver/file_saver.dart';
@@ -23,6 +26,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   static const _lastBackupKey = 'last_database_backup_at';
+  static const _lastSalesExportKey = 'last_sales_export_at';
   static const _storeNameKey = 'store_name';
 
   // ── Design tokens ──────────────────────────────────────────────────────────
@@ -43,7 +47,9 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _loadedThemeValue = false;
   bool _isBackingUp = false;
   bool _isRestoring = false;
+  bool _isExportingSales = false;
   DateTime? _lastBackupAt;
+  DateTime? _lastSalesExportAt;
   String _storeName = 'My Sari-Sari Store';
   bool _pinEnabled = false;
 
@@ -63,6 +69,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadStoreName();
     _loadPinState();
     _loadLastBackupDate();
+    _loadLastSalesExportDate();
   }
 
   Future<void> _loadStoreName() async {
@@ -206,8 +213,17 @@ class _SettingsPageState extends State<SettingsPage> {
                         iconBg: const Color(0xFFE6F1FB),
                         iconColor: const Color(0xFF185FA5),
                         label: 'Export sales report',
-                        subtitle: 'CSV · last exported 3 days ago',
-                        onTap: () {},
+                        subtitle: _lastSalesExportSubtitle,
+                        trailing: _isExportingSales
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : null,
+                        onTap: _isExportingSales ? null : _exportSalesReport,
                       ),
                       _SettingsRow(
                         icon: Icons.backup_outlined,
@@ -392,6 +408,12 @@ class _SettingsPageState extends State<SettingsPage> {
     return 'Last backup: ${_formatBackupDate(lastBackupAt)}';
   }
 
+  String get _lastSalesExportSubtitle {
+    final lastSalesExportAt = _lastSalesExportAt;
+    if (lastSalesExportAt == null) return 'CSV export';
+    return 'Last export: ${_formatBackupDate(lastSalesExportAt)}';
+  }
+
   Future<void> _loadLastBackupDate() async {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getString(_lastBackupKey);
@@ -407,6 +429,23 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (!mounted) return;
     setState(() => _lastBackupAt = value);
+  }
+
+  Future<void> _loadLastSalesExportDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_lastSalesExportKey);
+    final parsed = value == null ? null : DateTime.tryParse(value);
+
+    if (!mounted) return;
+    setState(() => _lastSalesExportAt = parsed);
+  }
+
+  Future<void> _saveLastSalesExportDate(DateTime value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastSalesExportKey, value.toIso8601String());
+
+    if (!mounted) return;
+    setState(() => _lastSalesExportAt = value);
   }
 
   Future<void> _showPinDialog() async {
@@ -451,6 +490,114 @@ class _SettingsPageState extends State<SettingsPage> {
     final minute = local.minute.toString().padLeft(2, '0');
     final period = local.hour >= 12 ? 'PM' : 'AM';
     return '${months[local.month - 1]} ${local.day}, ${local.year} $hour:$minute $period';
+  }
+
+  Future<void> _exportSalesReport() async {
+    HapticFeedback.lightImpact();
+    setState(() => _isExportingSales = true);
+
+    try {
+      final sales = await DatabaseHelper.instance.getSales();
+      if (!mounted) return;
+
+      if (sales.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No sales to export yet'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      final csv = _buildSalesCsv(sales);
+      final timestamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(RegExp(r'[:.]'), '-');
+      final savedPath = await FileSaver.instance.saveAs(
+        name: 'sales_report_$timestamp',
+        bytes: Uint8List.fromList(utf8.encode(csv)),
+        fileExtension: 'csv',
+        mimeType: MimeType.other,
+        customMimeType: 'text/csv',
+      );
+
+      if (!mounted) return;
+      await _saveLastSalesExportDate(DateTime.now());
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Sales report exported',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          content: SelectableText(
+            savedPath ?? 'Sales report CSV was saved.',
+            style: TextStyle(color: _secondaryText),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Export failed: $e'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _danger,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isExportingSales = false);
+      }
+    }
+  }
+
+  String _buildSalesCsv(List<Map<String, dynamic>> sales) {
+    final buffer = StringBuffer();
+    buffer.writeln(
+      'Sale ID,Date,Product ID,Product Name,Quantity,Unit Price,Total,Image',
+    );
+
+    for (final sale in sales) {
+      buffer.writeln(
+        [
+          sale['id'],
+          sale['created_at'],
+          sale['product_id'],
+          sale['product_name'],
+          sale['quantity'],
+          sale['price'],
+          sale['total'],
+          sale['image_url'],
+        ].map(_csvCell).join(','),
+      );
+    }
+
+    return buffer.toString();
+  }
+
+  String _csvCell(Object? value) {
+    final text = (value ?? '').toString();
+    final escaped = text.replaceAll('"', '""');
+    if (escaped.contains(',') ||
+        escaped.contains('"') ||
+        escaped.contains('\n') ||
+        escaped.contains('\r')) {
+      return '"$escaped"';
+    }
+    return escaped;
   }
 
   Future<void> _backupDatabase() async {
