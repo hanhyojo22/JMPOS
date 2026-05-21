@@ -12,11 +12,13 @@ import '../database/database_helper.dart';
 class AddProductsPage extends StatefulWidget {
   final String? initialBarcode;
   final VoidCallback? onBarcodeHandled;
+  final VoidCallback? onBack;
 
   const AddProductsPage({
     super.key,
     this.initialBarcode,
     this.onBarcodeHandled,
+    this.onBack,
   });
   @override
   State<AddProductsPage> createState() => _AddProductsPageState();
@@ -54,8 +56,8 @@ class _AddProductsPageState extends State<AddProductsPage>
   // ── Computed ──────────────────────────────────────────────────────────────────
 
   double get _profitMargin {
-    final cost = double.tryParse(_costPriceController.text) ?? 0;
-    final sell = double.tryParse(_sellingPriceController.text) ?? 0;
+    final cost = _moneyValue(_costPriceController.text);
+    final sell = _moneyValue(_sellingPriceController.text);
     if (cost <= 0 || sell <= 0) return 0;
     return ((sell - cost) / cost) * 100;
   }
@@ -67,12 +69,149 @@ class _AddProductsPageState extends State<AddProductsPage>
   }
 
   double get _profit {
-    final cost = double.tryParse(_costPriceController.text) ?? 0;
-    final sell = double.tryParse(_sellingPriceController.text) ?? 0;
+    final cost = _moneyValue(_costPriceController.text);
+    final sell = _moneyValue(_sellingPriceController.text);
     return sell - cost;
   }
 
-  int get _stockValue => int.tryParse(_stockQuantityController.text) ?? 0;
+  int get _stockValue => _stockValueFromText(_stockQuantityController.text);
+
+  String _sanitizeSingleLineText(String value, {int maxLength = 120}) {
+    final sanitized = value
+        .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return sanitized.length <= maxLength
+        ? sanitized
+        : sanitized.substring(0, maxLength).trimRight();
+  }
+
+  String _sanitizeMultilineText(String value, {int maxLength = 500}) {
+    final sanitized = value
+        .replaceAll(
+          RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]'),
+          ' ',
+        )
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .trim();
+    return sanitized.length <= maxLength
+        ? sanitized
+        : sanitized.substring(0, maxLength).trimRight();
+  }
+
+  String _sanitizeDigits(String value, {int maxLength = 18}) {
+    final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+    return digits.length <= maxLength ? digits : digits.substring(0, maxLength);
+  }
+
+  String _sanitizeStock(String value) {
+    final digits = _sanitizeDigits(value, maxLength: 9);
+    if (digits.isEmpty) return '';
+    final stripped = digits.replaceFirst(RegExp(r'^0+'), '');
+    return stripped.isEmpty ? '0' : stripped;
+  }
+
+  int _stockValueFromText(String value) {
+    return int.tryParse(_sanitizeStock(value)) ?? 0;
+  }
+
+  String _sanitizeMoney(String value) {
+    final normalized = value.trim().replaceAll(',', '');
+    final buffer = StringBuffer();
+    var hasDecimal = false;
+    var decimalCount = 0;
+
+    for (final codeUnit in normalized.codeUnits) {
+      final char = String.fromCharCode(codeUnit);
+      final isDigit = codeUnit >= 48 && codeUnit <= 57;
+
+      if (isDigit) {
+        if (hasDecimal) {
+          if (decimalCount >= 2) continue;
+          decimalCount++;
+        }
+        buffer.write(char);
+        continue;
+      }
+
+      if (char == '.' && !hasDecimal) {
+        hasDecimal = true;
+        buffer.write(buffer.isEmpty ? '0.' : '.');
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  double _moneyValue(String value) {
+    final sanitized = _sanitizeMoney(value);
+    if (sanitized.isEmpty || sanitized == '.') return 0;
+    return double.tryParse(sanitized) ?? 0;
+  }
+
+  TextEditingValue _formatDigitsEdit(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final sanitized = _sanitizeDigits(newValue.text);
+    return sanitized == newValue.text
+        ? newValue
+        : TextEditingValue(
+            text: sanitized,
+            selection: TextSelection.collapsed(offset: sanitized.length),
+          );
+  }
+
+  TextEditingValue _formatStockEdit(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final sanitized = _sanitizeStock(newValue.text);
+    return sanitized == newValue.text
+        ? newValue
+        : TextEditingValue(
+            text: sanitized,
+            selection: TextSelection.collapsed(offset: sanitized.length),
+          );
+  }
+
+  TextEditingValue _formatMoneyEdit(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final sanitized = _sanitizeMoney(newValue.text);
+    return sanitized == newValue.text
+        ? newValue
+        : TextEditingValue(
+            text: sanitized,
+            selection: TextSelection.collapsed(offset: sanitized.length),
+          );
+  }
+
+  String? _requiredTextValidator(String? value) {
+    return _sanitizeSingleLineText(value ?? '').isEmpty ? 'Required' : null;
+  }
+
+  String? _barcodeValidator(String? value) {
+    final barcode = _sanitizeDigits(value ?? '');
+    if (barcode.isEmpty) return 'Required';
+    if (barcode.length < 4) return 'Too short';
+    return null;
+  }
+
+  String? _moneyValidator(String? value) {
+    final sanitized = _sanitizeMoney(value ?? '');
+    if (sanitized.isEmpty) return 'Required';
+    if (_moneyValue(sanitized) <= 0) return 'Must be greater than 0';
+    return null;
+  }
+
+  String? _stockValidator(String? value) {
+    final sanitized = _sanitizeStock(value ?? '');
+    if (sanitized.isEmpty) return 'Required';
+    if (int.tryParse(sanitized) == null) return 'Invalid';
+    return null;
+  }
 
   Color _stockColor(int s) {
     if (s == 0) return Colors.grey;
@@ -132,8 +271,8 @@ class _AddProductsPageState extends State<AddProductsPage>
   }
 
   void _applyInitialBarcode() {
-    final barcode = widget.initialBarcode?.trim();
-    if (barcode == null || barcode.isEmpty) return;
+    final barcode = _sanitizeDigits(widget.initialBarcode ?? '');
+    if (barcode.isEmpty) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -281,7 +420,22 @@ class _AddProductsPageState extends State<AddProductsPage>
       return;
     }
 
-    final barcode = _barcodeController.text.trim();
+    final barcode = _sanitizeDigits(_barcodeController.text);
+    final name = _sanitizeSingleLineText(_nameController.text);
+    final description = _sanitizeMultilineText(_descriptionController.text);
+    final sellingPrice = _moneyValue(_sellingPriceController.text);
+    final costPrice = _moneyValue(_costPriceController.text);
+    final stockQuantity = _stockValueFromText(_stockQuantityController.text);
+
+    _barcodeController.text = barcode;
+    _nameController.text = name;
+    _descriptionController.text = description;
+    _sellingPriceController.text = _sanitizeMoney(_sellingPriceController.text);
+    _costPriceController.text = _sanitizeMoney(_costPriceController.text);
+    _stockQuantityController.text = _sanitizeStock(
+      _stockQuantityController.text,
+    );
+
     if (await DatabaseHelper.instance.barcodeExists(barcode)) {
       if (!mounted) return;
       _showBanner('Barcode Already Exists ');
@@ -297,14 +451,14 @@ class _AddProductsPageState extends State<AddProductsPage>
 
       final newId = await DatabaseHelper.instance.addProduct(
         barcode: barcode,
-        productName: _nameController.text.trim(),
+        productName: name,
         category: _selectedCategory,
-        description: _descriptionController.text.trim().isEmpty
+        description: description.isEmpty
             ? null
-            : _descriptionController.text.trim(),
-        price: double.parse(_sellingPriceController.text),
-        costPrice: double.parse(_costPriceController.text),
-        stockQuantity: int.parse(_stockQuantityController.text),
+            : description,
+        price: sellingPrice,
+        costPrice: costPrice,
+        stockQuantity: stockQuantity,
         imageUrl: savedImagePath,
       );
 
@@ -487,18 +641,49 @@ class _AddProductsPageState extends State<AddProductsPage>
         opacity: _fadeAnim,
         child: SlideTransition(
           position: _slideAnim,
-          child: Form(
-            key: _formKey,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
-              children: [
-                const LabelText(
-                  "Add Product",
-                  fontSize: 22,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black87,
-                  align: TextAlign.left,
+          child: SafeArea(
+            bottom: false,
+            child: Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
+                children: [
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        if (widget.onBack != null) {
+                          widget.onBack!();
+                          return;
+                        }
+
+                        Navigator.maybePop(context);
+                      },
+                      child: SizedBox(
+                        width: 32,
+                        height: 38,
+                        child: Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 16,
+                          color: isDark
+                              ? const Color(0xFFF8FAFC)
+                              : Colors.black87,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: LabelText(
+                        "Add Product",
+                        fontSize: 22,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black87,
+                        align: TextAlign.left,
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 14),
                 // ── Image + Quick Stats card ──────────────────────────
                 Container(
                   decoration: BoxDecoration(
@@ -529,7 +714,7 @@ class _AddProductsPageState extends State<AddProductsPage>
                                 label: 'Selling Price',
                                 value: _sellingPriceController.text.isEmpty
                                     ? '—'
-                                    : '₱${double.tryParse(_sellingPriceController.text)?.toStringAsFixed(2) ?? '0.00'}',
+                                    : '₱${_moneyValue(_sellingPriceController.text).toStringAsFixed(2)}',
                                 icon: Icons.sell_outlined,
                                 color: const Color(0xFF667EEA),
                               ),
@@ -566,8 +751,13 @@ class _AddProductsPageState extends State<AddProductsPage>
                       label: 'Product Name',
                       hint: 'e.g. Coca Cola 500ml',
                       icon: Icons.label_outline_rounded,
-                      validator: (v) =>
-                          v == null || v.trim().isEmpty ? 'Required' : null,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.deny(
+                          RegExp(r'[\u0000-\u001F\u007F]'),
+                        ),
+                        LengthLimitingTextInputFormatter(120),
+                      ],
+                      validator: _requiredTextValidator,
                     ),
 
                     const SizedBox(height: 14),
@@ -577,9 +767,10 @@ class _AddProductsPageState extends State<AddProductsPage>
                       hint: '8851234567890',
                       icon: Icons.qr_code_2_outlined,
                       keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      validator: (v) =>
-                          v == null || v.trim().isEmpty ? 'Required' : null,
+                      inputFormatters: [
+                        TextInputFormatter.withFunction(_formatDigitsEdit),
+                      ],
+                      validator: _barcodeValidator,
                     ),
 
                     const SizedBox(height: 14),
@@ -637,6 +828,14 @@ class _AddProductsPageState extends State<AddProductsPage>
                       hint: 'Optional...',
                       icon: Icons.notes_rounded,
                       maxLines: 3,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.deny(
+                          RegExp(
+                            r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]',
+                          ),
+                        ),
+                        LengthLimitingTextInputFormatter(500),
+                      ],
                       validator: (_) => null,
                     ),
                   ],
@@ -663,16 +862,12 @@ class _AddProductsPageState extends State<AddProductsPage>
                               decimal: true,
                             ),
                             inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                RegExp(r'^\d*\.?\d{0,2}'),
+                              TextInputFormatter.withFunction(
+                                _formatMoneyEdit,
                               ),
                             ],
                             onChanged: (_) => setState(() {}),
-                            validator: (v) {
-                              if (v == null || v.isEmpty) return 'Required';
-                              if (double.tryParse(v) == null) return 'Invalid';
-                              return null;
-                            },
+                            validator: _moneyValidator,
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -688,16 +883,12 @@ class _AddProductsPageState extends State<AddProductsPage>
                               decimal: true,
                             ),
                             inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                RegExp(r'^\d*\.?\d{0,2}'),
+                              TextInputFormatter.withFunction(
+                                _formatMoneyEdit,
                               ),
                             ],
                             onChanged: (_) => setState(() {}),
-                            validator: (v) {
-                              if (v == null || v.isEmpty) return 'Required';
-                              if (double.tryParse(v) == null) return 'Invalid';
-                              return null;
-                            },
+                            validator: _moneyValidator,
                           ),
                         ),
                       ],
@@ -730,13 +921,11 @@ class _AddProductsPageState extends State<AddProductsPage>
                       hint: '0',
                       icon: Icons.inventory_outlined,
                       keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      inputFormatters: [
+                        TextInputFormatter.withFunction(_formatStockEdit),
+                      ],
                       onChanged: (_) => setState(() {}),
-                      validator: (v) {
-                        if (v == null || v.isEmpty) return 'Required';
-                        if (int.tryParse(v) == null) return 'Invalid';
-                        return null;
-                      },
+                      validator: _stockValidator,
                     ),
 
                     if (_stockQuantityController.text.isNotEmpty) ...[
@@ -760,7 +949,8 @@ class _AddProductsPageState extends State<AddProductsPage>
                 ),
 
                 const SizedBox(height: 28),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1089,12 +1279,6 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: const Text('Scan Barcode'),
-        elevation: 0,
-      ),
       body: Stack(
         children: [
           MobileScanner(

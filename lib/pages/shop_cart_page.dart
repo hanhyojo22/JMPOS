@@ -178,6 +178,81 @@ class _CartPageState extends State<CartPage> {
     return options.take(4).toList();
   }
 
+  String _sanitizeMoneyInput(String value) {
+    final normalized = value.trim().replaceAll(',', '');
+    final buffer = StringBuffer();
+    var hasDecimal = false;
+    var decimalCount = 0;
+
+    for (final codeUnit in normalized.codeUnits) {
+      final char = String.fromCharCode(codeUnit);
+      final isDigit = codeUnit >= 48 && codeUnit <= 57;
+
+      if (isDigit) {
+        if (hasDecimal) {
+          if (decimalCount >= 2) continue;
+          decimalCount++;
+        }
+        buffer.write(char);
+        continue;
+      }
+
+      if (char == '.' && !hasDecimal) {
+        hasDecimal = true;
+        buffer.write(buffer.isEmpty ? '0.' : '.');
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  double _cashAmount() {
+    final sanitized = _sanitizeMoneyInput(_cashCtrl.text);
+    if (sanitized.isEmpty || sanitized == '.') return 0;
+    return double.tryParse(sanitized) ?? 0;
+  }
+
+  TextEditingValue _formatMoneyEdit(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final sanitized = _sanitizeMoneyInput(newValue.text);
+    if (sanitized == newValue.text) return newValue;
+
+    return TextEditingValue(
+      text: sanitized,
+      selection: TextSelection.collapsed(offset: sanitized.length),
+    );
+  }
+
+  String _sanitizeQuantityInput(String value) {
+    final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) return '';
+
+    final stripped = digits.replaceFirst(RegExp(r'^0+'), '');
+    return stripped.isEmpty ? '0' : stripped;
+  }
+
+  int? _parseQuantityInput(String value, int maxQuantity) {
+    final sanitized = _sanitizeQuantityInput(value);
+    final parsed = int.tryParse(sanitized);
+    if (parsed == null || parsed < 1 || parsed > maxQuantity) return null;
+    return parsed;
+  }
+
+  TextEditingValue _formatQuantityEdit(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final sanitized = _sanitizeQuantityInput(newValue.text);
+    if (sanitized == newValue.text) return newValue;
+
+    return TextEditingValue(
+      text: sanitized,
+      selection: TextSelection.collapsed(offset: sanitized.length),
+    );
+  }
+
   void _clearCart() {
     showDialog(
       context: context,
@@ -408,7 +483,7 @@ class _CartPageState extends State<CartPage> {
       backgroundColor: Colors.transparent,
       builder: (_) => StatefulBuilder(
         builder: (ctx, setModal) {
-          final cashAmt = double.tryParse(_cashCtrl.text) ?? 0;
+          final cashAmt = _cashAmount();
           final change = cashAmt - _total;
           final sufficient = cashAmt >= _total && cashAmt > 0;
           final quickAmounts = _quickCashOptions(_total);
@@ -582,8 +657,8 @@ class _CartPageState extends State<CartPage> {
                               decimal: true,
                             ),
                             inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                RegExp(r'^\d*\.?\d{0,2}'),
+                              TextInputFormatter.withFunction(
+                                _formatMoneyEdit,
                               ),
                             ],
                             style: TextStyle(
@@ -680,7 +755,8 @@ class _CartPageState extends State<CartPage> {
                       final i = entry.key;
                       final amt = entry.value;
                       final isSelected =
-                          _cashCtrl.text == amt.toStringAsFixed(0);
+                          _sanitizeMoneyInput(_cashCtrl.text) ==
+                          amt.toStringAsFixed(0);
                       return Expanded(
                         child: Padding(
                           padding: EdgeInsets.only(
@@ -689,7 +765,12 @@ class _CartPageState extends State<CartPage> {
                           ),
                           child: GestureDetector(
                             onTap: () {
-                              _cashCtrl.text = amt.toStringAsFixed(0);
+                              _cashCtrl.text = _sanitizeMoneyInput(
+                                amt.toStringAsFixed(0),
+                              );
+                              _cashCtrl.selection = TextSelection.collapsed(
+                                offset: _cashCtrl.text.length,
+                              );
                               setModal(() {});
                             },
                             child: Container(
@@ -1199,7 +1280,9 @@ class _CartPageState extends State<CartPage> {
                           autofocus: true,
                           keyboardType: TextInputType.number,
                           inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
+                            TextInputFormatter.withFunction(
+                              _formatQuantityEdit,
+                            ),
                           ],
                           style: TextStyle(
                             color: _primaryText,
@@ -1239,10 +1322,11 @@ class _CartPageState extends State<CartPage> {
                             ),
                           ),
                           onSubmitted: (_) {
-                            final parsed = int.tryParse(controller.text);
-                            if (parsed == null ||
-                                parsed < 1 ||
-                                parsed > maxQuantity) {
+                            final parsed = _parseQuantityInput(
+                              controller.text,
+                              maxQuantity,
+                            );
+                            if (parsed == null) {
                               setDialogState(() {
                                 errorText = 'Enter 1 to $maxQuantity';
                               });
@@ -1268,10 +1352,11 @@ class _CartPageState extends State<CartPage> {
                           ),
                           ElevatedButton(
                             onPressed: () {
-                              final parsed = int.tryParse(controller.text);
-                              if (parsed == null ||
-                                  parsed < 1 ||
-                                  parsed > maxQuantity) {
+                              final parsed = _parseQuantityInput(
+                                controller.text,
+                                maxQuantity,
+                              );
+                              if (parsed == null) {
                                 setDialogState(() {
                                   errorText = 'Enter 1 to $maxQuantity';
                                 });

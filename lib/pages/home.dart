@@ -34,6 +34,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final List<Map<String, dynamic>> sharedCart = [];
   String? addProductScannedBarcode;
   int _selectedIndex = 0;
@@ -628,6 +629,9 @@ class _HomePageState extends State<HomePage> {
           onBarcodeHandled: () {
             addProductBarcode = null;
           },
+          onBack: () {
+            _scaffoldKey.currentState?.openDrawer();
+          },
         );
 
       case 3:
@@ -1115,7 +1119,8 @@ class _HomePageState extends State<HomePage> {
         : Colors.grey.shade300;
 
     return Scaffold(
-      appBar: _selectedIndex == 9
+      key: _scaffoldKey,
+      appBar: _selectedIndex == 2 || _selectedIndex == 9
           ? null
           : AppBar(
         leadingWidth: 44,
