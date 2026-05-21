@@ -1123,89 +1123,98 @@ class _HomePageState extends State<HomePage> {
       appBar: _selectedIndex == 2 || _selectedIndex == 9
           ? null
           : AppBar(
-        leadingWidth: 44,
-        titleSpacing: 0,
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu_rounded),
+              leadingWidth: 44,
+              titleSpacing: 0,
+              leading: Builder(
+                builder: (context) => IconButton(
+                  icon: const Icon(Icons.menu_rounded),
 
-            onPressed: () {
-              Scaffold.of(context).openDrawer();
-            },
-          ),
-        ),
-        title: Row(
-          children: [
-            Text(Greetings.getGreeting()),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: widget.role == 'admin'
-                    ? Colors.red.withValues(alpha: 0.15)
-                    : Colors.blue.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                widget.role.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: widget.role == 'admin'
-                      ? Colors.red[700]
-                      : Colors.blue[700],
+                  onPressed: () {
+                    Scaffold.of(context).openDrawer();
+                  },
                 ),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.shopping_cart_outlined, size: 28),
-                  onPressed: _openCartPage,
-                ),
-
-                // Improved Badge
-                if (_sharedCartItemCount > 0)
-                  Positioned(
-                    right: -2,
-                    top: -2,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 1.5),
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 20,
-                        minHeight: 20,
-                      ),
-                      child: Center(
-                        child: Text(
-                          _sharedCartItemCount > 99
-                              ? '99+'
-                              : '$_sharedCartItemCount',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
+              title: Row(
+                children: [
+                  Text(Greetings.getGreeting()),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: widget.role == 'admin'
+                          ? Colors.red.withValues(alpha: 0.15)
+                          : Colors.blue.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      widget.role.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: widget.role == 'admin'
+                            ? Colors.red[700]
+                            : Colors.blue[700],
                       ),
                     ),
                   ),
+                ],
+              ),
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      IconButton(
+                        icon: const Icon(
+                          Icons.shopping_cart_outlined,
+                          size: 28,
+                        ),
+                        onPressed: _openCartPage,
+                      ),
+
+                      // Improved Badge
+                      if (_sharedCartItemCount > 0)
+                        Positioned(
+                          right: -2,
+                          top: -2,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 1.5,
+                              ),
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 20,
+                              minHeight: 20,
+                            ),
+                            child: Center(
+                              child: Text(
+                                _sharedCartItemCount > 99
+                                    ? '99+'
+                                    : '$_sharedCartItemCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ],
             ),
-          ),
-        ],
-      ),
       drawer: Drawer(
         backgroundColor: drawerSurface,
         shape: const RoundedRectangleBorder(
@@ -1412,31 +1421,23 @@ class _HomePageState extends State<HomePage> {
 
       bottomNavigationBar: SafeArea(
         top: false,
-
         child: Container(
           height: 82,
           margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-
           padding: const EdgeInsets.symmetric(horizontal: 6),
-
           decoration: BoxDecoration(
             color: drawerSurface,
-
             borderRadius: BorderRadius.circular(26),
-
             boxShadow: [
               BoxShadow(
                 color: isDark
                     ? Colors.black.withValues(alpha: 0.28)
                     : Colors.black.withValues(alpha: 0.08),
-
                 blurRadius: 20,
-
                 offset: const Offset(0, 8),
               ),
             ],
           ),
-
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
 
