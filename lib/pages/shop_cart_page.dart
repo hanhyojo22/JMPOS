@@ -154,11 +154,14 @@ class _CartPageState extends State<CartPage> {
   List<double> _quickCashOptions(double total) {
     if (total <= 0) return [];
 
-    final options = <double>[];
+    final options = <double>[total];
 
     void addRounded(double step) {
       final amount = (total / step).ceil() * step;
-      if (amount >= total && !options.contains(amount)) {
+      final alreadyAdded = options.any(
+        (option) => (option - amount).abs() < 0.01,
+      );
+      if (amount >= total && !alreadyAdded) {
         options.add(amount);
       }
     }
@@ -170,12 +173,21 @@ class _CartPageState extends State<CartPage> {
 
     var next = options.isEmpty ? (total / 50).ceil() * 50.0 : options.last + 50;
     while (options.length < 4) {
-      if (!options.contains(next)) options.add(next);
+      final alreadyAdded = options.any(
+        (option) => (option - next).abs() < 0.01,
+      );
+      if (!alreadyAdded) options.add(next);
       next += 50;
     }
 
-    options.sort();
     return options.take(4).toList();
+  }
+
+  String _cashInputTextForAmount(double amount) {
+    if (amount == amount.roundToDouble()) {
+      return amount.toStringAsFixed(0);
+    }
+    return amount.toStringAsFixed(2);
   }
 
   String _sanitizeMoneyInput(String value) {
@@ -754,9 +766,9 @@ class _CartPageState extends State<CartPage> {
                     children: quickAmounts.asMap().entries.map((entry) {
                       final i = entry.key;
                       final amt = entry.value;
+                      final cashText = _cashInputTextForAmount(amt);
                       final isSelected =
-                          _sanitizeMoneyInput(_cashCtrl.text) ==
-                          amt.toStringAsFixed(0);
+                          _sanitizeMoneyInput(_cashCtrl.text) == cashText;
                       return Expanded(
                         child: Padding(
                           padding: EdgeInsets.only(
@@ -765,9 +777,7 @@ class _CartPageState extends State<CartPage> {
                           ),
                           child: GestureDetector(
                             onTap: () {
-                              _cashCtrl.text = _sanitizeMoneyInput(
-                                amt.toStringAsFixed(0),
-                              );
+                              _cashCtrl.text = _sanitizeMoneyInput(cashText);
                               _cashCtrl.selection = TextSelection.collapsed(
                                 offset: _cashCtrl.text.length,
                               );
@@ -785,7 +795,9 @@ class _CartPageState extends State<CartPage> {
                                 ),
                               ),
                               child: Text(
-                                '₱${amt.toStringAsFixed(0)}',
+                                i == 0
+                                    ? CurrencyFormatter.format(amt)
+                                    : '₱${amt.toStringAsFixed(0)}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(

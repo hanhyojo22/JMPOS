@@ -1,12 +1,13 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/services.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:crypto/crypto.dart';
 import 'package:archive/archive_io.dart';
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
 class RestoreDatabaseException implements Exception {
   const RestoreDatabaseException(this.message);
@@ -15,6 +16,18 @@ class RestoreDatabaseException implements Exception {
 
   @override
   String toString() => message;
+}
+
+class ProductImageConnectionReport {
+  const ProductImageConnectionReport({
+    required this.availableImages,
+    required this.connected,
+    required this.normalized,
+  });
+
+  final int availableImages;
+  final int connected;
+  final int normalized;
 }
 
 class DatabaseHelper {
@@ -79,9 +92,10 @@ class DatabaseHelper {
       await backupDir.create(recursive: true);
     }
 
-    final timestamp = DateTime.now()
-        .toIso8601String()
-        .replaceAll(RegExp(r'[:.]'), '-');
+    final timestamp = DateTime.now().toIso8601String().replaceAll(
+      RegExp(r'[:.]'),
+      '-',
+    );
     final archivePath = join(backupDir.path, 'pos_backup_$timestamp.posbackup');
     final portableDbPath = join(backupDir.path, 'pos_backup_$timestamp.db');
 
@@ -95,9 +109,7 @@ class DatabaseHelper {
 
       final imageDir = Directory(await productImagesDirectoryPath());
       if (await imageDir.exists()) {
-        final imageFiles = imageDir
-            .listSync(recursive: true)
-            .whereType<File>();
+        final imageFiles = imageDir.listSync(recursive: true).whereType<File>();
         for (final imageFile in imageFiles) {
           final relativePath = relative(
             imageFile.path,
@@ -273,7 +285,8 @@ class DatabaseHelper {
           'Create a new backup from the original app, then restore that new .posbackup file.';
     }
 
-    if (details.contains('permission') || details.contains('access is denied')) {
+    if (details.contains('permission') ||
+        details.contains('access is denied')) {
       return 'The app could not read or write the selected backup file. Move it to a folder you can access and try again.';
     }
 
@@ -290,9 +303,8 @@ class DatabaseHelper {
 
     try {
       await db.rawQuery("SELECT sqlcipher_export('backup')");
-      final userVersion = Sqflite.firstIntValue(
-            await db.rawQuery('PRAGMA user_version'),
-          ) ??
+      final userVersion =
+          Sqflite.firstIntValue(await db.rawQuery('PRAGMA user_version')) ??
           _dbVersion;
       await db.execute('PRAGMA backup.user_version = $userVersion');
     } finally {
@@ -386,7 +398,8 @@ class DatabaseHelper {
       );
       await plainDb.rawQuery("SELECT sqlcipher_export('encrypted')");
 
-      final userVersion = Sqflite.firstIntValue(
+      final userVersion =
+          Sqflite.firstIntValue(
             await plainDb.rawQuery('PRAGMA user_version'),
           ) ??
           _dbVersion;
@@ -416,10 +429,9 @@ class DatabaseHelper {
   }
 
   Future<bool> _isPlaintextSqliteDatabase(File file) async {
-    final header = await file.openRead(0, 16).fold<List<int>>(
-      <int>[],
-      (bytes, chunk) => bytes..addAll(chunk),
-    );
+    final header = await file
+        .openRead(0, 16)
+        .fold<List<int>>(<int>[], (bytes, chunk) => bytes..addAll(chunk));
     return header.length == 16 &&
         ascii.decode(header, allowInvalid: true) == 'SQLite format 3\u0000';
   }
@@ -471,7 +483,6 @@ class DatabaseHelper {
         created_at TEXT
       )
     ''');
-
   }
 
   Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
@@ -566,7 +577,8 @@ class DatabaseHelper {
     final result = await db.update(
       'users',
       {'pin_hash': _hashPassword(pin)},
-      where: 'id = (SELECT id FROM users WHERE role = ? ORDER BY created_at ASC LIMIT 1)',
+      where:
+          'id = (SELECT id FROM users WHERE role = ? ORDER BY created_at ASC LIMIT 1)',
       whereArgs: ['admin'],
     );
     return result > 0;

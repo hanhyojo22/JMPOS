@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_saver/file_saver.dart';
@@ -29,7 +27,7 @@ class _SettingsPageState extends State<SettingsPage> {
   static const _lastSalesExportKey = 'last_sales_export_at';
   static const _storeNameKey = 'store_name';
 
-  // ── Design tokens ──────────────────────────────────────────────────────────
+  // ── Design tokens ────────────────────────────────────────s──────────────────
   static const Color _primary = Color(0xFF5C6BC0);
   static const Color _surface = Color(0xFFF4F5FF);
   static const Color _border = Color(0xFFEEEEEE);
@@ -511,9 +509,10 @@ class _SettingsPageState extends State<SettingsPage> {
       }
 
       final csv = _buildSalesCsv(sales);
-      final timestamp = DateTime.now()
-          .toIso8601String()
-          .replaceAll(RegExp(r'[:.]'), '-');
+      final timestamp = DateTime.now().toIso8601String().replaceAll(
+        RegExp(r'[:.]'),
+        '-',
+      );
       final savedPath = await FileSaver.instance.saveAs(
         name: 'sales_report_$timestamp',
         bytes: Uint8List.fromList(utf8.encode(csv)),
@@ -605,11 +604,11 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _isBackingUp = true);
 
     try {
-      final databasePath =
-          await DatabaseHelper.instance.createBackupArchive();
-      final timestamp = DateTime.now()
-          .toIso8601String()
-          .replaceAll(RegExp(r'[:.]'), '-');
+      final databasePath = await DatabaseHelper.instance.createBackupArchive();
+      final timestamp = DateTime.now().toIso8601String().replaceAll(
+        RegExp(r'[:.]'),
+        '-',
+      );
       final savedPath = await FileSaver.instance.saveAs(
         name: 'pos_backup_$timestamp',
         filePath: databasePath,
