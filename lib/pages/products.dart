@@ -817,34 +817,41 @@ class _ProductsPageState extends State<ProductsPage>
     return RefreshIndicator(
       color: _primary,
       onRefresh: _loadProducts,
-      child: GridView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const horizontalPadding = 24.0;
+          const spacing = 8.0;
+          final tileWidth =
+              (constraints.maxWidth - horizontalPadding - (spacing * 2)) / 3;
 
-        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: (MediaQuery.sizeOf(context).width - 44) / 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          mainAxisExtent:
-              ((MediaQuery.sizeOf(context).width - 44) / 2) / 1.02 + 70,
-        ),
-        itemCount: products.length,
-        itemBuilder: (_, i) {
-          return AnimatedBuilder(
-            animation: _listCtrl,
-            builder: (_, child) {
-              final delay = (i * 0.06).clamp(0.0, 0.5);
-              final progress = Curves.easeOutCubic.transform(
-                (((_listCtrl.value - delay) / (1 - delay)).clamp(0.0, 1.0)),
-              );
-              return Opacity(
-                opacity: progress,
-                child: Transform.translate(
-                  offset: Offset(0, 20 * (1 - progress)),
-                  child: child,
-                ),
+          return GridView.builder(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 120),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: spacing,
+              mainAxisSpacing: spacing,
+              mainAxisExtent: (tileWidth / 1.02) + 62,
+            ),
+            itemCount: products.length,
+            itemBuilder: (_, i) {
+              return AnimatedBuilder(
+                animation: _listCtrl,
+                builder: (_, child) {
+                  final delay = (i * 0.06).clamp(0.0, 0.5);
+                  final progress = Curves.easeOutCubic.transform(
+                    (((_listCtrl.value - delay) / (1 - delay)).clamp(0.0, 1.0)),
+                  );
+                  return Opacity(
+                    opacity: progress,
+                    child: Transform.translate(
+                      offset: Offset(0, 20 * (1 - progress)),
+                      child: child,
+                    ),
+                  );
+                },
+                child: _buildProductCard(products[i]),
               );
             },
-            child: _buildProductCard(products[i]),
           );
         },
       ),
@@ -930,12 +937,12 @@ class _ProductsPageState extends State<ProductsPage>
                       ),
                     ),
                     Positioned(
-                      top: 10,
-                      right: 10,
+                      top: 7,
+                      right: 7,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 5,
+                          horizontal: 6,
+                          vertical: 4,
                         ),
                         decoration: BoxDecoration(
                           color: stockBadgeBg,
@@ -959,7 +966,7 @@ class _ProductsPageState extends State<ProductsPage>
                             Text(
                               _stockLabel(stock),
                               style: TextStyle(
-                                fontSize: 10,
+                                fontSize: 8,
                                 fontWeight: FontWeight.w800,
                                 color: stockBadgeFg,
                               ),
@@ -969,11 +976,11 @@ class _ProductsPageState extends State<ProductsPage>
                       ),
                     ),
                     Positioned(
-                      top: 10,
-                      left: 10,
+                      top: 7,
+                      left: 7,
                       child: Container(
-                        width: 32,
-                        height: 32,
+                        width: 26,
+                        height: 26,
                         decoration: const BoxDecoration(
                           color: Color(0xFF667EEA),
                           shape: BoxShape.circle,
@@ -981,7 +988,7 @@ class _ProductsPageState extends State<ProductsPage>
                         child: const Icon(
                           Icons.edit_rounded,
                           color: Colors.white,
-                          size: 17,
+                          size: 14,
                         ),
                       ),
                     ),
@@ -989,13 +996,13 @@ class _ProductsPageState extends State<ProductsPage>
                 ),
 
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       SizedBox(
-                        height: 15,
+                        height: 14,
                         child: Text(
                           name,
                           maxLines: 1,
@@ -1003,24 +1010,24 @@ class _ProductsPageState extends State<ProductsPage>
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             color: _primaryText,
-                            fontSize: 13,
+                            fontSize: 11,
                             height: 1.12,
                           ),
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 3),
                       Text(
                         category.isEmpty ? 'Product' : category,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: _secondaryText,
-                          fontSize: 11,
+                          fontSize: 9,
                           fontWeight: FontWeight.w600,
                           height: 1,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 3),
                       Text(
                         '\u20B1${price.toStringAsFixed(2)}',
                         maxLines: 1,
@@ -1028,7 +1035,7 @@ class _ProductsPageState extends State<ProductsPage>
                         style: const TextStyle(
                           color: _primary,
                           fontWeight: FontWeight.bold,
-                          fontSize: 15,
+                          fontSize: 12,
                           height: 1,
                         ),
                       ),
