@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
-import 'package:pos_app/utils/label_text.dart';
 import 'package:pos_app/utils/message_banner.dart';
 import 'shop_cart_page.dart' as shop_cart;
 
@@ -709,18 +708,24 @@ class _SalesPageState extends State<SalesPage> {
               ? _buildEmptyState()
               : LayoutBuilder(
                   builder: (context, constraints) {
-                    final cardWidth = (constraints.maxWidth - 44) / 2;
+                    const horizontalPadding = 24.0;
+                    const spacing = 8.0;
+                    final cardWidth =
+                        (constraints.maxWidth -
+                            horizontalPadding -
+                            (spacing * 2)) /
+                        3;
                     final textScale = MediaQuery.textScalerOf(context).scale(1);
-                    final nameSlotHeight = 13 * 1.18 * textScale;
-                    final cardHeight = (cardWidth / 1.02) + nameSlotHeight + 96;
+                    final nameSlotHeight = 11 * 1.18 * textScale;
+                    final cardHeight = (cardWidth / 1.02) + nameSlotHeight + 82;
 
                     return GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
                       itemCount: products.length,
-                      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: cardWidth,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        crossAxisSpacing: spacing,
+                        mainAxisSpacing: spacing,
                         mainAxisExtent: cardHeight,
                       ),
                       itemBuilder: (_, i) => _buildProductCard(
@@ -797,12 +802,12 @@ class _SalesPageState extends State<SalesPage> {
               ),
 
               Positioned(
-                top: 10,
-                right: 10,
+                top: 7,
+                right: 7,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 5,
+                    horizontal: 6,
+                    vertical: 4,
                   ),
                   decoration: BoxDecoration(
                     color: _badgeBg(ss),
@@ -826,7 +831,7 @@ class _SalesPageState extends State<SalesPage> {
                       Text(
                         _badgeLabel(stock),
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: 8,
                           fontWeight: FontWeight.w800,
                           color: _badgeFg(ss),
                         ),
@@ -839,7 +844,7 @@ class _SalesPageState extends State<SalesPage> {
           ),
 
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 7, 10, 8),
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -851,39 +856,40 @@ class _SalesPageState extends State<SalesPage> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 11,
+                      letterSpacing: 0,
                       fontWeight: FontWeight.w600,
                       color: _primaryText,
                       height: 1.18,
                     ),
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
                   category.isEmpty ? 'Product' : category,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 9,
                     fontWeight: FontWeight.w600,
                     color: _secondaryText,
                     height: 1,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
                   CurrencyFormatter.format(price),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 12,
                     fontWeight: FontWeight.w900,
                     color: _primaryText,
-                    letterSpacing: -0.3,
+                    letterSpacing: 0,
                   ),
                 ),
 
-                const SizedBox(height: 5),
+                const SizedBox(height: 4),
 
                 SizedBox(
                   width: double.infinity,
@@ -985,7 +991,7 @@ class _CardAction extends StatelessWidget {
     if (quantity > 0) {
       return AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        height: 36,
+        height: 30,
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
           color: primary.withValues(alpha: 0.08),
@@ -1007,7 +1013,7 @@ class _CardAction extends StatelessWidget {
                 '$quantity',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 11,
                   fontWeight: FontWeight.w800,
                   color: primary,
                 ),
@@ -1030,7 +1036,7 @@ class _CardAction extends StatelessWidget {
     if (!canAdd) {
       return Container(
         width: double.infinity,
-        height: 36,
+        height: 30,
         decoration: BoxDecoration(
           color: surface,
           borderRadius: BorderRadius.circular(13),
@@ -1039,13 +1045,13 @@ class _CardAction extends StatelessWidget {
         child: const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.block_rounded, color: Color(0xFFBBBBBB), size: 17),
-            SizedBox(width: 8),
+            Icon(Icons.block_rounded, color: Color(0xFFBBBBBB), size: 14),
+            SizedBox(width: 5),
             Text(
               'Out of stock',
               style: TextStyle(
                 color: Color(0xFF8A8A8A),
-                fontSize: 13,
+                fontSize: 10,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -1059,7 +1065,7 @@ class _CardAction extends StatelessWidget {
       onTap: onAdd,
       child: Container(
         width: double.infinity,
-        height: 36,
+        height: 30,
         decoration: BoxDecoration(
           gradient: LinearGradient(colors: [primary, const Color(0xFF7C4DFF)]),
           borderRadius: BorderRadius.circular(13),
@@ -1077,14 +1083,14 @@ class _CardAction extends StatelessWidget {
             Icon(
               Icons.add_shopping_cart_rounded,
               color: Colors.white,
-              size: 18,
+              size: 15,
             ),
-            SizedBox(width: 8),
+            SizedBox(width: 5),
             Text(
-              'Add to Cart',
+              'Add',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 13,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -1123,9 +1129,9 @@ class _QuantityButton extends StatelessWidget {
           customBorder: const CircleBorder(),
           onTap: onTap,
           child: SizedBox(
-            width: 34,
-            height: 34,
-            child: Icon(icon, color: foreground, size: 18),
+            width: 28,
+            height: 28,
+            child: Icon(icon, color: foreground, size: 16),
           ),
         ),
       ),
