@@ -2,7 +2,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
-import 'package:pos_app/utils/label_text.dart';
 
 class ReportsPage extends StatefulWidget {
   const ReportsPage({super.key});
@@ -135,18 +134,6 @@ class _ReportsPageState extends State<ReportsPage>
       body: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: LabelText(
-                  'Reports',
-                  color: isDark ? const Color(0xFFF8FAFC) : Colors.black87,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
             const SizedBox(height: 10),
             // ── Tab bar ──────────────────────────────────────────────
             Padding(

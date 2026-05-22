@@ -531,19 +531,6 @@ class _SalesPageState extends State<SalesPage> {
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: LabelText(
-              'Sales',
-              color: _primaryText,
-              fontSize: 20,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-
         // Search + sort
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
