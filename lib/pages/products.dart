@@ -11,6 +11,7 @@ class ProductsPage extends StatefulWidget {
   final VoidCallback? onBarcodeHandled;
   final List<Map<String, dynamic>> cart;
   final VoidCallback? onCartChanged;
+  final String? currentUsername;
   const ProductsPage({
     super.key,
     this.scannedBarcode,
@@ -19,6 +20,7 @@ class ProductsPage extends StatefulWidget {
     this.onBarcodeHandled,
     this.cart = const [],
     this.onCartChanged,
+    this.currentUsername,
   });
 
   @override
@@ -408,7 +410,10 @@ class _ProductsPageState extends State<ProductsPage>
 
     try {
       for (final productId in idsToDelete) {
-        await DatabaseHelper.instance.deleteProduct(productId);
+        await DatabaseHelper.instance.deleteProduct(
+          productId,
+          actorUsername: widget.currentUsername,
+        );
       }
       _removeDeletedProductsFromCart(idsToDelete);
       if (!mounted) return;

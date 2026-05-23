@@ -109,6 +109,7 @@ class _HomePageState extends State<HomePage> {
           COUNT(DISTINCT substr(created_at, 1, 19)) AS total_count
         FROM sales
         WHERE created_at >= ? AND created_at < ?
+          AND (voided_at IS NULL OR voided_at = '')
       ''',
         [todayStart.toIso8601String(), todayEnd.toIso8601String()],
       );
@@ -118,6 +119,7 @@ class _HomePageState extends State<HomePage> {
         SELECT COALESCE(SUM(total), 0) AS yesterday_total
         FROM sales
         WHERE created_at >= ? AND created_at < ?
+          AND (voided_at IS NULL OR voided_at = '')
       ''',
         [yesterdayStart.toIso8601String(), todayStart.toIso8601String()],
       );
@@ -131,6 +133,7 @@ class _HomePageState extends State<HomePage> {
           MIN(sales.created_at) AS created_at
         FROM sales
         LEFT JOIN products ON sales.product_id = products.id
+        WHERE sales.voided_at IS NULL OR sales.voided_at = ''
         GROUP BY substr(sales.created_at, 1, 19)
         ORDER BY MAX(sales.created_at) DESC, MAX(sales.id) DESC
         LIMIT 4
@@ -209,7 +212,21 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openAccount() {
+    if (_isStaff) return;
     setState(() => _selectedIndex = 10);
+  }
+
+  Widget _buildAccessDeniedPage() {
+    return Center(
+      child: Text(
+        'Access denied',
+        style: TextStyle(
+          color: _secondaryText,
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 
   // ── Step 1: open scanner  Step 2: if barcode captured → open SalesPage ──────
@@ -604,6 +621,7 @@ class _HomePageState extends State<HomePage> {
         return ProductsPage(
           scannedBarcode: productsScannedBarcode,
           cart: sharedCart,
+          currentUsername: widget.username,
           onCartChanged: () {
             if (mounted) setState(() {});
           },
@@ -625,6 +643,7 @@ class _HomePageState extends State<HomePage> {
       case 2:
         return AddProductsPage(
           initialBarcode: addProductBarcode,
+          currentUsername: widget.username,
           onBarcodeHandled: () {
             addProductBarcode = null;
           },
@@ -664,15 +683,16 @@ class _HomePageState extends State<HomePage> {
 
       case 5:
         if (widget.role == 'admin') {
-          return const StaffManagementPage();
+          return StaffManagementPage(currentUsername: widget.username);
         }
         break;
 
       case 6:
-        return const HistoryPage();
+        return HistoryPage(currentUsername: widget.username);
 
       case 7:
         return SettingsPage(
+          currentUsername: widget.username,
           barcodeScannerEnabled: _barcodeScannerEnabled,
           onBarcodeScannerChanged: (enabled) {
             if (mounted) {
@@ -699,6 +719,7 @@ class _HomePageState extends State<HomePage> {
 
           product: selectedProduct!,
           scannedBarcode: editProductBarcode,
+          currentUsername: widget.username,
           onBarcodeHandled: () {
             editProductBarcode = null;
           },
@@ -731,6 +752,7 @@ class _HomePageState extends State<HomePage> {
         );
 
       case 10:
+        if (_isStaff) return _buildAccessDeniedPage();
         return AccountPage(username: widget.username);
     }
 
@@ -1314,20 +1336,21 @@ class _HomePageState extends State<HomePage> {
 
                   Divider(color: drawerDivider),
 
-                  ListTile(
-                    leading: Icon(Icons.person, color: drawerIcon),
-                    title: Text(
-                      'Account',
-                      style: TextStyle(
-                        color: drawerText,
-                        fontWeight: FontWeight.w500,
+                  if (!_isStaff)
+                    ListTile(
+                      leading: Icon(Icons.person, color: drawerIcon),
+                      title: Text(
+                        'Account',
+                        style: TextStyle(
+                          color: drawerText,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _openAccount();
+                      },
                     ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _openAccount();
-                    },
-                  ),
 
                   Divider(color: drawerDivider),
 

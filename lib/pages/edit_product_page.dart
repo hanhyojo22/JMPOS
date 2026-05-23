@@ -66,6 +66,7 @@ class EditProductPage extends StatefulWidget {
   final String? scannedBarcode;
   final VoidCallback? onSaved;
   final VoidCallback? onBarcodeHandled;
+  final String? currentUsername;
 
   const EditProductPage({
     super.key,
@@ -73,6 +74,7 @@ class EditProductPage extends StatefulWidget {
     this.scannedBarcode,
     this.onSaved,
     this.onBarcodeHandled,
+    this.currentUsername,
   });
 
   @override
@@ -279,7 +281,10 @@ class _EditProductPageState extends State<EditProductPage> {
         'image_url': savedImagePath,
         'updated_at': DateTime.now().toIso8601String(),
       };
-      final result = await DatabaseHelper.instance.updateProduct(updated);
+      final result = await DatabaseHelper.instance.updateProduct(
+        updated,
+        actorUsername: widget.currentUsername,
+      );
       if (!mounted) return;
       setState(() => _saving = false);
       if (result > 0) {

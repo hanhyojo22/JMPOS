@@ -5,7 +5,9 @@ import 'package:pos_app/utils/label_text.dart';
 import 'recent_sales.dart';
 
 class HistoryPage extends StatefulWidget {
-  const HistoryPage({super.key});
+  final String currentUsername;
+
+  const HistoryPage({super.key, required this.currentUsername});
 
   @override
   State<HistoryPage> createState() => _HistoryPageState();
@@ -34,7 +36,9 @@ class _HistoryPageState extends State<HistoryPage> {
       : Colors.black.withValues(alpha: 0.04);
   double get historySalesTotal => salesHistory.fold(
     0.0,
-    (s, h) => s + ((h['total'] as num?)?.toDouble() ?? 0.0),
+    (s, h) => (h['isVoided'] == true)
+        ? s
+        : s + ((h['total'] as num?)?.toDouble() ?? 0.0),
   );
   @override
   void initState() {
@@ -74,7 +78,8 @@ class _HistoryPageState extends State<HistoryPage> {
         GROUP_CONCAT(sales.product_name, ', ') AS product_name,
         SUM(sales.quantity) AS quantity,
         SUM(sales.total) AS total,
-        MIN(sales.created_at) AS created_at
+        MIN(sales.created_at) AS created_at,
+        MAX(sales.voided_at) AS voided_at
       FROM sales
       LEFT JOIN products ON products.id = sales.product_id
       GROUP BY substr(sales.created_at, 1, 19)
@@ -126,6 +131,7 @@ class _HistoryPageState extends State<HistoryPage> {
           'createdAt': createdAt,
           'quantity': sale['quantity'],
           'total': sale['total'],
+          'isVoided': (sale['voided_at']?.toString() ?? '').isNotEmpty,
         };
       }).toList();
 
@@ -137,7 +143,9 @@ class _HistoryPageState extends State<HistoryPage> {
 
   double get totalSales => salesHistory.fold(
     0.0,
-    (sum, item) => sum + ((item['total'] as num?)?.toDouble() ?? 0.0),
+    (sum, item) => (item['isVoided'] == true)
+        ? sum
+        : sum + ((item['total'] as num?)?.toDouble() ?? 0.0),
   );
   List<Map<String, dynamic>> get filteredHistory {
     List<Map<String, dynamic>> items = List.from(salesHistory);
@@ -415,15 +423,24 @@ class _HistoryPageState extends State<HistoryPage> {
     final qty = sale['quantity'] ?? 0;
     final saleId = (sale['id'] as num?)?.toInt();
     final saleLabel = saleId == null ? 'Sale' : 'Sale #$saleId';
+    final isVoided = sale['isVoided'] == true;
 
     return InkWell(
       borderRadius: BorderRadius.circular(18),
-      onTap: () {
+      onTap: () async {
         if (saleId == null) return;
-        Navigator.push(
+        final changed = await Navigator.push<bool>(
           context,
-          MaterialPageRoute(builder: (_) => RecentSalesPage(saleId: saleId)),
+          MaterialPageRoute(
+            builder: (_) => RecentSalesPage(
+              saleId: saleId,
+              currentUsername: widget.currentUsername,
+            ),
+          ),
         );
+        if (changed == true && mounted) {
+          await loadSalesHistory();
+        }
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
@@ -455,7 +472,7 @@ class _HistoryPageState extends State<HistoryPage> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: _primaryText,
+                        color: isVoided ? _secondaryText : _primaryText,
                       ),
                     ),
 
@@ -479,7 +496,8 @@ class _HistoryPageState extends State<HistoryPage> {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
-                      color: _primaryText,
+                      color: isVoided ? _secondaryText : _primaryText,
+                      decoration: isVoided ? TextDecoration.lineThrough : null,
                     ),
                   ),
 
@@ -492,17 +510,19 @@ class _HistoryPageState extends State<HistoryPage> {
                     ),
 
                     decoration: BoxDecoration(
-                      color: _success.withValues(alpha: 0.1),
+                      color: (isVoided ? Colors.red : _success).withValues(
+                        alpha: 0.1,
+                      ),
                       borderRadius: BorderRadius.circular(6),
                     ),
 
                     child: Text(
-                      'x$qty sold',
+                      isVoided ? 'Voided' : 'x$qty sold',
 
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: _success,
+                        color: isVoided ? Colors.red : _success,
                       ),
                     ),
                   ),
@@ -573,7 +593,6 @@ class _HistoryPageState extends State<HistoryPage> {
       ),
     );
   }
-
 }
 
 class _HistoryStat extends StatelessWidget {

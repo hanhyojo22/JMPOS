@@ -3,7 +3,9 @@ import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/message_banner.dart';
 
 class StaffManagementPage extends StatefulWidget {
-  const StaffManagementPage({super.key});
+  final String currentUsername;
+
+  const StaffManagementPage({super.key, required this.currentUsername});
 
   @override
   State<StaffManagementPage> createState() => _StaffManagementPageState();
@@ -72,13 +74,13 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
     );
   }
 
-  void _deleteStaff(int userId, String username) {
+  void _deleteStaff(int userId, String displayName) {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Delete Staff Member'),
-        content: Text('Are you sure you want to delete "$username"?'),
+        content: Text('Are you sure you want to delete "$displayName"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -185,11 +187,7 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
                     children: [
                       const SizedBox(height: 4),
                       Text(
-                        '@${staff['username']}',
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
-                      Text(
-                        staff['email'] as String,
+                        'PIN login enabled',
                         style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                       ),
                     ],
@@ -211,12 +209,12 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
                           children: [
                             Icon(Icons.vpn_key, size: 20),
                             SizedBox(width: 12),
-                            Text('Reset Password'),
+                            Text('Reset PIN'),
                           ],
                         ),
                         onTap: () => _showResetPasswordDialog(
                           staff['id'] as int,
-                          staff['username'] as String,
+                          staff['full_name'] as String,
                         ),
                       ),
                       PopupMenuItem(
@@ -229,7 +227,7 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
                         ),
                         onTap: () => _deleteStaff(
                           staff['id'] as int,
-                          staff['username'] as String,
+                          staff['full_name'] as String,
                         ),
                       ),
                     ],
@@ -254,6 +252,7 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
       builder: (_) => _ResetPasswordDialog(
         userId: userId,
         username: username,
+        currentUsername: widget.currentUsername,
         onPasswordReset: _refreshStaffList,
         onMessage: _showBanner,
       ),
@@ -275,19 +274,15 @@ class _AddStaffDialog extends StatefulWidget {
 
 class _AddStaffDialogState extends State<_AddStaffDialog> {
   final _formKey = GlobalKey<FormState>();
-  final _usernameController = TextEditingController();
-  final _passwordController = TextEditingController();
   final _fullNameController = TextEditingController();
-  final _emailController = TextEditingController();
+  final _pinController = TextEditingController();
   bool _isLoading = false;
-  bool _obscurePassword = true;
+  bool _obscurePin = true;
 
   @override
   void dispose() {
-    _usernameController.dispose();
-    _passwordController.dispose();
     _fullNameController.dispose();
-    _emailController.dispose();
+    _pinController.dispose();
     super.dispose();
   }
 
@@ -297,10 +292,8 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
     setState(() => _isLoading = true);
 
     final userId = await DatabaseHelper.instance.createStaff(
-      username: _usernameController.text.trim(),
-      password: _passwordController.text,
       fullName: _fullNameController.text.trim(),
-      email: _emailController.text.trim(),
+      pin: _pinController.text.trim(),
     );
 
     if (!mounted) return;
@@ -310,8 +303,10 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
       Navigator.pop(context);
       widget.onStaffAdded();
       widget.onMessage('Staff member created successfully', success: true);
+    } else if (userId == -2) {
+      widget.onMessage('PIN already used by another user');
     } else {
-      widget.onMessage('Error creating staff. Username might already exist.');
+      widget.onMessage('Error creating staff.');
     }
   }
 
@@ -344,73 +339,29 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
               ),
               const SizedBox(height: 12),
               TextFormField(
-                controller: _usernameController,
+                controller: _pinController,
+                obscureText: _obscurePin,
+                keyboardType: TextInputType.number,
                 decoration: InputDecoration(
-                  labelText: 'Username',
-                  prefixIcon: const Icon(Icons.account_box_outlined),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter username';
-                  }
-                  if (value.length < 3) {
-                    return 'Username must be at least 3 characters';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _emailController,
-                decoration: InputDecoration(
-                  labelText: 'Email',
-                  prefixIcon: const Icon(Icons.email_outlined),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter email';
-                  }
-                  if (!RegExp(
-                    r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                  ).hasMatch(value)) {
-                    return 'Please enter a valid email';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _passwordController,
-                obscureText: _obscurePassword,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  prefixIcon: const Icon(Icons.lock_outline),
+                  labelText: 'PIN',
+                  prefixIcon: const Icon(Icons.pin_outlined),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
+                      _obscurePin ? Icons.visibility_off : Icons.visibility,
                     ),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
+                    onPressed: () => setState(() => _obscurePin = !_obscurePin),
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter password';
+                  final pin = value?.trim() ?? '';
+                  if (pin.isEmpty) {
+                    return 'Please enter PIN';
                   }
-                  if (value.length < 6) {
-                    return 'Password must be at least 6 characters';
+                  if (!RegExp(r'^\d{4,6}$').hasMatch(pin)) {
+                    return 'PIN must be 4 to 6 digits';
                   }
                   return null;
                 },
@@ -464,7 +415,6 @@ class _EditStaffDialog extends StatefulWidget {
 
 class _EditStaffDialogState extends State<_EditStaffDialog> {
   late TextEditingController _fullNameController;
-  late TextEditingController _emailController;
   late GlobalKey<FormState> _formKey;
   bool _isLoading = false;
 
@@ -475,13 +425,11 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
     _fullNameController = TextEditingController(
       text: widget.staff['full_name'],
     );
-    _emailController = TextEditingController(text: widget.staff['email']);
   }
 
   @override
   void dispose() {
     _fullNameController.dispose();
-    _emailController.dispose();
     super.dispose();
   }
 
@@ -493,7 +441,6 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
     final success = await DatabaseHelper.instance.updateStaff(
       userId: widget.staff['id'] as int,
       fullName: _fullNameController.text.trim(),
-      email: _emailController.text.trim(),
     );
 
     if (!mounted) return;
@@ -535,29 +482,6 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
                   return null;
                 },
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _emailController,
-                decoration: InputDecoration(
-                  labelText: 'Email',
-                  prefixIcon: const Icon(Icons.email_outlined),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter email';
-                  }
-                  if (!RegExp(
-                    r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                  ).hasMatch(value)) {
-                    return 'Please enter a valid email';
-                  }
-                  return null;
-                },
-              ),
             ],
           ),
         ),
@@ -593,12 +517,14 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
 class _ResetPasswordDialog extends StatefulWidget {
   final int userId;
   final String username;
+  final String currentUsername;
   final VoidCallback onPasswordReset;
   final void Function(String message, {bool success}) onMessage;
 
   const _ResetPasswordDialog({
     required this.userId,
     required this.username,
+    required this.currentUsername,
     required this.onPasswordReset,
     required this.onMessage,
   });
@@ -608,33 +534,42 @@ class _ResetPasswordDialog extends StatefulWidget {
 }
 
 class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
-  late TextEditingController _passwordController;
+  late TextEditingController _pinController;
   late GlobalKey<FormState> _formKey;
   bool _isLoading = false;
-  bool _obscurePassword = true;
+  bool _obscurePin = true;
 
   @override
   void initState() {
     super.initState();
     _formKey = GlobalKey<FormState>();
-    _passwordController = TextEditingController();
+    _pinController = TextEditingController();
   }
 
   @override
   void dispose() {
-    _passwordController.dispose();
+    _pinController.dispose();
     super.dispose();
   }
 
-  Future<void> _resetPassword() async {
+  Future<void> _resetPin() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
-    final success = await DatabaseHelper.instance.resetStaffPassword(
-      userId: widget.userId,
-      newPassword: _passwordController.text,
-    );
+    bool success;
+    try {
+      success = await DatabaseHelper.instance.resetStaffPin(
+        userId: widget.userId,
+        pin: _pinController.text.trim(),
+        actorUsername: widget.currentUsername,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      widget.onMessage('PIN already used by another user');
+      return;
+    }
 
     if (!mounted) return;
     setState(() => _isLoading = false);
@@ -642,9 +577,9 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
     if (success) {
       Navigator.pop(context);
       widget.onPasswordReset();
-      widget.onMessage('Password reset successfully', success: true);
+      widget.onMessage('PIN reset successfully', success: true);
     } else {
-      widget.onMessage('Error resetting password');
+      widget.onMessage('Error resetting PIN');
     }
   }
 
@@ -652,30 +587,29 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Text('Reset Password for ${widget.username}'),
+      title: Text('Reset PIN for ${widget.username}'),
       content: Form(
         key: _formKey,
         child: TextFormField(
-          controller: _passwordController,
-          obscureText: _obscurePassword,
+          controller: _pinController,
+          obscureText: _obscurePin,
+          keyboardType: TextInputType.number,
           decoration: InputDecoration(
-            labelText: 'New Password',
-            prefixIcon: const Icon(Icons.lock_outline),
+            labelText: 'New PIN',
+            prefixIcon: const Icon(Icons.pin_outlined),
             suffixIcon: IconButton(
-              icon: Icon(
-                _obscurePassword ? Icons.visibility_off : Icons.visibility,
-              ),
-              onPressed: () =>
-                  setState(() => _obscurePassword = !_obscurePassword),
+              icon: Icon(_obscurePin ? Icons.visibility_off : Icons.visibility),
+              onPressed: () => setState(() => _obscurePin = !_obscurePin),
             ),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
           validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter new password';
+            final pin = value?.trim() ?? '';
+            if (pin.isEmpty) {
+              return 'Please enter new PIN';
             }
-            if (value.length < 6) {
-              return 'Password must be at least 6 characters';
+            if (!RegExp(r'^\d{4,6}$').hasMatch(pin)) {
+              return 'PIN must be 4 to 6 digits';
             }
             return null;
           },
@@ -690,7 +624,7 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF667eea),
           ),
-          onPressed: _isLoading ? null : _resetPassword,
+          onPressed: _isLoading ? null : _resetPin,
           child: _isLoading
               ? const SizedBox(
                   width: 20,

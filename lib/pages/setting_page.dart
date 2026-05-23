@@ -13,10 +13,12 @@ class SettingsPage extends StatefulWidget {
     super.key,
     required this.barcodeScannerEnabled,
     required this.onBarcodeScannerChanged,
+    required this.currentUsername,
   });
 
   final bool barcodeScannerEnabled;
   final ValueChanged<bool> onBarcodeScannerChanged;
+  final String currentUsername;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -566,10 +568,11 @@ class _SettingsPageState extends State<SettingsPage> {
   String _buildSalesCsv(List<Map<String, dynamic>> sales) {
     final buffer = StringBuffer();
     buffer.writeln(
-      'Sale ID,Date,Product ID,Product Name,Quantity,Unit Price,Total,Image',
+      'Sale ID,Date,Product ID,Product Name,Quantity,Unit Price,Total,Status,Voided By,Void Reason,Image',
     );
 
     for (final sale in sales) {
+      final isVoided = (sale['voided_at']?.toString() ?? '').isNotEmpty;
       buffer.writeln(
         [
           sale['id'],
@@ -579,6 +582,9 @@ class _SettingsPageState extends State<SettingsPage> {
           sale['quantity'],
           sale['price'],
           sale['total'],
+          isVoided ? 'Voided' : 'Completed',
+          sale['voided_by'],
+          sale['void_reason'],
           sale['image_url'],
         ].map(_csvCell).join(','),
       );
@@ -706,9 +712,16 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final backupPath = backup.path;
       if (backupPath != null) {
-        await DatabaseHelper.instance.restoreDatabaseFromPath(backupPath);
+        await DatabaseHelper.instance.restoreDatabaseFromPathWithAudit(
+          backupPath: backupPath,
+          user: widget.currentUsername,
+        );
       } else if (backup.bytes != null) {
-        await DatabaseHelper.instance.restoreDatabaseFromBytes(backup.bytes!);
+        await DatabaseHelper.instance.restoreDatabaseFromBytesWithAudit(
+          bytes: backup.bytes!,
+          user: widget.currentUsername,
+          fileName: backup.name,
+        );
       } else {
         throw Exception('Selected backup could not be read.');
       }
@@ -818,9 +831,20 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     setState(() => _isSaving = true);
-    final saved = await DatabaseHelper.instance.setOwnerPin(
-      _pinController.text,
-    );
+    bool saved;
+    try {
+      saved = await DatabaseHelper.instance.setOwnerPin(_pinController.text);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PIN already used by another user'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
 
     if (!mounted) return;
     setState(() => _isSaving = false);

@@ -13,12 +13,14 @@ class AddProductsPage extends StatefulWidget {
   final String? initialBarcode;
   final VoidCallback? onBarcodeHandled;
   final VoidCallback? onBack;
+  final String? currentUsername;
 
   const AddProductsPage({
     super.key,
     this.initialBarcode,
     this.onBarcodeHandled,
     this.onBack,
+    this.currentUsername,
   });
   @override
   State<AddProductsPage> createState() => _AddProductsPageState();
@@ -458,6 +460,7 @@ class _AddProductsPageState extends State<AddProductsPage>
         costPrice: costPrice,
         stockQuantity: stockQuantity,
         imageUrl: savedImagePath,
+        actorUsername: widget.currentUsername,
       );
 
       // rest of your success/error handling...

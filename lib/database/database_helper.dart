@@ -33,7 +33,7 @@ class ProductImageConnectionReport {
 
 class DatabaseHelper {
   static Database? _database;
-  static const int _dbVersion = 5;
+  static const int _dbVersion = 7;
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
   static const int _productImageSize = 300;
   static const int _productImageJpegQuality = 82;
@@ -217,6 +217,31 @@ class DatabaseHelper {
     await _replaceDatabase((targetPath) async {
       await File(targetPath).writeAsBytes(bytes);
     });
+  }
+
+  Future<void> restoreDatabaseFromPathWithAudit({
+    required String backupPath,
+    required String user,
+  }) async {
+    await restoreDatabaseFromPath(backupPath);
+    await recordAuditLog(
+      user: user,
+      action: 'backup_restore',
+      details: _auditDetails({'source': basename(backupPath)}),
+    );
+  }
+
+  Future<void> restoreDatabaseFromBytesWithAudit({
+    required Uint8List bytes,
+    required String user,
+    String? fileName,
+  }) async {
+    await restoreDatabaseFromBytes(bytes);
+    await recordAuditLog(
+      user: user,
+      action: 'backup_restore',
+      details: _auditDetails({'source': fileName, 'bytes': bytes.length}),
+    );
   }
 
   Future<void> _restoreBackupArchive(File backup) async {
@@ -488,6 +513,9 @@ class DatabaseHelper {
         price REAL NOT NULL,
         total REAL NOT NULL,
         image_url TEXT,
+        voided_at TEXT,
+        voided_by TEXT,
+        void_reason TEXT,
         created_at TEXT NOT NULL
       )
     ''');
@@ -506,6 +534,8 @@ class DatabaseHelper {
       )
     ''');
 
+    await _createAuditLogTable(db);
+
     await _createIndexes(db);
   }
 
@@ -519,9 +549,27 @@ class DatabaseHelper {
     if (oldVersion < 4) {
       await db.execute('ALTER TABLE users ADD COLUMN pin_hash TEXT');
     }
-    if (oldVersion < 5) {
+    if (oldVersion < 6) {
+      await _createAuditLogTable(db);
+    }
+    if (oldVersion < 7) {
+      await _ensureSalesSchema(db);
+    }
+    if (oldVersion < 7) {
       await _createIndexes(db);
     }
+  }
+
+  Future<void> _createAuditLogTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user TEXT NOT NULL,
+        action TEXT NOT NULL,
+        details TEXT,
+        timestamp TEXT NOT NULL
+      )
+    ''');
   }
 
   Future<void> _createIndexes(Database db) async {
@@ -541,6 +589,11 @@ class DatabaseHelper {
     ''');
 
     await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sales_voided_at
+      ON sales(voided_at)
+    ''');
+
+    await db.execute('''
       CREATE INDEX IF NOT EXISTS idx_users_pin_hash_role_created_at
       ON users(pin_hash, role, created_at)
     ''');
@@ -548,6 +601,16 @@ class DatabaseHelper {
     await db.execute('''
       CREATE INDEX IF NOT EXISTS idx_users_role_created_at
       ON users(role, created_at DESC)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp
+      ON audit_logs(timestamp DESC)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_user_action
+      ON audit_logs(user, action)
     ''');
   }
 
@@ -564,15 +627,82 @@ class DatabaseHelper {
 
   Future<void> ensureSalesSchema() async {
     final db = await database;
-    final columns = await db.rawQuery('PRAGMA table_info(sales)');
-    final hasImageUrl = columns.cast<Map<String, Object?>>().any(
-      (column) => column['name'] == 'image_url',
-    );
+    await _ensureSalesSchema(db);
+  }
 
-    if (!hasImageUrl) {
+  Future<void> _ensureSalesSchema(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(sales)');
+    final columnNames = columns
+        .cast<Map<String, Object?>>()
+        .map((column) => column['name'])
+        .toSet();
+
+    if (!columnNames.contains('image_url')) {
       await db.execute('ALTER TABLE sales ADD COLUMN image_url TEXT');
     }
+    if (!columnNames.contains('voided_at')) {
+      await db.execute('ALTER TABLE sales ADD COLUMN voided_at TEXT');
+    }
+    if (!columnNames.contains('voided_by')) {
+      await db.execute('ALTER TABLE sales ADD COLUMN voided_by TEXT');
+    }
+    if (!columnNames.contains('void_reason')) {
+      await db.execute('ALTER TABLE sales ADD COLUMN void_reason TEXT');
+    }
   }
+
+  Future<void> recordAuditLog({
+    required String user,
+    required String action,
+    String? details,
+  }) async {
+    final db = await database;
+    await _createAuditLogTable(db);
+
+    await db.insert('audit_logs', {
+      'user': user.trim().isEmpty ? 'unknown' : user.trim().toLowerCase(),
+      'action': action.trim(),
+      'details': details?.trim(),
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<void> recordVoidSaleAudit({
+    required String user,
+    required Object saleId,
+    String? details,
+  }) {
+    final payload = <String, Object?>{'sale_id': saleId.toString()};
+
+    if (details != null && details.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(details);
+        if (decoded is Map<String, dynamic>) {
+          payload.addAll(decoded);
+        } else {
+          payload['details'] = details.trim();
+        }
+      } catch (_) {
+        payload['details'] = details.trim();
+      }
+    }
+
+    return recordAuditLog(
+      user: user,
+      action: 'void_sale',
+      details: jsonEncode(payload),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getAuditLogs({int limit = 200}) async {
+    final db = await database;
+    await _createAuditLogTable(db);
+    return db.query('audit_logs', orderBy: 'timestamp DESC', limit: limit);
+  }
+
+  String _auditDetails(Map<String, Object?> values) => jsonEncode(
+    Map.fromEntries(values.entries.where((entry) => entry.value != null)),
+  );
 
   // ─── Password hashing ────────────────────────────────────────────────────────
   static String _hashPassword(String password) {
@@ -587,14 +717,28 @@ class DatabaseHelper {
   Future<Map<String, dynamic>?> login(String username, String password) async {
     final db = await database;
     final hash = _hashPassword(password);
+    final normalizedUsername = username.trim().toLowerCase();
 
     final result = await db.query(
       'users',
       where: 'username = ? AND password_hash = ?',
-      whereArgs: [username.trim().toLowerCase(), hash],
+      whereArgs: [normalizedUsername, hash],
     );
 
-    if (result.isNotEmpty) return result.first;
+    if (result.isNotEmpty) {
+      await recordAuditLog(
+        user: normalizedUsername,
+        action: 'login',
+        details: _auditDetails({'method': 'password', 'status': 'success'}),
+      );
+      return result.first;
+    }
+
+    await recordAuditLog(
+      user: normalizedUsername.isEmpty ? 'unknown' : normalizedUsername,
+      action: 'login_failed',
+      details: _auditDetails({'method': 'password'}),
+    );
     return null;
   }
 
@@ -610,7 +754,15 @@ class DatabaseHelper {
       limit: 1,
     );
 
-    if (result.isNotEmpty) return result.first;
+    if (result.isNotEmpty) {
+      final user = result.first;
+      await recordAuditLog(
+        user: user['username']?.toString() ?? 'unknown',
+        action: 'login',
+        details: _auditDetails({'method': 'pin', 'status': 'success'}),
+      );
+      return user;
+    }
     return null;
   }
 
@@ -626,14 +778,43 @@ class DatabaseHelper {
     return result.isNotEmpty;
   }
 
+  Future<bool> pinExists(String pin, {int? excludeUserId}) async {
+    final db = await database;
+    final hash = _hashPassword(pin);
+    final result = await db.query(
+      'users',
+      columns: ['id'],
+      where: excludeUserId == null
+          ? "pin_hash = ? AND pin_hash IS NOT NULL AND TRIM(pin_hash) != ''"
+          : "pin_hash = ? AND id != ? AND pin_hash IS NOT NULL AND TRIM(pin_hash) != ''",
+      whereArgs: excludeUserId == null ? [hash] : [hash, excludeUserId],
+      limit: 1,
+    );
+    return result.isNotEmpty;
+  }
+
   Future<bool> setOwnerPin(String pin) async {
     final db = await database;
+    final ownerRows = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'role = ?',
+      whereArgs: ['admin'],
+      orderBy: 'created_at ASC',
+      limit: 1,
+    );
+    if (ownerRows.isEmpty) return false;
+
+    final ownerId = (ownerRows.first['id'] as num).toInt();
+    if (await pinExists(pin, excludeUserId: ownerId)) {
+      throw Exception('PIN is already used by another user');
+    }
+
     final result = await db.update(
       'users',
       {'pin_hash': _hashPassword(pin)},
-      where:
-          'id = (SELECT id FROM users WHERE role = ? ORDER BY created_at ASC LIMIT 1)',
-      whereArgs: ['admin'],
+      where: 'id = ?',
+      whereArgs: [ownerId],
     );
     return result > 0;
   }
@@ -682,12 +863,13 @@ class DatabaseHelper {
   }) async {
     final db = await database;
     final currentHash = _hashPassword(currentPassword);
+    final normalizedUsername = username.trim().toLowerCase();
 
     // Verify current password first
     final result = await db.query(
       'users',
       where: 'username = ? AND password_hash = ?',
-      whereArgs: [username.trim().toLowerCase(), currentHash],
+      whereArgs: [normalizedUsername, currentHash],
     );
 
     if (result.isEmpty) return false; // Wrong current password
@@ -697,7 +879,13 @@ class DatabaseHelper {
       'users',
       {'password_hash': newHash},
       where: 'username = ?',
-      whereArgs: [username.trim().toLowerCase()],
+      whereArgs: [normalizedUsername],
+    );
+
+    await recordAuditLog(
+      user: normalizedUsername,
+      action: 'password_change',
+      details: _auditDetails({'target_user': normalizedUsername}),
     );
 
     return true;
@@ -743,6 +931,7 @@ class DatabaseHelper {
     required double costPrice,
     required int stockQuantity,
     String? imageUrl,
+    String? actorUsername,
   }) async {
     final db = await database;
     await _ensureProductSchema(db);
@@ -754,7 +943,7 @@ class DatabaseHelper {
     }
 
     try {
-      return await db.insert('products', {
+      final productId = await db.insert('products', {
         'barcode': trimmedBarcode,
         'product_name': productName.trim(),
         'category': category?.trim(),
@@ -766,6 +955,18 @@ class DatabaseHelper {
         'created_at': now,
         'updated_at': now,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await recordAuditLog(
+        user: actorUsername ?? 'system',
+        action: 'product_create',
+        details: _auditDetails({
+          'product_id': productId,
+          'product_name': productName.trim(),
+          'barcode': trimmedBarcode,
+          'stock_quantity': stockQuantity,
+          'price': price,
+        }),
+      );
+      return productId;
     } catch (e) {
       throw Exception('Failed to add product: $e');
     }
@@ -781,27 +982,82 @@ class DatabaseHelper {
     return await db.query('products');
   }
 
-  Future<int> updateProduct(Map<String, dynamic> product) async {
+  Future<int> updateProduct(
+    Map<String, dynamic> product, {
+    String? actorUsername,
+  }) async {
     final db = await database;
     final barcode = product['barcode']?.toString().trim() ?? '';
     final id = product['id'] as int;
+    final oldRows = await db.query(
+      'products',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
 
     if (barcode.isNotEmpty &&
         await barcodeExists(barcode, excludeProductId: id)) {
       throw Exception('Barcode already exists');
     }
 
-    return await db.update(
+    final result = await db.update(
       'products',
       {...product, 'barcode': barcode},
       where: 'id = ?',
       whereArgs: [id],
     );
+
+    if (result > 0) {
+      final oldProduct = oldRows.isEmpty ? <String, Object?>{} : oldRows.first;
+      await recordAuditLog(
+        user: actorUsername ?? 'system',
+        action: 'inventory_edit',
+        details: _auditDetails({
+          'product_id': id,
+          'product_name': product['product_name'],
+          'old_stock': oldProduct['stock_quantity'],
+          'new_stock': product['stock_quantity'],
+          'old_price': oldProduct['price'],
+          'new_price': product['price'],
+          'old_cost_price': oldProduct['cost_price'],
+          'new_cost_price': product['cost_price'],
+        }),
+      );
+    }
+
+    return result;
   }
 
-  Future<int> deleteProduct(int id) async {
+  Future<int> deleteProduct(int id, {String? actorUsername}) async {
     final db = await database;
-    return await db.delete('products', where: 'id = ?', whereArgs: [id]);
+    final oldRows = await db.query(
+      'products',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    final result = await db.delete(
+      'products',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
+    if (result > 0) {
+      final oldProduct = oldRows.isEmpty ? <String, Object?>{} : oldRows.first;
+      await recordAuditLog(
+        user: actorUsername ?? 'system',
+        action: 'product_delete',
+        details: _auditDetails({
+          'product_id': id,
+          'product_name': oldProduct['product_name'],
+          'barcode': oldProduct['barcode'],
+          'stock_quantity': oldProduct['stock_quantity'],
+        }),
+      );
+    }
+
+    return result;
   }
 
   // ─── Sales methods ────────────────────────────────────────────────────────────
@@ -813,30 +1069,135 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getSales() async {
     final db = await database;
+    await _ensureSalesSchema(db);
     return await db.query('sales', orderBy: 'created_at DESC');
+  }
+
+  Future<bool> voidSaleTransaction({
+    required int saleId,
+    required String user,
+    String? reason,
+  }) async {
+    final db = await database;
+    await _ensureSalesSchema(db);
+
+    final saleRows = await db.query(
+      'sales',
+      where: 'id = ?',
+      whereArgs: [saleId],
+      limit: 1,
+    );
+    if (saleRows.isEmpty) return false;
+
+    final selectedSale = saleRows.first;
+    if ((selectedSale['voided_at']?.toString() ?? '').isNotEmpty) {
+      throw Exception('Sale is already voided');
+    }
+
+    final createdAt = DateTime.tryParse(selectedSale['created_at'].toString());
+    if (createdAt == null) {
+      throw Exception('Sale timestamp is invalid');
+    }
+
+    final start = createdAt.subtract(const Duration(seconds: 1));
+    final end = createdAt.add(const Duration(seconds: 1));
+    final now = DateTime.now().toIso8601String();
+    final normalizedUser = user.trim().isEmpty ? 'unknown' : user.trim();
+    final trimmedReason = reason?.trim();
+
+    late List<Map<String, Object?>> saleItems;
+    await db.transaction((txn) async {
+      saleItems = await txn.query(
+        'sales',
+        where:
+            'created_at >= ? AND created_at <= ? AND (voided_at IS NULL OR voided_at = ?)',
+        whereArgs: [start.toIso8601String(), end.toIso8601String(), ''],
+        orderBy: 'id ASC',
+      );
+
+      if (saleItems.isEmpty) {
+        throw Exception('Sale is already voided');
+      }
+
+      for (final item in saleItems) {
+        final productId = (item['product_id'] as num?)?.toInt();
+        final quantity = (item['quantity'] as num?)?.toInt() ?? 0;
+        if (productId == null || quantity <= 0) continue;
+
+        await txn.rawUpdate(
+          '''
+          UPDATE products
+          SET stock_quantity = stock_quantity + ?,
+              updated_at = ?
+          WHERE id = ?
+          ''',
+          [quantity, now, productId],
+        );
+      }
+
+      await txn.update(
+        'sales',
+        {
+          'voided_at': now,
+          'voided_by': normalizedUser,
+          'void_reason': trimmedReason == null || trimmedReason.isEmpty
+              ? null
+              : trimmedReason,
+        },
+        where: 'id IN (${List.filled(saleItems.length, '?').join(',')})',
+        whereArgs: saleItems.map((item) => item['id']).toList(),
+      );
+    });
+
+    final total = saleItems.fold<double>(
+      0,
+      (sum, item) => sum + ((item['total'] as num?)?.toDouble() ?? 0),
+    );
+    final quantity = saleItems.fold<int>(
+      0,
+      (sum, item) => sum + ((item['quantity'] as num?)?.toInt() ?? 0),
+    );
+
+    await recordVoidSaleAudit(
+      user: normalizedUser,
+      saleId: saleId,
+      details: _auditDetails({
+        'sale_ids': saleItems.map((item) => item['id']).toList(),
+        'items': saleItems.length,
+        'quantity': quantity,
+        'total': total,
+        'reason': trimmedReason,
+      }),
+    );
+
+    return true;
   }
 
   // ─── Staff management methods ──────────────────────────────────────────────────
 
   /// Creates a new staff user. Returns the user id if successful, -1 otherwise.
   Future<int> createStaff({
-    required String username,
-    required String password,
     required String fullName,
-    required String email,
+    required String pin,
   }) async {
     final db = await database;
+    if (await pinExists(pin)) return -2;
+
+    final now = DateTime.now();
+    final generatedUsername =
+        'staff_${now.microsecondsSinceEpoch}_${fullName.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_').replaceAll(RegExp(r'^_+|_+$'), '')}';
     try {
       return await db.insert('users', {
-        'username': username.trim().toLowerCase(),
-        'password_hash': _hashPassword(password),
-        'full_name': fullName,
-        'email': email.trim(),
+        'username': generatedUsername,
+        'password_hash': _hashPassword(pin),
+        'pin_hash': _hashPassword(pin),
+        'full_name': fullName.trim(),
+        'email': null,
         'role': 'staff',
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': now.toIso8601String(),
       });
     } catch (e) {
-      return -1; // Username might already exist
+      return -1;
     }
   }
 
@@ -876,12 +1237,11 @@ class DatabaseHelper {
   Future<bool> updateStaff({
     required int userId,
     required String fullName,
-    required String email,
   }) async {
     final db = await database;
     final result = await db.update(
       'users',
-      {'full_name': fullName, 'email': email.trim()},
+      {'full_name': fullName.trim()},
       where: 'id = ? AND role = ?',
       whereArgs: [userId, 'staff'],
     );
@@ -892,6 +1252,7 @@ class DatabaseHelper {
   Future<bool> resetStaffPassword({
     required int userId,
     required String newPassword,
+    String? actorUsername,
   }) async {
     final db = await database;
     final result = await db.update(
@@ -900,6 +1261,40 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [userId],
     );
+    if (result > 0) {
+      await recordAuditLog(
+        user: actorUsername ?? 'system',
+        action: 'password_change',
+        details: _auditDetails({'target_user_id': userId, 'reset': true}),
+      );
+    }
+    return result > 0;
+  }
+
+  Future<bool> resetStaffPin({
+    required int userId,
+    required String pin,
+    String? actorUsername,
+  }) async {
+    final db = await database;
+    if (await pinExists(pin, excludeUserId: userId)) {
+      throw Exception('PIN is already used by another user');
+    }
+
+    final hash = _hashPassword(pin);
+    final result = await db.update(
+      'users',
+      {'pin_hash': hash, 'password_hash': hash},
+      where: 'id = ? AND role = ?',
+      whereArgs: [userId, 'staff'],
+    );
+    if (result > 0) {
+      await recordAuditLog(
+        user: actorUsername ?? 'system',
+        action: 'pin_change',
+        details: _auditDetails({'target_user_id': userId, 'reset': true}),
+      );
+    }
     return result > 0;
   }
 

@@ -3,9 +3,14 @@ import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
 
 class RecentSalesPage extends StatefulWidget {
-  const RecentSalesPage({super.key, required this.saleId});
+  const RecentSalesPage({
+    super.key,
+    required this.saleId,
+    required this.currentUsername,
+  });
 
   final int saleId;
+  final String currentUsername;
 
   @override
   State<RecentSalesPage> createState() => _RecentSalesPageState();
@@ -21,6 +26,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
   Map<String, dynamic>? _sale;
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
+  bool _voiding = false;
   String? _error;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
@@ -55,6 +61,9 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
           sales.quantity,
           sales.price,
           sales.total,
+          sales.voided_at,
+          sales.voided_by,
+          sales.void_reason,
           sales.created_at,
           products.category AS category,
           products.barcode AS barcode
@@ -87,6 +96,9 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
               sales.quantity,
               sales.price,
               sales.total,
+              sales.voided_at,
+              sales.voided_by,
+              sales.void_reason,
               sales.created_at,
               products.category AS category,
               products.barcode AS barcode
@@ -154,6 +166,71 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
     final minute = date.minute.toString().padLeft(2, '0');
     final period = date.hour >= 12 ? 'PM' : 'AM';
     return '$hour:$minute $period';
+  }
+
+  bool get _isVoided => (_sale?['voided_at']?.toString() ?? '').isNotEmpty;
+
+  Future<void> _confirmVoidSale() async {
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Void sale'),
+        content: TextField(
+          controller: reasonController,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'Reason',
+            hintText: 'Optional note',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Void', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) {
+      reasonController.dispose();
+      return;
+    }
+
+    setState(() => _voiding = true);
+    try {
+      final success = await DatabaseHelper.instance.voidSaleTransaction(
+        saleId: widget.saleId,
+        user: widget.currentUsername,
+        reason: reasonController.text,
+      );
+
+      if (!mounted) return;
+      setState(() => _voiding = false);
+
+      if (success) {
+        await _loadSale();
+        if (!mounted) return;
+        _showActionMessage('Sale voided and stock restored');
+        Navigator.pop(context, true);
+      } else {
+        _showActionMessage('Sale record not found');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _voiding = false);
+      _showActionMessage('Error: $e');
+    } finally {
+      reasonController.dispose();
+    }
   }
 
   @override
@@ -305,16 +382,18 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
   }
 
   Widget _statusPill() {
+    final isVoided = _isVoided;
+    final color = isVoided ? Colors.red : _success;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: _success.withValues(alpha: 0.13),
+        color: color.withValues(alpha: 0.13),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Text(
-        'Completed',
+      child: Text(
+        isVoided ? 'Voided' : 'Completed',
         style: TextStyle(
-          color: _success,
+          color: color,
           fontSize: 11,
           fontWeight: FontWeight.w800,
         ),
@@ -519,6 +598,8 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
   }
 
   Widget _noteCard() {
+    final isVoided = _isVoided;
+    final reason = _sale?['void_reason']?.toString();
     return _receiptCard(
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -541,7 +622,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Note',
+                isVoided ? 'Void Reason' : 'Note',
                 style: TextStyle(
                   color: _primaryText,
                   fontSize: 15,
@@ -550,7 +631,9 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
               ),
               const SizedBox(height: 4),
               Text(
-                'No note',
+                isVoided && reason != null && reason.isNotEmpty
+                    ? reason
+                    : 'No note',
                 style: TextStyle(color: _secondaryText, fontSize: 11),
               ),
             ],
@@ -565,7 +648,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
       children: [
         Expanded(child: _printReceiptButton()),
         const SizedBox(width: 12),
-        Expanded(child: _shareReceiptButton()),
+        Expanded(child: _voidSaleButton()),
       ],
     );
   }
@@ -604,13 +687,27 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
     );
   }
 
-  Widget _shareReceiptButton() {
+  Widget _voidSaleButton() {
+    final isVoided = _isVoided;
     return ElevatedButton.icon(
-      onPressed: () => _showActionMessage('Share receipt is coming soon'),
-      icon: const Icon(Icons.share_rounded, size: 18),
-      label: const Text('Share Receipt'),
+      onPressed: isVoided || _voiding ? null : _confirmVoidSale,
+      icon: _voiding
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : Icon(
+              isVoided ? Icons.block_rounded : Icons.cancel_outlined,
+              size: 18,
+            ),
+      label: Text(isVoided ? 'Voided' : 'Void Sale'),
       style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFF0057F8),
+        backgroundColor: Colors.red,
+        disabledBackgroundColor: Colors.red.withValues(alpha: 0.38),
         foregroundColor: Colors.white,
         elevation: 0,
         padding: const EdgeInsets.symmetric(vertical: 16),
