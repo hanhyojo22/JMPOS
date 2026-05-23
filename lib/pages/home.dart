@@ -566,7 +566,6 @@ class _HomePageState extends State<HomePage> {
 
       sharedCart.clear();
       await loadRecentTransactions();
-      if (mounted) setState(() {});
       _showSnack('Sale completed successfully!', top: true);
       return true;
     } catch (e) {

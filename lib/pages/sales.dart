@@ -308,7 +308,6 @@ class _SalesPageState extends State<SalesPage> {
       }
       _cart.clear();
       await _loadProducts();
-      setState(() {});
       _notifyCartChanged();
       _showSnack('Sale completed successfully!', top: true);
     } catch (e) {
@@ -477,7 +476,6 @@ class _SalesPageState extends State<SalesPage> {
     );
 
     await _loadProducts();
-    if (mounted) setState(() {});
   }
 
   void _showSortSheet() {

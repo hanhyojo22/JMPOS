@@ -309,8 +309,8 @@ class _AddProductsPageState extends State<AddProductsPage>
   Future<void> _pickImage({required ImageSource source}) async {
     final img = await _picker.pickImage(
       source: source,
-      maxWidth: 800,
-      maxHeight: 800,
+      maxWidth: 300,
+      maxHeight: 300,
       imageQuality: 85,
     );
     if (img != null) setState(() => _pickedImage = img);
@@ -453,9 +453,7 @@ class _AddProductsPageState extends State<AddProductsPage>
         barcode: barcode,
         productName: name,
         category: _selectedCategory,
-        description: description.isEmpty
-            ? null
-            : description,
+        description: description.isEmpty ? null : description,
         price: sellingPrice,
         costPrice: costPrice,
         stockQuantity: stockQuantity,
@@ -648,307 +646,310 @@ class _AddProductsPageState extends State<AddProductsPage>
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
                 children: [
-                Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        if (widget.onBack != null) {
-                          widget.onBack!();
-                          return;
-                        }
-
-                        Navigator.maybePop(context);
-                      },
-                      child: SizedBox(
-                        width: 32,
-                        height: 38,
-                        child: Icon(
-                          Icons.arrow_back_ios_new_rounded,
-                          size: 16,
-                          color: isDark
-                              ? const Color(0xFFF8FAFC)
-                              : Colors.black87,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: LabelText(
-                        "Add Product",
-                        fontSize: 22,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black87,
-                        align: TextAlign.left,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                // ── Image + Quick Stats card ──────────────────────────
-                Container(
-                  decoration: BoxDecoration(
-                    color: panelSurface,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: shadowColor,
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
+                  Row(
                     children: [
                       GestureDetector(
-                        onTap: _showImageSheet,
-                        child: _heroImage(),
+                        onTap: () {
+                          if (widget.onBack != null) {
+                            widget.onBack!();
+                            return;
+                          }
+
+                          Navigator.maybePop(context);
+                        },
+                        child: SizedBox(
+                          width: 32,
+                          height: 38,
+                          child: Icon(
+                            Icons.arrow_back_ios_new_rounded,
+                            size: 16,
+                            color: isDark
+                                ? const Color(0xFFF8FAFC)
+                                : Colors.black87,
+                          ),
+                        ),
                       ),
-                      Divider(height: 1, color: lineColor),
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: _StatTile(
-                                label: 'Selling Price',
-                                value: _sellingPriceController.text.isEmpty
-                                    ? '—'
-                                    : '₱${_moneyValue(_sellingPriceController.text).toStringAsFixed(2)}',
-                                icon: Icons.sell_outlined,
-                                color: const Color(0xFF667EEA),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _StatTile(
-                                label: 'Stock',
-                                value: _stockQuantityController.text.isEmpty
-                                    ? '—'
-                                    : '$stockVal units',
-                                icon: Icons.inventory_2_outlined,
-                                color: _stockQuantityController.text.isEmpty
-                                    ? Colors.grey
-                                    : _stockColor(stockVal),
-                              ),
-                            ),
-                          ],
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: LabelText(
+                          "Add Product",
+                          fontSize: 22,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black87,
+                          align: TextAlign.left,
                         ),
                       ),
                     ],
                   ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // ── Product Details ───────────────────────────────────
-                _SectionCard(
-                  title: 'Product Details',
-                  icon: Icons.inventory_2_outlined,
-                  children: [
-                    _TF(
-                      controller: _nameController,
-                      label: 'Product Name',
-                      hint: 'e.g. Coca Cola 500ml',
-                      icon: Icons.label_outline_rounded,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.deny(
-                          RegExp(r'[\u0000-\u001F\u007F]'),
+                  const SizedBox(height: 14),
+                  // ── Image + Quick Stats card ──────────────────────────
+                  Container(
+                    decoration: BoxDecoration(
+                      color: panelSurface,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: shadowColor,
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
-                        LengthLimitingTextInputFormatter(120),
                       ],
-                      validator: _requiredTextValidator,
                     ),
-
-                    const SizedBox(height: 14),
-                    _TF(
-                      controller: _barcodeController,
-                      label: 'Barcode / SKU',
-                      hint: '8851234567890',
-                      icon: Icons.qr_code_2_outlined,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        TextInputFormatter.withFunction(_formatDigitsEdit),
-                      ],
-                      validator: _barcodeValidator,
-                    ),
-
-                    const SizedBox(height: 14),
-
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedCategory,
-                      items: _categories
-                          .map(
-                            (c) => DropdownMenuItem(value: c, child: Text(c)),
-                          )
-                          .toList(),
-                      decoration: InputDecoration(
-                        labelText: 'Category',
-                        prefixIcon: const Icon(
-                          Icons.category_outlined,
-                          size: 20,
-                        ),
-                        filled: true,
-                        fillColor: isDark
-                            ? const Color(0xFF1E293B)
-                            : Colors.grey[50],
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: isDark
-                                ? const Color(0xFF334155)
-                                : Colors.grey[200]!,
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: isDark
-                                ? const Color(0xFF334155)
-                                : Colors.grey[200]!,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFF667EEA),
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                      onChanged: (v) => setState(() => _selectedCategory = v),
-                      validator: (v) => v == null ? 'Select a category' : null,
-                    ),
-
-                    const SizedBox(height: 14),
-
-                    _TF(
-                      controller: _descriptionController,
-                      label: 'Description',
-                      hint: 'Optional...',
-                      icon: Icons.notes_rounded,
-                      maxLines: 3,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.deny(
-                          RegExp(
-                            r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]',
-                          ),
-                        ),
-                        LengthLimitingTextInputFormatter(500),
-                      ],
-                      validator: (_) => null,
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 16),
-
-                // ── Pricing ───────────────────────────────────────────
-                _SectionCard(
-                  title: 'Pricing',
-                  icon: Icons.payments_outlined,
-                  children: [
-                    Row(
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
                       children: [
-                        Expanded(
-                          child: _TF(
-                            controller: _costPriceController,
-                            label: 'Cost Price',
-                            hint: '0.00',
-                            icon: Icons.arrow_downward_rounded,
-                            iconColor: Colors.red[400],
-                            prefix: '₱',
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            inputFormatters: [
-                              TextInputFormatter.withFunction(
-                                _formatMoneyEdit,
-                              ),
-                            ],
-                            onChanged: (_) => setState(() {}),
-                            validator: _moneyValidator,
-                          ),
+                        GestureDetector(
+                          onTap: _showImageSheet,
+                          child: _heroImage(),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _TF(
-                            controller: _sellingPriceController,
-                            label: 'Selling Price',
-                            hint: '0.00',
-                            icon: Icons.arrow_upward_rounded,
-                            iconColor: Colors.green[600],
-                            prefix: '₱',
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            inputFormatters: [
-                              TextInputFormatter.withFunction(
-                                _formatMoneyEdit,
+                        Divider(height: 1, color: lineColor),
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _StatTile(
+                                  label: 'Selling Price',
+                                  value: _sellingPriceController.text.isEmpty
+                                      ? '—'
+                                      : '₱${_moneyValue(_sellingPriceController.text).toStringAsFixed(2)}',
+                                  icon: Icons.sell_outlined,
+                                  color: const Color(0xFF667EEA),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _StatTile(
+                                  label: 'Stock',
+                                  value: _stockQuantityController.text.isEmpty
+                                      ? '—'
+                                      : '$stockVal units',
+                                  icon: Icons.inventory_2_outlined,
+                                  color: _stockQuantityController.text.isEmpty
+                                      ? Colors.grey
+                                      : _stockColor(stockVal),
+                                ),
                               ),
                             ],
-                            onChanged: (_) => setState(() {}),
-                            validator: _moneyValidator,
                           ),
                         ),
                       ],
                     ),
+                  ),
 
-                    if (hasPrice) ...[
-                      const SizedBox(height: 12),
-                      _InfoBanner(
-                        icon: _profitMargin >= 0
-                            ? Icons.trending_up_rounded
-                            : Icons.trending_down_rounded,
-                        color: _marginColor,
-                        left: 'Margin: ${_profitMargin.toStringAsFixed(1)}%',
-                        right: '₱${_profit.toStringAsFixed(2)} profit',
+                  const SizedBox(height: 20),
+
+                  // ── Product Details ───────────────────────────────────
+                  _SectionCard(
+                    title: 'Product Details',
+                    icon: Icons.inventory_2_outlined,
+                    children: [
+                      _TF(
+                        controller: _nameController,
+                        label: 'Product Name',
+                        hint: 'e.g. Coca Cola 500ml',
+                        icon: Icons.label_outline_rounded,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.deny(
+                            RegExp(r'[\u0000-\u001F\u007F]'),
+                          ),
+                          LengthLimitingTextInputFormatter(120),
+                        ],
+                        validator: _requiredTextValidator,
+                      ),
+
+                      const SizedBox(height: 14),
+                      _TF(
+                        controller: _barcodeController,
+                        label: 'Barcode / SKU',
+                        hint: '8851234567890',
+                        icon: Icons.qr_code_2_outlined,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          TextInputFormatter.withFunction(_formatDigitsEdit),
+                        ],
+                        validator: _barcodeValidator,
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedCategory,
+                        items: _categories
+                            .map(
+                              (c) => DropdownMenuItem(value: c, child: Text(c)),
+                            )
+                            .toList(),
+                        decoration: InputDecoration(
+                          labelText: 'Category',
+                          prefixIcon: const Icon(
+                            Icons.category_outlined,
+                            size: 20,
+                          ),
+                          filled: true,
+                          fillColor: isDark
+                              ? const Color(0xFF1E293B)
+                              : Colors.grey[50],
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : Colors.grey[200]!,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : Colors.grey[200]!,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF667EEA),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        onChanged: (v) => setState(() => _selectedCategory = v),
+                        validator: (v) =>
+                            v == null ? 'Select a category' : null,
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      _TF(
+                        controller: _descriptionController,
+                        label: 'Description',
+                        hint: 'Optional...',
+                        icon: Icons.notes_rounded,
+                        maxLines: 3,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.deny(
+                            RegExp(
+                              r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]',
+                            ),
+                          ),
+                          LengthLimitingTextInputFormatter(500),
+                        ],
+                        validator: (_) => null,
                       ),
                     ],
-                  ],
-                ),
+                  ),
 
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                // ── Stock ─────────────────────────────────────────────
-                _SectionCard(
-                  title: 'Stock Management',
-                  icon: Icons.warehouse_outlined,
-                  children: [
-                    _TF(
-                      controller: _stockQuantityController,
-                      label: 'Stock Quantity',
-                      hint: '0',
-                      icon: Icons.inventory_outlined,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        TextInputFormatter.withFunction(_formatStockEdit),
+                  // ── Pricing ───────────────────────────────────────────
+                  _SectionCard(
+                    title: 'Pricing',
+                    icon: Icons.payments_outlined,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _TF(
+                              controller: _costPriceController,
+                              label: 'Cost Price',
+                              hint: '0.00',
+                              icon: Icons.arrow_downward_rounded,
+                              iconColor: Colors.red[400],
+                              prefix: '₱',
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              inputFormatters: [
+                                TextInputFormatter.withFunction(
+                                  _formatMoneyEdit,
+                                ),
+                              ],
+                              onChanged: (_) => setState(() {}),
+                              validator: _moneyValidator,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _TF(
+                              controller: _sellingPriceController,
+                              label: 'Selling Price',
+                              hint: '0.00',
+                              icon: Icons.arrow_upward_rounded,
+                              iconColor: Colors.green[600],
+                              prefix: '₱',
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              inputFormatters: [
+                                TextInputFormatter.withFunction(
+                                  _formatMoneyEdit,
+                                ),
+                              ],
+                              onChanged: (_) => setState(() {}),
+                              validator: _moneyValidator,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      if (hasPrice) ...[
+                        const SizedBox(height: 12),
+                        _InfoBanner(
+                          icon: _profitMargin >= 0
+                              ? Icons.trending_up_rounded
+                              : Icons.trending_down_rounded,
+                          color: _marginColor,
+                          left: 'Margin: ${_profitMargin.toStringAsFixed(1)}%',
+                          right: '₱${_profit.toStringAsFixed(2)} profit',
+                        ),
                       ],
-                      onChanged: (_) => setState(() {}),
-                      validator: _stockValidator,
-                    ),
-
-                    if (_stockQuantityController.text.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _InfoBanner(
-                        icon: stockVal == 0
-                            ? Icons.remove_shopping_cart_outlined
-                            : stockVal <= 10
-                            ? Icons.warning_amber_rounded
-                            : Icons.check_circle_outline_rounded,
-                        color: _stockColor(stockVal),
-                        left: stockVal == 0
-                            ? 'No Stock'
-                            : stockVal <= 10
-                            ? 'Low Stock'
-                            : 'In Stock',
-                        right: '$stockVal units available',
-                      ),
                     ],
-                  ],
-                ),
+                  ),
 
-                const SizedBox(height: 28),
+                  const SizedBox(height: 16),
+
+                  // ── Stock ─────────────────────────────────────────────
+                  _SectionCard(
+                    title: 'Stock Management',
+                    icon: Icons.warehouse_outlined,
+                    children: [
+                      _TF(
+                        controller: _stockQuantityController,
+                        label: 'Stock Quantity',
+                        hint: '0',
+                        icon: Icons.inventory_outlined,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          TextInputFormatter.withFunction(_formatStockEdit),
+                        ],
+                        onChanged: (_) => setState(() {}),
+                        validator: _stockValidator,
+                      ),
+
+                      if (_stockQuantityController.text.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _InfoBanner(
+                          icon: stockVal == 0
+                              ? Icons.remove_shopping_cart_outlined
+                              : stockVal <= 10
+                              ? Icons.warning_amber_rounded
+                              : Icons.check_circle_outline_rounded,
+                          color: _stockColor(stockVal),
+                          left: stockVal == 0
+                              ? 'No Stock'
+                              : stockVal <= 10
+                              ? 'Low Stock'
+                              : 'In Stock',
+                          right: '$stockVal units available',
+                        ),
+                      ],
+                    ],
+                  ),
+
+                  const SizedBox(height: 28),
                 ],
               ),
             ),

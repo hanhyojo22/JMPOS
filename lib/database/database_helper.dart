@@ -1,5 +1,6 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:crypto/crypto.dart';
@@ -32,8 +33,10 @@ class ProductImageConnectionReport {
 
 class DatabaseHelper {
   static Database? _database;
-  static const int _dbVersion = 4;
+  static const int _dbVersion = 5;
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
+  static const int _productImageSize = 300;
+  static const int _productImageJpegQuality = 82;
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -142,7 +145,7 @@ class DatabaseHelper {
   Future<String?> saveProductImage(String? imagePath) async {
     if (imagePath == null || imagePath.trim().isEmpty) return null;
 
-    final source = File(imagePath);
+    final source = File(imagePath.trim());
     if (!await source.exists()) return imagePath;
 
     final imageDir = Directory(await productImagesDirectoryPath());
@@ -150,19 +153,38 @@ class DatabaseHelper {
       await imageDir.create(recursive: true);
     }
 
-    if (dirname(source.path) == imageDir.path) {
+    final sourcePath = normalize(source.absolute.path);
+    final imageDirPath = normalize(imageDir.absolute.path);
+    final isStoredProductImage = normalize(dirname(sourcePath)) == imageDirPath;
+    if (isStoredProductImage && extension(sourcePath).toLowerCase() == '.jpg') {
       return source.path;
     }
 
-    final imageExtension = extension(source.path);
     final timestamp = DateTime.now().microsecondsSinceEpoch;
-    final targetPath = join(
-      imageDir.path,
-      'product_$timestamp${imageExtension.isEmpty ? '.jpg' : imageExtension}',
-    );
+    final targetPath = join(imageDir.path, 'product_$timestamp.jpg');
 
-    await source.copy(targetPath);
-    return targetPath;
+    try {
+      final decoded = img.decodeImage(await source.readAsBytes());
+      if (decoded == null) {
+        throw Exception('Unsupported image format.');
+      }
+
+      final oriented = img.bakeOrientation(decoded);
+      final resized = img.copyResizeCropSquare(
+        oriented,
+        size: _productImageSize,
+      );
+      final optimizedBytes = img.encodeJpg(
+        resized,
+        quality: _productImageJpegQuality,
+      );
+
+      await File(targetPath).writeAsBytes(optimizedBytes, flush: true);
+      return targetPath;
+    } catch (e) {
+      await _deleteIfExists(targetPath);
+      throw Exception('Failed to optimize product image: $e');
+    }
   }
 
   Future<void> restoreDatabaseFromPath(String backupPath) async {
@@ -483,6 +505,8 @@ class DatabaseHelper {
         created_at TEXT
       )
     ''');
+
+    await _createIndexes(db);
   }
 
   Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
@@ -495,6 +519,36 @@ class DatabaseHelper {
     if (oldVersion < 4) {
       await db.execute('ALTER TABLE users ADD COLUMN pin_hash TEXT');
     }
+    if (oldVersion < 5) {
+      await _createIndexes(db);
+    }
+  }
+
+  Future<void> _createIndexes(Database db) async {
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_products_barcode_nocase
+      ON products(barcode COLLATE NOCASE)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sales_created_at_id
+      ON sales(created_at DESC, id DESC)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sales_product_id
+      ON sales(product_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_users_pin_hash_role_created_at
+      ON users(pin_hash, role, created_at)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_users_role_created_at
+      ON users(role, created_at DESC)
+    ''');
   }
 
   Future<void> _ensureProductSchema(Database db) async {
@@ -857,8 +911,8 @@ class DatabaseHelper {
     final result = await db.query(
       'products',
       where: excludeProductId == null
-          ? 'LOWER(barcode) = LOWER(?)'
-          : 'LOWER(barcode) = LOWER(?) AND id != ?',
+          ? 'barcode = ? COLLATE NOCASE'
+          : 'barcode = ? COLLATE NOCASE AND id != ?',
       whereArgs: excludeProductId == null
           ? [trimmedBarcode]
           : [trimmedBarcode, excludeProductId],

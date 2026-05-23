@@ -27,7 +27,6 @@ class ProductsPage extends StatefulWidget {
 
 class _ProductsPageState extends State<ProductsPage>
     with TickerProviderStateMixin {
-  // ── Design tokens ──────────────────────────────────────────────────────────
   static const Color _primary = Color(0xFF5C6BC0);
   static const Color _surface = Color(0xFFF4F5FF);
   static const Color _textPrimary = Color(0xFF1A1F36);
@@ -64,7 +63,7 @@ class _ProductsPageState extends State<ProductsPage>
   late Animation<double> _headerFade;
   late Animation<Offset> _headerSlide;
 
-  final List<String> _categories = [
+  static const List<String> _categories = [
     'All',
     'Beverages',
     'Groceries',
@@ -99,8 +98,6 @@ class _ProductsPageState extends State<ProductsPage>
   @override
   void didUpdateWidget(covariant ProductsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-
-    _loadProducts();
 
     if (widget.scannedBarcode != null &&
         widget.scannedBarcode != oldWidget.scannedBarcode) {
@@ -157,25 +154,20 @@ class _ProductsPageState extends State<ProductsPage>
   }
 
   List<Map<String, dynamic>> get _filteredProducts {
-    List<Map<String, dynamic>> list = List.from(_allProducts);
+    List<Map<String, dynamic>> list = List.of(_allProducts);
 
-    // Category filter
     if (_filterCategory != null && _filterCategory != 'All') {
       list = list
           .where((p) => p['category'].toString() == _filterCategory)
           .toList();
     }
 
-    // Search
     if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
       list = list.where((p) {
         final name = (p['product_name'] as String? ?? '').toLowerCase();
-
         final category = (p['category'] as String? ?? '').toLowerCase();
-
         final barcode = (p['barcode'] as String? ?? '').toLowerCase();
-
-        final query = _searchQuery.toLowerCase();
 
         return name.contains(query) ||
             category.contains(query) ||
@@ -183,7 +175,6 @@ class _ProductsPageState extends State<ProductsPage>
       }).toList();
     }
 
-    // Sort
     switch (_sortBy) {
       case 'A → Z':
         list.sort(
@@ -213,9 +204,6 @@ class _ProductsPageState extends State<ProductsPage>
     return list;
   }
 
-  // ── Summary stats ──────────────────────────────────────────────────────────
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
   Color _stockColor(int s) {
     if (s == 0) return _danger;
     if (s <= 10) return _warning;
@@ -440,36 +428,31 @@ class _ProductsPageState extends State<ProductsPage>
   }
 
   Widget _buildImage(String? path) {
-    if (path == null || path.trim().isEmpty) {
-      return _imgPlaceholder(double.infinity);
+    final imagePath = path?.trim();
+    if (imagePath == null || imagePath.isEmpty) {
+      return _imgPlaceholder();
     }
 
-    final file = File(path);
-
-    if (file.existsSync()) {
-      return Image.file(
-        file,
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _imgPlaceholder(double.infinity),
-      );
-    }
-
-    if (path.startsWith('http')) {
+    if (imagePath.startsWith('http')) {
       return Image.network(
-        path,
+        imagePath,
         width: double.infinity,
         height: double.infinity,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _imgPlaceholder(double.infinity),
+        errorBuilder: (_, _, _) => _imgPlaceholder(),
       );
     }
 
-    return _imgPlaceholder(double.infinity);
+    return Image.file(
+      File(imagePath),
+      width: double.infinity,
+      height: double.infinity,
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => _imgPlaceholder(),
+    );
   }
 
-  Widget _imgPlaceholder(double size) => Container(
+  Widget _imgPlaceholder() => Container(
     width: double.infinity,
     height: double.infinity,
     decoration: BoxDecoration(color: _primary.withValues(alpha: 0.07)),
@@ -492,7 +475,6 @@ class _ProductsPageState extends State<ProductsPage>
     );
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final products = _filteredProducts;
@@ -525,7 +507,6 @@ class _ProductsPageState extends State<ProductsPage>
                     _buildCategoryChips(),
                     if (_isSelecting) _buildSelectionBar(),
 
-                    // ── Product list ─────────────────────────────────────
                     Expanded(
                       child: _loading
                           ? _buildLoader()
@@ -558,11 +539,6 @@ class _ProductsPageState extends State<ProductsPage>
     );
   }
 
-  // ── Top header ─────────────────────────────────────────────────────────────
-
-  // ── Stats row ──────────────────────────────────────────────────────────────
-
-  // ── Search bar ─────────────────────────────────────────────────────────────
   Widget _buildSelectionBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -745,7 +721,6 @@ class _ProductsPageState extends State<ProductsPage>
     );
   }
 
-  // ── Category chips ─────────────────────────────────────────────────────────
   Widget _buildCategoryChips() {
     return SizedBox(
       height: 56,
@@ -810,9 +785,6 @@ class _ProductsPageState extends State<ProductsPage>
     );
   }
 
-  // ── Sort label ─────────────────────────────────────────────────────────────
-
-  // ── Product list ───────────────────────────────────────────────────────────
   Widget _buildList(List<Map<String, dynamic>> products) {
     return RefreshIndicator(
       color: _primary,
@@ -877,19 +849,14 @@ class _ProductsPageState extends State<ProductsPage>
 
     return GestureDetector(
       onLongPress: () => _toggleProductSelection(p),
-      onTap: () async {
+      onTap: () {
         if (_isSelecting) {
           _toggleProductSelection(p);
           return;
         }
 
         HapticFeedback.lightImpact();
-
-        final updated = widget.onEditProduct?.call(p);
-
-        if (updated == true) {
-          _loadProducts();
-        }
+        widget.onEditProduct?.call(p);
       },
 
       child: Container(
@@ -1084,7 +1051,6 @@ class _ProductsPageState extends State<ProductsPage>
     );
   }
 
-  // ── States ─────────────────────────────────────────────────────────────────
   Widget _buildLoader() {
     return Center(
       child: Column(
@@ -1227,12 +1193,6 @@ class _ProductsPageState extends State<ProductsPage>
     );
   }
 }
-
-// ─── Stat chip ────────────────────────────────────────────────────────────────
-
-// ─── Action button ────────────────────────────────────────────────────────────
-
-// ─── Sort sheet ───────────────────────────────────────────────────────────────
 
 class _SortSheet extends StatefulWidget {
   final String current;

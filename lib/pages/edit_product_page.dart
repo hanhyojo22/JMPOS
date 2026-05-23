@@ -197,8 +197,8 @@ class _EditProductPageState extends State<EditProductPage> {
   Future<void> _pickImage(ImageSource src) async {
     final img = await _picker.pickImage(
       source: src,
-      maxWidth: 800,
-      maxHeight: 800,
+      maxWidth: 300,
+      maxHeight: 300,
       imageQuality: 85,
     );
     if (img != null) setState(() => _pickedImage = img);
