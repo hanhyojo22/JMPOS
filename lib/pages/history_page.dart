@@ -76,6 +76,10 @@ class _HistoryPageState extends State<HistoryPage> {
     final history = await db.rawQuery('''
       SELECT
         MIN(sales.id) AS id,
+        COALESCE(
+          NULLIF(sales.receipt_number, ''),
+          'R-' || MIN(sales.id)
+        ) AS receipt_number,
         GROUP_CONCAT(sales.product_name, ', ') AS product_name,
         SUM(sales.quantity) AS quantity,
         SUM(sales.total) AS total,
@@ -83,7 +87,10 @@ class _HistoryPageState extends State<HistoryPage> {
         MAX(sales.voided_at) AS voided_at
       FROM sales
       LEFT JOIN products ON products.id = sales.product_id
-      GROUP BY substr(sales.created_at, 1, 19)
+      GROUP BY COALESCE(
+        NULLIF(sales.receipt_number, ''),
+        substr(sales.created_at, 1, 19)
+      )
       ORDER BY MAX(sales.created_at) DESC, MAX(sales.id) DESC
     ''');
 
@@ -126,6 +133,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
         return {
           'id': sale['id'],
+          'receiptNumber': sale['receipt_number']?.toString() ?? '',
           'product': sale['product_name'] ?? '',
           'date': dateStr,
           'time': timeStr,
@@ -157,10 +165,12 @@ class _HistoryPageState extends State<HistoryPage> {
       items = items.where((sale) {
         final product = sale['product'].toString().toLowerCase();
         final saleId = sale['id'].toString().toLowerCase();
+        final receiptNumber = sale['receiptNumber'].toString().toLowerCase();
         final saleLabel = 'sale #$saleId';
 
         return product.contains(query) ||
             saleId.contains(query) ||
+            receiptNumber.contains(query) ||
             saleLabel.contains(query);
       }).toList();
     }
@@ -423,7 +433,13 @@ class _HistoryPageState extends State<HistoryPage> {
     final total = (sale['total'] as num?)?.toDouble() ?? 0.0;
     final qty = sale['quantity'] ?? 0;
     final saleId = (sale['id'] as num?)?.toInt();
-    final saleLabel = saleId == null ? 'Sale' : 'Sale #$saleId';
+    final receiptNumber = sale['receiptNumber']?.toString().trim() ?? '';
+    var saleLabel = 'Sale';
+    if (receiptNumber.isNotEmpty) {
+      saleLabel = receiptNumber;
+    } else if (saleId != null) {
+      saleLabel = 'Sale #$saleId';
+    }
     final isVoided = sale['isVoided'] == true;
 
     return InkWell(

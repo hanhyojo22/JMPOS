@@ -109,7 +109,12 @@ class _HomePageState extends State<HomePage> {
         '''
         SELECT
           COALESCE(SUM(total), 0)  AS grand_total,
-          COUNT(DISTINCT substr(created_at, 1, 19)) AS total_count
+          COUNT(
+            DISTINCT COALESCE(
+              NULLIF(receipt_number, ''),
+              substr(created_at, 1, 19)
+            )
+          ) AS total_count
         FROM sales
         WHERE created_at >= ? AND created_at < ?
           AND (voided_at IS NULL OR voided_at = '')
@@ -130,6 +135,10 @@ class _HomePageState extends State<HomePage> {
       final transactions = await db.rawQuery('''
         SELECT
           MIN(sales.id) AS id,
+          COALESCE(
+            NULLIF(sales.receipt_number, ''),
+            'R-' || MIN(sales.id)
+          ) AS receipt_number,
           GROUP_CONCAT(sales.product_name, ', ') AS product_name,
           SUM(sales.total) AS total,
           SUM(sales.quantity) AS quantity,
@@ -137,7 +146,10 @@ class _HomePageState extends State<HomePage> {
         FROM sales
         LEFT JOIN products ON sales.product_id = products.id
         WHERE sales.voided_at IS NULL OR sales.voided_at = ''
-        GROUP BY substr(sales.created_at, 1, 19)
+        GROUP BY COALESCE(
+          NULLIF(sales.receipt_number, ''),
+          substr(sales.created_at, 1, 19)
+        )
         ORDER BY MAX(sales.created_at) DESC, MAX(sales.id) DESC
         LIMIT 4
       ''');
@@ -197,9 +209,13 @@ class _HomePageState extends State<HomePage> {
             }
           }
 
+          final receiptNumber = sale['receipt_number']?.toString().trim();
+
           return {
             'id': sale['id'],
-            'title': 'Sale #${sale['id']}',
+            'title': receiptNumber != null && receiptNumber.isNotEmpty
+                ? receiptNumber
+                : 'Sale #${sale['id']}',
             'subtitle': subtitle,
             'amount': (sale['total'] as num?)?.toDouble() ?? 0.0,
             'quantity': sale['quantity'] ?? 0,
@@ -520,6 +536,9 @@ class _HomePageState extends State<HomePage> {
       final completionDueAt = createdAt.add(
         DatabaseHelper.saleCompletionGracePeriod,
       );
+      final receiptNumber = DatabaseHelper.instance.generateReceiptNumber(
+        createdAt,
+      );
       await db.transaction((txn) async {
         for (final item in sharedCart) {
           final product = item['product'] as Map<String, dynamic>;
@@ -573,6 +592,7 @@ class _HomePageState extends State<HomePage> {
                 : imagePath,
             'completion_due_at': completionDueAt.toIso8601String(),
             'completed_at': null,
+            'receipt_number': receiptNumber,
             'created_at': createdAt.toIso8601String(),
           };
           final saleId = await txn.insert('sales', saleRow);
@@ -608,7 +628,7 @@ class _HomePageState extends State<HomePage> {
           product['stock'] = remainingStock;
         }
       });
-      await DatabaseHelper.instance.syncPendingChanges();
+      unawaited(DatabaseHelper.instance.syncPendingChanges());
 
       sharedCart.clear();
       Timer(DatabaseHelper.saleCompletionGracePeriod, () async {

@@ -285,6 +285,9 @@ class _SalesPageState extends State<SalesPage> {
       final completionDueAt = createdAt.add(
         DatabaseHelper.saleCompletionGracePeriod,
       );
+      final receiptNumber = DatabaseHelper.instance.generateReceiptNumber(
+        createdAt,
+      );
       for (final item in _cart) {
         final product = item['product'];
         final int quantity = item['quantity'];
@@ -301,6 +304,7 @@ class _SalesPageState extends State<SalesPage> {
               : imagePath,
           'completion_due_at': completionDueAt.toIso8601String(),
           'completed_at': null,
+          'receipt_number': receiptNumber,
           'created_at': createdAt.toIso8601String(),
         };
         final saleId = await db.insert('sales', saleRow);
@@ -330,7 +334,7 @@ class _SalesPageState extends State<SalesPage> {
           );
         }
       }
-      await DatabaseHelper.instance.syncPendingChanges();
+      unawaited(DatabaseHelper.instance.syncPendingChanges());
       _cart.clear();
       Timer(DatabaseHelper.saleCompletionGracePeriod, () async {
         await DatabaseHelper.instance.completeDueSales();

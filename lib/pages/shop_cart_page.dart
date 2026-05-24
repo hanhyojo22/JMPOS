@@ -224,6 +224,10 @@ class _CartPageState extends State<CartPage> {
     return double.tryParse(sanitized) ?? 0;
   }
 
+  int _moneyCents(double value) => (value * 100).round();
+
+  double _centsToMoney(int cents) => cents / 100;
+
   TextEditingValue _formatMoneyEdit(
     TextEditingValue oldValue,
     TextEditingValue newValue,
@@ -496,8 +500,12 @@ class _CartPageState extends State<CartPage> {
       builder: (_) => StatefulBuilder(
         builder: (ctx, setModal) {
           final cashAmt = _cashAmount();
-          final change = cashAmt - _total;
-          final sufficient = cashAmt >= _total && cashAmt > 0;
+          final totalCents = _moneyCents(_total);
+          final cashCents = _moneyCents(cashAmt);
+          final changeCents = cashCents - totalCents;
+          final change = _centsToMoney(changeCents);
+          final amountNeeded = _centsToMoney(-changeCents);
+          final sufficient = cashCents >= totalCents && cashCents > 0;
           final quickAmounts = _quickCashOptions(_total);
           final accentBg = _isDark
               ? _primary.withValues(alpha: 0.14)
@@ -720,7 +728,7 @@ class _CartPageState extends State<CartPage> {
                                     ? 'Change'
                                     : sufficient
                                     ? 'Change'
-                                    : 'Need more',
+                                    : 'Amount needed',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -739,7 +747,7 @@ class _CartPageState extends State<CartPage> {
                                     ? CurrencyFormatter.format(0)
                                     : sufficient
                                     ? CurrencyFormatter.format(change)
-                                    : CurrencyFormatter.format(-change),
+                                    : CurrencyFormatter.format(amountNeeded),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -870,7 +878,11 @@ class _CartPageState extends State<CartPage> {
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Confirm sale',
+                                  sufficient
+                                      ? 'Confirm sale'
+                                      : cashAmt > 0
+                                      ? 'Need ${CurrencyFormatter.format(amountNeeded)} more'
+                                      : 'Enter cash received',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 14,

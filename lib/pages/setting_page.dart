@@ -8,6 +8,7 @@ import 'package:pos_app/main.dart';
 import 'package:pos_app/services/env_config.dart';
 import 'package:pos_app/services/supabase_backup_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 // ─── Settings Page ────────────────────────────────────────────────────────────
 class SettingsPage extends StatefulWidget {
@@ -57,6 +58,10 @@ class _SettingsPageState extends State<SettingsPage> {
   DateTime? _lastOnlineBackupAt;
   DateTime? _lastSalesExportAt;
   int _pendingSyncCount = 0;
+  int _cloudSyncDone = 0;
+  int _cloudSyncTotal = 0;
+  int _cloudSyncStep = 0;
+  String _cloudSyncStatus = '';
   String _storeName = 'My Sari-Sari Store';
   bool _pinEnabled = false;
 
@@ -278,6 +283,12 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                         onTap: _isSyncingCloud ? null : _syncCloudNow,
                       ),
+                      if (_isSyncingCloud)
+                        _CloudSyncProgressRow(
+                          done: _cloudSyncDone,
+                          total: _cloudSyncTotal,
+                          step: _cloudSyncStep,
+                        ),
                       _SettingsRow(
                         icon: Icons.cloud_upload_outlined,
                         iconBg: const Color(0xFFE8F0FE),
@@ -470,7 +481,11 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   String get _cloudSyncSubtitle {
-    if (_isSyncingCloud) return 'Uploading local changes';
+    if (_isSyncingCloud) {
+      if (_cloudSyncStatus.isNotEmpty) return _cloudSyncStatus;
+      if (_cloudSyncTotal <= 0) return 'Preparing local changes';
+      return 'Uploading $_cloudSyncDone of $_cloudSyncTotal changes';
+    }
     if (_pendingSyncCount == 0) return 'SQLite is synced to Supabase';
     return '$_pendingSyncCount local change${_pendingSyncCount == 1 ? '' : 's'} waiting';
   }
@@ -523,11 +538,41 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _syncCloudNow() async {
     HapticFeedback.lightImpact();
-    setState(() => _isSyncingCloud = true);
+    setState(() {
+      _isSyncingCloud = true;
+      _cloudSyncDone = 0;
+      _cloudSyncTotal = _pendingSyncCount;
+      _cloudSyncStep = 0;
+      _cloudSyncStatus = 'Preparing local changes';
+    });
+    await WakelockPlus.enable();
 
     try {
       await DatabaseHelper.instance.queueLocalSnapshotForSync();
-      final synced = await DatabaseHelper.instance.syncPendingChanges();
+      final total = await DatabaseHelper.instance.pendingSyncCount();
+      if (mounted) {
+        setState(() {
+          _cloudSyncDone = 0;
+          _cloudSyncTotal = total;
+          _cloudSyncStep = 0;
+          _pendingSyncCount = total;
+          _cloudSyncStatus = total == 0
+              ? 'SQLite is synced to Supabase'
+              : 'Uploading 0 of $total changes';
+        });
+      }
+      final synced = await DatabaseHelper.instance.syncPendingChanges(
+        onProgress: (done, total, status) {
+          if (!mounted) return;
+          setState(() {
+            _cloudSyncDone = done;
+            _cloudSyncTotal = total;
+            if (total > 0) _cloudSyncStep += 1;
+            _pendingSyncCount = total - done;
+            _cloudSyncStatus = status;
+          });
+        },
+      );
       final pending = await DatabaseHelper.instance.pendingSyncCount();
       final lastError = await DatabaseHelper.instance.lastSyncError();
       if (!mounted) return;
@@ -560,8 +605,15 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
       );
     } finally {
+      await WakelockPlus.disable();
       if (mounted) {
-        setState(() => _isSyncingCloud = false);
+        setState(() {
+          _isSyncingCloud = false;
+          _cloudSyncDone = 0;
+          _cloudSyncTotal = 0;
+          _cloudSyncStep = 0;
+          _cloudSyncStatus = '';
+        });
       }
     }
   }
@@ -1279,6 +1331,57 @@ class _SettingsRow extends StatelessWidget {
             padding: const EdgeInsets.only(left: 58),
             child: Divider(height: 0.5, thickness: 0.5, color: dividerColor),
           ),
+      ],
+    );
+  }
+}
+
+class _CloudSyncProgressRow extends StatelessWidget {
+  const _CloudSyncProgressRow({
+    required this.done,
+    required this.total,
+    required this.step,
+  });
+
+  final int done;
+  final int total;
+  final int step;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dividerColor = isDark
+        ? const Color(0xFF253047)
+        : const Color(0xFFEEEEEE);
+    final secondaryText = isDark
+        ? const Color(0xFFCBD5E1)
+        : const Color(0xFF6B7280);
+    final progress = total <= 0 ? null : (done / total).clamp(0.0, 1.0);
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(58, 0, 14, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              LinearProgressIndicator(
+                value: progress,
+                minHeight: 5,
+                borderRadius: BorderRadius.circular(99),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                total <= 0 ? 'Preparing sync...' : 'Sync progress: $step',
+                style: TextStyle(fontSize: 11, color: secondaryText),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 58),
+          child: Divider(height: 0.5, thickness: 0.5, color: dividerColor),
+        ),
       ],
     );
   }

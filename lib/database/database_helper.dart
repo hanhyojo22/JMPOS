@@ -1,3 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
@@ -6,10 +11,6 @@ import 'package:path/path.dart';
 import 'package:crypto/crypto.dart';
 import 'package:archive/archive_io.dart';
 import 'package:pos_app/services/supabase_sync_service.dart';
-
-import 'dart:convert';
-import 'dart:io';
-import 'dart:math';
 
 class RestoreDatabaseException implements Exception {
   const RestoreDatabaseException(this.message);
@@ -34,6 +35,7 @@ class ProductImageConnectionReport {
 
 class DatabaseHelper {
   static Database? _database;
+  static bool _syncInProgress = false;
   static const int _dbVersion = 8;
   static const saleCompletionGracePeriod = Duration(seconds: 10);
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
@@ -524,6 +526,7 @@ class DatabaseHelper {
         void_reason TEXT,
         completion_due_at TEXT,
         completed_at TEXT,
+        receipt_number TEXT,
         created_at TEXT NOT NULL
       )
     ''');
@@ -597,11 +600,25 @@ class DatabaseHelper {
         status TEXT NOT NULL DEFAULT 'pending',
         attempts INTEGER NOT NULL DEFAULT 0,
         last_error TEXT,
+        next_retry_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         synced_at TEXT
       )
     ''');
+    await _ensureSyncQueueSchema(db);
+  }
+
+  Future<void> _ensureSyncQueueSchema(DatabaseExecutor db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(sync_queue)');
+    final columnNames = columns
+        .cast<Map<String, Object?>>()
+        .map((column) => column['name'])
+        .toSet();
+
+    if (!columnNames.contains('next_retry_at')) {
+      await db.execute('ALTER TABLE sync_queue ADD COLUMN next_retry_at TEXT');
+    }
   }
 
   Future<void> _createIndexes(Database db) async {
@@ -697,6 +714,46 @@ class DatabaseHelper {
         WHERE completed_at IS NULL OR completed_at = ''
       ''');
     }
+    if (!columnNames.contains('receipt_number')) {
+      await db.execute('ALTER TABLE sales ADD COLUMN receipt_number TEXT');
+    }
+    await db.execute('''
+      UPDATE sales
+      SET receipt_number =
+        'R-' || replace(
+          replace(
+            replace(
+              replace(substr(created_at, 1, 19), '-', ''),
+              ':',
+              ''
+            ),
+            'T',
+            '-'
+          ),
+          ' ',
+          '-'
+        )
+      WHERE receipt_number IS NULL
+        OR receipt_number = ''
+        OR receipt_number = 'R-' || id
+    ''');
+  }
+
+  String generateReceiptNumber([DateTime? value]) {
+    final timestamp = (value ?? DateTime.now()).toLocal();
+    final date =
+        '${timestamp.year.toString().padLeft(4, '0')}'
+        '${timestamp.month.toString().padLeft(2, '0')}'
+        '${timestamp.day.toString().padLeft(2, '0')}';
+    final time =
+        '${timestamp.hour.toString().padLeft(2, '0')}'
+        '${timestamp.minute.toString().padLeft(2, '0')}'
+        '${timestamp.second.toString().padLeft(2, '0')}';
+    final suffix = timestamp.microsecondsSinceEpoch
+        .remainder(1000000)
+        .toString()
+        .padLeft(6, '0');
+    return 'R-$date-$time-$suffix';
   }
 
   Future<void> recordAuditLog({
@@ -772,56 +829,126 @@ class DatabaseHelper {
       'status': 'pending',
       'attempts': 0,
       'last_error': null,
+      'next_retry_at': null,
       'created_at': now,
       'updated_at': now,
       'synced_at': null,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<int> syncPendingChanges({int limit = 50}) async {
+  Future<int> syncPendingChanges({
+    int limit = 100,
+    int maxBatches = 100,
+    void Function(int synced, int total, String status)? onProgress,
+  }) async {
+    if (_syncInProgress) return 0;
+    _syncInProgress = true;
     final db = await database;
-    await _createSyncQueueTable(db);
-
-    final pending = await db.query(
-      'sync_queue',
-      where: "status != ?",
-      whereArgs: ['synced'],
-      orderBy: 'updated_at ASC',
-      limit: limit,
-    );
-    if (pending.isEmpty) return 0;
 
     try {
+      await _createSyncQueueTable(db);
+
+      var syncedTotal = 0;
+      final total = await pendingSyncCount();
+      onProgress?.call(syncedTotal, total, 'Preparing sync');
       const service = SupabaseSyncService();
-      await service.uploadEvents(pending.cast<Map<String, Object?>>());
-      final now = DateTime.now().toIso8601String();
-      final ids = pending.map((row) => row['id']).toList();
-      await db.update(
-        'sync_queue',
-        {'status': 'synced', 'synced_at': now, 'updated_at': now},
-        where: 'id IN (${List.filled(ids.length, '?').join(',')})',
-        whereArgs: ids,
-      );
-      return pending.length;
-    } catch (e) {
-      final now = DateTime.now().toIso8601String();
-      final message = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
-      for (final row in pending) {
-        final attempts = ((row['attempts'] as num?)?.toInt() ?? 0) + 1;
-        await db.update(
+
+      for (var batch = 0; batch < maxBatches; batch++) {
+        final now = DateTime.now().toIso8601String();
+        final pending = await db.query(
           'sync_queue',
-          {
-            'status': 'failed',
-            'attempts': attempts,
-            'last_error': message,
-            'updated_at': now,
-          },
-          where: 'id = ?',
-          whereArgs: [row['id']],
+          where: '''
+            status != ?
+            AND (next_retry_at IS NULL OR next_retry_at = '' OR next_retry_at <= ?)
+          ''',
+          whereArgs: ['synced', now],
+          orderBy: 'updated_at ASC',
+          limit: limit,
         );
+        if (pending.isEmpty) return syncedTotal;
+
+        onProgress?.call(
+          syncedTotal,
+          total,
+          'Uploading batch ${batch + 1} (${pending.length} rows)',
+        );
+        try {
+          await service.uploadEvents(pending.cast<Map<String, Object?>>());
+          final syncedAt = DateTime.now().toIso8601String();
+          final ids = pending.map((row) => row['id']).toList();
+          await db.update(
+            'sync_queue',
+            {
+              'status': 'synced',
+              'synced_at': syncedAt,
+              'updated_at': syncedAt,
+              'last_error': null,
+              'next_retry_at': null,
+            },
+            where: 'id IN (${List.filled(ids.length, '?').join(',')})',
+            whereArgs: ids,
+          );
+          syncedTotal += pending.length;
+          onProgress?.call(
+            syncedTotal,
+            total,
+            'Uploaded $syncedTotal of $total',
+          );
+        } catch (e) {
+          final failedAt = DateTime.now();
+          final message = e.toString().replaceFirst(
+            RegExp(r'^Exception:\s*'),
+            '',
+          );
+          final retryAt = failedAt.add(_syncRetryDelay(pending));
+          final ids = pending.map((row) => row['id']).toList();
+          await db.rawUpdate(
+            '''
+            UPDATE sync_queue
+            SET status = ?,
+                attempts = attempts + 1,
+                last_error = ?,
+                updated_at = ?,
+                next_retry_at = ?
+            WHERE id IN (${List.filled(ids.length, '?').join(',')})
+            ''',
+            [
+              'failed',
+              message,
+              failedAt.toIso8601String(),
+              retryAt.toIso8601String(),
+              ...ids,
+            ],
+          );
+          onProgress?.call(
+            syncedTotal,
+            total,
+            'Batch failed. Retry after ${_formatRetryTime(retryAt)}. $message',
+          );
+          return syncedTotal;
+        }
       }
-      return 0;
+
+      return syncedTotal;
+    } finally {
+      _syncInProgress = false;
     }
+  }
+
+  Duration _syncRetryDelay(List<Map<String, Object?>> rows) {
+    final maxAttempts = rows
+        .map((row) => (row['attempts'] as num?)?.toInt() ?? 0)
+        .fold<int>(0, (max, value) => value > max ? value : max);
+    final seconds = (30 * (maxAttempts + 1)).clamp(30, 300).toInt();
+    return Duration(seconds: seconds);
+  }
+
+  String _formatRetryTime(DateTime value) {
+    final local = value.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    final second = local.second.toString().padLeft(2, '0');
+    return '$hour:$minute:$second';
   }
 
   Future<int> pendingSyncCount() async {
@@ -860,23 +987,50 @@ class DatabaseHelper {
 
     final products = await db.query('products');
     for (final row in products) {
-      await queueSyncUpsert('products', row);
+      await _queueSnapshotUpsert(db, 'products', row);
     }
 
     final sales = await db.query('sales');
     for (final row in sales) {
-      await queueSyncUpsert('sales', row);
+      await _queueSnapshotUpsert(db, 'sales', row);
     }
 
     final users = await db.query('users');
     for (final row in users) {
-      await queueSyncUpsert('users', row);
+      await _queueSnapshotUpsert(db, 'users', row);
     }
 
     final auditLogs = await db.query('audit_logs');
     for (final row in auditLogs) {
-      await queueSyncUpsert('audit_logs', row);
+      await _queueSnapshotUpsert(db, 'audit_logs', row);
     }
+  }
+
+  Future<void> _queueSnapshotUpsert(
+    DatabaseExecutor db,
+    String tableName,
+    Map<String, Object?> row,
+  ) async {
+    final localId = row['id']?.toString();
+    if (localId == null || localId.isEmpty) return;
+
+    final queueKey = '$tableName:$localId';
+    final existing = await db.query(
+      'sync_queue',
+      columns: ['id'],
+      where: 'queue_key = ?',
+      whereArgs: [queueKey],
+      limit: 1,
+    );
+    if (existing.isNotEmpty) return;
+
+    await _queueSyncEvent(
+      db,
+      tableName: tableName,
+      localId: localId,
+      operation: 'upsert',
+      payload: row,
+    );
   }
 
   Future<void> recordVoidSaleAudit({
@@ -1315,7 +1469,7 @@ class DatabaseHelper {
           'price': price,
         }),
       );
-      await syncPendingChanges();
+      unawaited(syncPendingChanges());
       return productId;
     } catch (e) {
       throw Exception('Failed to add product: $e');
@@ -1326,7 +1480,7 @@ class DatabaseHelper {
     final db = await database;
     final id = await db.insert('products', product);
     await queueSyncUpsert('products', {...product, 'id': id});
-    await syncPendingChanges();
+    unawaited(syncPendingChanges());
     return id;
   }
 
@@ -1386,7 +1540,7 @@ class DatabaseHelper {
           'new_cost_price': product['cost_price'],
         }),
       );
-      await syncPendingChanges();
+      unawaited(syncPendingChanges());
     }
 
     return result;
@@ -1419,7 +1573,7 @@ class DatabaseHelper {
           'stock_quantity': oldProduct['stock_quantity'],
         }),
       );
-      await syncPendingChanges();
+      unawaited(syncPendingChanges());
     }
 
     return result;
@@ -1440,10 +1594,11 @@ class DatabaseHelper {
         .add(saleCompletionGracePeriod)
         .toIso8601String();
     row.putIfAbsent('completed_at', () => null);
+    row['receipt_number'] ??= generateReceiptNumber(createdAt);
 
     final id = await db.insert('sales', row);
     await queueSyncUpsert('sales', {...row, 'id': id});
-    await syncPendingChanges();
+    unawaited(syncPendingChanges());
     return id;
   }
 
@@ -1481,7 +1636,7 @@ class DatabaseHelper {
       for (final row in dueRows) {
         await queueSyncUpsert('sales', {...row, 'completed_at': now});
       }
-      await syncPendingChanges();
+      unawaited(syncPendingChanges());
     }
     return updated;
   }
@@ -1633,7 +1788,7 @@ class DatabaseHelper {
       }),
     );
 
-    await syncPendingChanges();
+    unawaited(syncPendingChanges());
     return true;
   }
 

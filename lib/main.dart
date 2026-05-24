@@ -12,10 +12,6 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EnvConfig.load();
   await _initializeSupabase();
-  unawaited(DatabaseHelper.instance.syncPendingChanges());
-  Timer.periodic(const Duration(minutes: 2), (_) {
-    unawaited(DatabaseHelper.instance.syncPendingChanges());
-  });
 
   // Modern safe area behavior
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -52,8 +48,55 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => MyAppState();
 }
 
-class MyAppState extends State<MyApp> {
+class MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  Timer? _cloudSyncTimer;
+  bool _backgroundCloudSyncRunning = false;
+  bool _localSnapshotQueuedForCloudSync = false;
   bool isDarkMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_syncCloudInBackground(queueLocalSnapshot: true));
+    _cloudSyncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(_syncCloudInBackground());
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _cloudSyncTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_syncCloudInBackground());
+    }
+  }
+
+  Future<void> _syncCloudInBackground({bool queueLocalSnapshot = false}) async {
+    if (_backgroundCloudSyncRunning) return;
+    if (EnvConfig.supabaseUrl.isEmpty || EnvConfig.supabaseAnonKey.isEmpty) {
+      return;
+    }
+
+    _backgroundCloudSyncRunning = true;
+    try {
+      if (queueLocalSnapshot || !_localSnapshotQueuedForCloudSync) {
+        await DatabaseHelper.instance.queueLocalSnapshotForSync();
+        _localSnapshotQueuedForCloudSync = true;
+      }
+      await DatabaseHelper.instance.syncPendingChanges();
+    } catch (e) {
+      debugPrint('Background cloud sync failed: $e');
+    } finally {
+      _backgroundCloudSyncRunning = false;
+    }
+  }
 
   void toggleTheme(bool value) {
     setState(() {

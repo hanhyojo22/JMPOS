@@ -77,6 +77,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
           sales.void_reason,
           sales.completion_due_at,
           sales.completed_at,
+          sales.receipt_number,
           sales.created_at,
           products.category AS category,
           products.barcode AS barcode
@@ -92,14 +93,10 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
       var transactionItems = <Map<String, dynamic>>[];
 
       if (selectedSale != null) {
-        final createdAt = DateTime.tryParse(
-          selectedSale['created_at'].toString(),
-        );
+        final receiptNumber =
+            selectedSale['receipt_number']?.toString().trim() ?? '';
 
-        if (createdAt != null) {
-          final start = createdAt.subtract(const Duration(seconds: 1));
-          final end = createdAt.add(const Duration(seconds: 1));
-
+        if (receiptNumber.isNotEmpty) {
           transactionItems = await db.rawQuery(
             '''
             SELECT
@@ -114,6 +111,40 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
               sales.void_reason,
               sales.completion_due_at,
               sales.completed_at,
+              sales.receipt_number,
+              sales.created_at,
+              products.category AS category,
+              products.barcode AS barcode
+            FROM sales
+            LEFT JOIN products ON products.id = sales.product_id
+            WHERE sales.receipt_number = ?
+            ORDER BY sales.id ASC
+            ''',
+            [receiptNumber],
+          );
+        } else {
+          final createdAt = DateTime.tryParse(
+            selectedSale['created_at'].toString(),
+          );
+          if (createdAt != null) {
+            final start = createdAt.subtract(const Duration(seconds: 1));
+            final end = createdAt.add(const Duration(seconds: 1));
+
+            transactionItems = await db.rawQuery(
+              '''
+            SELECT
+              sales.id,
+              sales.product_id,
+              sales.product_name,
+              sales.quantity,
+              sales.price,
+              sales.total,
+              sales.voided_at,
+              sales.voided_by,
+              sales.void_reason,
+              sales.completion_due_at,
+              sales.completed_at,
+              sales.receipt_number,
               sales.created_at,
               products.category AS category,
               products.barcode AS barcode
@@ -122,8 +153,9 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
             WHERE sales.created_at >= ? AND sales.created_at <= ?
             ORDER BY sales.id ASC
             ''',
-            [start.toIso8601String(), end.toIso8601String()],
-          );
+              [start.toIso8601String(), end.toIso8601String()],
+            );
+          }
         }
 
         if (transactionItems.isEmpty) {
@@ -155,6 +187,15 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
     } catch (_) {
       return null;
     }
+  }
+
+  String _receiptLabel() {
+    final receiptNumber = _sale?['receipt_number']?.toString().trim();
+    if (receiptNumber != null && receiptNumber.isNotEmpty) {
+      return receiptNumber;
+    }
+    final saleId = _sale?['id'];
+    return saleId == null ? 'Sale' : '#$saleId';
   }
 
   String _dateText(DateTime? date) {
@@ -279,8 +320,10 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
         foregroundColor: _primaryText,
         centerTitle: true,
         title: Text(
-          _sale == null ? 'Sale Details' : 'Sale #${_sale!['id']}',
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+          _sale == null ? 'Sale Details' : _receiptLabel(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
         ),
       ),
       body: _loading
@@ -324,7 +367,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _receiptHeaderCard(
-          receiptId: '#${sale['id']}',
+          receiptId: _receiptLabel(),
           createdAt: createdAt,
           total: transactionTotal,
         ),
@@ -373,10 +416,12 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
                   children: [
                     Text(
                       'Sale $receiptId',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: _primaryText,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                     const SizedBox(height: 4),
