@@ -5,6 +5,8 @@ import 'package:file_saver/file_saver.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/main.dart';
+import 'package:pos_app/services/env_config.dart';
+import 'package:pos_app/services/supabase_backup_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // ─── Settings Page ────────────────────────────────────────────────────────────
@@ -26,6 +28,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   static const _lastBackupKey = 'last_database_backup_at';
+  static const _lastOnlineBackupKey = 'last_online_database_backup_at';
   static const _lastSalesExportKey = 'last_sales_export_at';
   static const _storeNameKey = 'store_name';
 
@@ -46,10 +49,14 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _keepScreenOn = false;
   bool _loadedThemeValue = false;
   bool _isBackingUp = false;
+  bool _isOnlineBackingUp = false;
+  bool _isSyncingCloud = false;
   bool _isRestoring = false;
   bool _isExportingSales = false;
   DateTime? _lastBackupAt;
+  DateTime? _lastOnlineBackupAt;
   DateTime? _lastSalesExportAt;
+  int _pendingSyncCount = 0;
   String _storeName = 'My Sari-Sari Store';
   bool _pinEnabled = false;
 
@@ -69,7 +76,9 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadStoreName();
     _loadPinState();
     _loadLastBackupDate();
+    _loadLastOnlineBackupDate();
     _loadLastSalesExportDate();
+    _loadPendingSyncCount();
   }
 
   Future<void> _loadStoreName() async {
@@ -243,6 +252,52 @@ class _SettingsPageState extends State<SettingsPage> {
                         onTap: _isBackingUp ? null : _backupDatabase,
                       ),
                       _SettingsRow(
+                        icon: Icons.cloud_sync_outlined,
+                        iconBg: const Color(0xFFEAF3FF),
+                        iconColor: const Color(0xFF5B3BB3),
+                        label: 'Cloud sync',
+                        subtitle: _cloudSyncSubtitle,
+                        trailing: _isSyncingCloud
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : _pendingSyncCount > 0
+                            ? _buildBadge(
+                                '$_pendingSyncCount',
+                                const Color(0xFFFFF4DE),
+                                const Color(0xFF9A5B00),
+                              )
+                            : _buildBadge(
+                                'Synced',
+                                const Color(0xFFE1F5EE),
+                                const Color(0xFF0F6E56),
+                              ),
+                        onTap: _isSyncingCloud ? null : _syncCloudNow,
+                      ),
+                      _SettingsRow(
+                        icon: Icons.cloud_upload_outlined,
+                        iconBg: const Color(0xFFE8F0FE),
+                        iconColor: const Color(0xFF315BB8),
+                        label: 'Online backup',
+                        subtitle: _lastOnlineBackupSubtitle,
+                        trailing: _isOnlineBackingUp
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : null,
+                        onTap: _isOnlineBackingUp
+                            ? null
+                            : _backupDatabaseOnline,
+                      ),
+                      _SettingsRow(
                         icon: Icons.restore_outlined,
                         iconBg: const Color(0xFFFFF4DE),
                         iconColor: const Color(0xFF9A5B00),
@@ -408,6 +463,18 @@ class _SettingsPageState extends State<SettingsPage> {
     return 'Last backup: ${_formatBackupDate(lastBackupAt)}';
   }
 
+  String get _lastOnlineBackupSubtitle {
+    final lastBackupAt = _lastOnlineBackupAt;
+    if (lastBackupAt == null) return 'Upload to Supabase Storage';
+    return 'Last upload: ${_formatBackupDate(lastBackupAt)}';
+  }
+
+  String get _cloudSyncSubtitle {
+    if (_isSyncingCloud) return 'Uploading local changes';
+    if (_pendingSyncCount == 0) return 'SQLite is synced to Supabase';
+    return '$_pendingSyncCount local change${_pendingSyncCount == 1 ? '' : 's'} waiting';
+  }
+
   String get _lastSalesExportSubtitle {
     final lastSalesExportAt = _lastSalesExportAt;
     if (lastSalesExportAt == null) return 'CSV export';
@@ -429,6 +496,74 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (!mounted) return;
     setState(() => _lastBackupAt = value);
+  }
+
+  Future<void> _loadLastOnlineBackupDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_lastOnlineBackupKey);
+    final parsed = value == null ? null : DateTime.tryParse(value);
+
+    if (!mounted) return;
+    setState(() => _lastOnlineBackupAt = parsed);
+  }
+
+  Future<void> _saveLastOnlineBackupDate(DateTime value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastOnlineBackupKey, value.toIso8601String());
+
+    if (!mounted) return;
+    setState(() => _lastOnlineBackupAt = value);
+  }
+
+  Future<void> _loadPendingSyncCount() async {
+    final count = await DatabaseHelper.instance.pendingSyncCount();
+    if (!mounted) return;
+    setState(() => _pendingSyncCount = count);
+  }
+
+  Future<void> _syncCloudNow() async {
+    HapticFeedback.lightImpact();
+    setState(() => _isSyncingCloud = true);
+
+    try {
+      await DatabaseHelper.instance.queueLocalSnapshotForSync();
+      final synced = await DatabaseHelper.instance.syncPendingChanges();
+      final pending = await DatabaseHelper.instance.pendingSyncCount();
+      final lastError = await DatabaseHelper.instance.lastSyncError();
+      if (!mounted) return;
+      setState(() => _pendingSyncCount = pending);
+
+      final errorText =
+          lastError == null || lastError.trim().isEmpty
+          ? ''
+          : ' Error: ${lastError.trim()}';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            pending == 0
+                ? 'Cloud sync complete. Uploaded $synced change${synced == 1 ? '' : 's'}.'
+                : 'Cloud sync paused. $pending change${pending == 1 ? '' : 's'} still waiting.$errorText',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: pending == 0 ? const Color(0xFF0F6E56) : _danger,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      await _loadPendingSyncCount();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Cloud sync failed: $e'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _danger,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingCloud = false);
+      }
+    }
   }
 
   Future<void> _loadLastSalesExportDate() async {
@@ -660,6 +795,91 @@ class _SettingsPageState extends State<SettingsPage> {
     } finally {
       if (mounted) {
         setState(() => _isBackingUp = false);
+      }
+    }
+  }
+
+  SupabaseBackupConfig get _supabaseBackupConfig => SupabaseBackupConfig(
+    projectUrl: EnvConfig.supabaseUrl,
+    anonKey: EnvConfig.supabaseAnonKey,
+    bucket: EnvConfig.supabaseBackupBucket,
+  );
+
+  Future<void> _backupDatabaseOnline() async {
+    HapticFeedback.lightImpact();
+
+    final config = _supabaseBackupConfig;
+    if (!config.isComplete) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Supabase is not configured. Add SUPABASE_URL and SUPABASE_ANON_KEY to .env.',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _danger,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isOnlineBackingUp = true);
+
+    try {
+      final backupPath = await DatabaseHelper.instance.createBackupArchive();
+      final result = await const SupabaseBackupService().uploadBackup(
+        config: config,
+        backupPath: backupPath,
+        storeName: _storeName,
+      );
+      await DatabaseHelper.instance.recordAuditLog(
+        user: widget.currentUsername,
+        action: 'backup_online',
+        details: jsonEncode({
+          'provider': 'supabase',
+          'bucket': config.bucket.trim(),
+          'object_path': result.objectPath,
+          'bytes': result.bytes,
+        }),
+      );
+
+      if (!mounted) return;
+      await _saveLastOnlineBackupDate(DateTime.now());
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Online backup uploaded',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          content: SelectableText(
+            '${config.bucket.trim()}/${result.objectPath}',
+            style: TextStyle(color: _secondaryText),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Online backup failed: $e'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _danger,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isOnlineBackingUp = false);
       }
     }
   }

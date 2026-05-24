@@ -1,11 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
+import 'package:pos_app/services/env_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'pages/login.dart';
 import 'pages/owner_setup.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await EnvConfig.load();
+  await _initializeSupabase();
+  unawaited(DatabaseHelper.instance.syncPendingChanges());
+  Timer.periodic(const Duration(minutes: 2), (_) {
+    unawaited(DatabaseHelper.instance.syncPendingChanges());
+  });
 
   // Modern safe area behavior
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -21,6 +31,15 @@ void main() {
   );
 
   runApp(const MyApp());
+}
+
+Future<void> _initializeSupabase() async {
+  final supabaseUrl = EnvConfig.supabaseUrl;
+  final supabaseAnonKey = EnvConfig.supabaseAnonKey;
+
+  if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) return;
+
+  await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
 }
 
 class MyApp extends StatefulWidget {

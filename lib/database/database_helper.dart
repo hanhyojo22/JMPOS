@@ -5,6 +5,7 @@ import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:crypto/crypto.dart';
 import 'package:archive/archive_io.dart';
+import 'package:pos_app/services/supabase_sync_service.dart';
 
 import 'dart:convert';
 import 'dart:io';
@@ -33,7 +34,7 @@ class ProductImageConnectionReport {
 
 class DatabaseHelper {
   static Database? _database;
-  static const int _dbVersion = 7;
+  static const int _dbVersion = 8;
   static const saleCompletionGracePeriod = Duration(seconds: 10);
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
   static const int _productImageSize = 300;
@@ -405,6 +406,10 @@ class DatabaseHelper {
       version: _dbVersion,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
+      onOpen: (db) async {
+        await _createSyncQueueTable(db);
+        await _createIndexes(db);
+      },
     );
   }
 
@@ -538,6 +543,7 @@ class DatabaseHelper {
     ''');
 
     await _createAuditLogTable(db);
+    await _createSyncQueueTable(db);
 
     await _createIndexes(db);
   }
@@ -561,6 +567,10 @@ class DatabaseHelper {
     if (oldVersion < 7) {
       await _createIndexes(db);
     }
+    if (oldVersion < 8) {
+      await _createSyncQueueTable(db);
+      await _createIndexes(db);
+    }
   }
 
   Future<void> _createAuditLogTable(Database db) async {
@@ -571,6 +581,25 @@ class DatabaseHelper {
         action TEXT NOT NULL,
         details TEXT,
         timestamp TEXT NOT NULL
+      )
+    ''');
+  }
+
+  Future<void> _createSyncQueueTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        queue_key TEXT NOT NULL UNIQUE,
+        table_name TEXT NOT NULL,
+        local_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        synced_at TEXT
       )
     ''');
   }
@@ -614,6 +643,11 @@ class DatabaseHelper {
     await db.execute('''
       CREATE INDEX IF NOT EXISTS idx_audit_logs_user_action
       ON audit_logs(user, action)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sync_queue_status_updated
+      ON sync_queue(status, updated_at)
     ''');
   }
 
@@ -672,13 +706,177 @@ class DatabaseHelper {
   }) async {
     final db = await database;
     await _createAuditLogTable(db);
+    await _createSyncQueueTable(db);
 
-    await db.insert('audit_logs', {
+    final row = {
       'user': user.trim().isEmpty ? 'unknown' : user.trim().toLowerCase(),
       'action': action.trim(),
       'details': details?.trim(),
       'timestamp': DateTime.now().toIso8601String(),
-    });
+    };
+    final id = await db.insert('audit_logs', row);
+    await queueSyncUpsert('audit_logs', {...row, 'id': id});
+  }
+
+  Future<void> queueSyncUpsert(
+    String tableName,
+    Map<String, Object?> row, {
+    DatabaseExecutor? executor,
+  }) async {
+    final localId = row['id']?.toString();
+    if (localId == null || localId.isEmpty) return;
+
+    final db = executor ?? await database;
+    await _createSyncQueueTable(db);
+    await _queueSyncEvent(
+      db,
+      tableName: tableName,
+      localId: localId,
+      operation: 'upsert',
+      payload: row,
+    );
+  }
+
+  Future<void> queueSyncDelete(
+    String tableName,
+    Object localId,
+    Map<String, Object?> oldRow, {
+    DatabaseExecutor? executor,
+  }) async {
+    final db = executor ?? await database;
+    await _createSyncQueueTable(db);
+    await _queueSyncEvent(
+      db,
+      tableName: tableName,
+      localId: localId.toString(),
+      operation: 'delete',
+      payload: oldRow,
+    );
+  }
+
+  Future<void> _queueSyncEvent(
+    DatabaseExecutor db, {
+    required String tableName,
+    required String localId,
+    required String operation,
+    required Map<String, Object?> payload,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+    final queueKey = '$tableName:$localId';
+    await db.insert('sync_queue', {
+      'queue_key': queueKey,
+      'table_name': tableName,
+      'local_id': localId,
+      'operation': operation,
+      'payload': jsonEncode(payload),
+      'status': 'pending',
+      'attempts': 0,
+      'last_error': null,
+      'created_at': now,
+      'updated_at': now,
+      'synced_at': null,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<int> syncPendingChanges({int limit = 50}) async {
+    final db = await database;
+    await _createSyncQueueTable(db);
+
+    final pending = await db.query(
+      'sync_queue',
+      where: "status != ?",
+      whereArgs: ['synced'],
+      orderBy: 'updated_at ASC',
+      limit: limit,
+    );
+    if (pending.isEmpty) return 0;
+
+    try {
+      const service = SupabaseSyncService();
+      await service.uploadEvents(pending.cast<Map<String, Object?>>());
+      final now = DateTime.now().toIso8601String();
+      final ids = pending.map((row) => row['id']).toList();
+      await db.update(
+        'sync_queue',
+        {'status': 'synced', 'synced_at': now, 'updated_at': now},
+        where: 'id IN (${List.filled(ids.length, '?').join(',')})',
+        whereArgs: ids,
+      );
+      return pending.length;
+    } catch (e) {
+      final now = DateTime.now().toIso8601String();
+      final message = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+      for (final row in pending) {
+        final attempts = ((row['attempts'] as num?)?.toInt() ?? 0) + 1;
+        await db.update(
+          'sync_queue',
+          {
+            'status': 'failed',
+            'attempts': attempts,
+            'last_error': message,
+            'updated_at': now,
+          },
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+      }
+      return 0;
+    }
+  }
+
+  Future<int> pendingSyncCount() async {
+    final db = await database;
+    await _createSyncQueueTable(db);
+    final count = Sqflite.firstIntValue(
+      await db.rawQuery(
+        "SELECT COUNT(*) FROM sync_queue WHERE status != ?",
+        ['synced'],
+      ),
+    );
+    return count ?? 0;
+  }
+
+  Future<String?> lastSyncError() async {
+    final db = await database;
+    await _createSyncQueueTable(db);
+    final rows = await db.query(
+      'sync_queue',
+      columns: ['last_error'],
+      where: "status != ? AND last_error IS NOT NULL AND TRIM(last_error) != ''",
+      whereArgs: ['synced'],
+      orderBy: 'updated_at DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['last_error']?.toString();
+  }
+
+  Future<void> queueLocalSnapshotForSync() async {
+    final db = await database;
+    await _ensureProductSchema(db);
+    await _ensureSalesSchema(db);
+    await _createAuditLogTable(db);
+    await _createSyncQueueTable(db);
+
+    final products = await db.query('products');
+    for (final row in products) {
+      await queueSyncUpsert('products', row);
+    }
+
+    final sales = await db.query('sales');
+    for (final row in sales) {
+      await queueSyncUpsert('sales', row);
+    }
+
+    final users = await db.query('users');
+    for (final row in users) {
+      await queueSyncUpsert('users', row);
+    }
+
+    final auditLogs = await db.query('audit_logs');
+    for (final row in auditLogs) {
+      await queueSyncUpsert('audit_logs', row);
+    }
   }
 
   Future<void> recordVoidSaleAudit({
@@ -1091,6 +1289,21 @@ class DatabaseHelper {
         'created_at': now,
         'updated_at': now,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await queueSyncUpsert('products', {
+        'id': productId,
+        'barcode': trimmedBarcode,
+        'product_name': trimmedName,
+        'category': trimmedCategory,
+        'description': trimmedDescription?.isEmpty == true
+            ? null
+            : trimmedDescription,
+        'price': price,
+        'cost_price': costPrice,
+        'stock_quantity': stockQuantity,
+        'image_url': trimmedImageUrl?.isEmpty == true ? null : trimmedImageUrl,
+        'created_at': now,
+        'updated_at': now,
+      });
       await recordAuditLog(
         user: actorUsername ?? 'system',
         action: 'product_create',
@@ -1102,6 +1315,7 @@ class DatabaseHelper {
           'price': price,
         }),
       );
+      await syncPendingChanges();
       return productId;
     } catch (e) {
       throw Exception('Failed to add product: $e');
@@ -1110,7 +1324,10 @@ class DatabaseHelper {
 
   Future<int> insertProduct(Map<String, dynamic> product) async {
     final db = await database;
-    return await db.insert('products', product);
+    final id = await db.insert('products', product);
+    await queueSyncUpsert('products', {...product, 'id': id});
+    await syncPendingChanges();
+    return id;
   }
 
   Future<List<Map<String, dynamic>>> getProducts() async {
@@ -1145,6 +1362,15 @@ class DatabaseHelper {
     );
 
     if (result > 0) {
+      final rows = await db.query(
+        'products',
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        await queueSyncUpsert('products', rows.first);
+      }
       final oldProduct = oldRows.isEmpty ? <String, Object?>{} : oldRows.first;
       await recordAuditLog(
         user: actorUsername ?? 'system',
@@ -1160,6 +1386,7 @@ class DatabaseHelper {
           'new_cost_price': product['cost_price'],
         }),
       );
+      await syncPendingChanges();
     }
 
     return result;
@@ -1181,6 +1408,7 @@ class DatabaseHelper {
 
     if (result > 0) {
       final oldProduct = oldRows.isEmpty ? <String, Object?>{} : oldRows.first;
+      await queueSyncDelete('products', id, oldProduct);
       await recordAuditLog(
         user: actorUsername ?? 'system',
         action: 'product_delete',
@@ -1191,6 +1419,7 @@ class DatabaseHelper {
           'stock_quantity': oldProduct['stock_quantity'],
         }),
       );
+      await syncPendingChanges();
     }
 
     return result;
@@ -1212,7 +1441,10 @@ class DatabaseHelper {
         .toIso8601String();
     row.putIfAbsent('completed_at', () => null);
 
-    return await db.insert('sales', row);
+    final id = await db.insert('sales', row);
+    await queueSyncUpsert('sales', {...row, 'id': id});
+    await syncPendingChanges();
+    return id;
   }
 
   Future<int> completeDueSales() async {
@@ -1220,7 +1452,20 @@ class DatabaseHelper {
     await _ensureSalesSchema(db);
 
     final now = DateTime.now().toIso8601String();
-    return db.update(
+    final dueRows = await db.query(
+      'sales',
+      where: '''
+        (completed_at IS NULL OR completed_at = '')
+        AND (voided_at IS NULL OR voided_at = '')
+        AND completion_due_at IS NOT NULL
+        AND completion_due_at != ''
+        AND completion_due_at <= ?
+      ''',
+      whereArgs: [now],
+    );
+    if (dueRows.isEmpty) return 0;
+
+    final updated = await db.update(
       'sales',
       {'completed_at': now},
       where: '''
@@ -1232,6 +1477,13 @@ class DatabaseHelper {
       ''',
       whereArgs: [now],
     );
+    if (updated > 0) {
+      for (final row in dueRows) {
+        await queueSyncUpsert('sales', {...row, 'completed_at': now});
+      }
+      await syncPendingChanges();
+    }
+    return updated;
   }
 
   Future<List<Map<String, dynamic>>> getSales() async {
@@ -1328,6 +1580,33 @@ class DatabaseHelper {
         where: 'id IN (${List.filled(saleItems.length, '?').join(',')})',
         whereArgs: saleItems.map((item) => item['id']).toList(),
       );
+
+      for (final item in saleItems) {
+        final productId = (item['product_id'] as num?)?.toInt();
+        if (productId != null) {
+          final rows = await txn.query(
+            'products',
+            where: 'id = ?',
+            whereArgs: [productId],
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            await queueSyncUpsert('products', rows.first, executor: txn);
+          }
+        }
+        await queueSyncUpsert(
+          'sales',
+          {
+            ...item,
+            'voided_at': now,
+            'voided_by': normalizedUser,
+            'void_reason': trimmedReason == null || trimmedReason.isEmpty
+                ? null
+                : trimmedReason,
+          },
+          executor: txn,
+        );
+      }
     });
 
     final total = saleItems.fold<double>(
@@ -1354,6 +1633,7 @@ class DatabaseHelper {
       }),
     );
 
+    await syncPendingChanges();
     return true;
   }
 

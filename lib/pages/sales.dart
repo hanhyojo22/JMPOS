@@ -290,7 +290,7 @@ class _SalesPageState extends State<SalesPage> {
         final int quantity = item['quantity'];
         final double price = (product['price'] as num).toDouble();
         final imagePath = product['imagePath']?.toString();
-        await db.insert('sales', {
+        final saleRow = {
           'product_id': product['id'],
           'product_name': product['title'],
           'quantity': quantity,
@@ -302,6 +302,11 @@ class _SalesPageState extends State<SalesPage> {
           'completion_due_at': completionDueAt.toIso8601String(),
           'completed_at': null,
           'created_at': createdAt.toIso8601String(),
+        };
+        final saleId = await db.insert('sales', saleRow);
+        await DatabaseHelper.instance.queueSyncUpsert('sales', {
+          ...saleRow,
+          'id': saleId,
         });
         await db.update(
           'products',
@@ -312,7 +317,20 @@ class _SalesPageState extends State<SalesPage> {
           where: 'id = ?',
           whereArgs: [product['id']],
         );
+        final productRows = await db.query(
+          'products',
+          where: 'id = ?',
+          whereArgs: [product['id']],
+          limit: 1,
+        );
+        if (productRows.isNotEmpty) {
+          await DatabaseHelper.instance.queueSyncUpsert(
+            'products',
+            productRows.first,
+          );
+        }
       }
+      await DatabaseHelper.instance.syncPendingChanges();
       _cart.clear();
       Timer(DatabaseHelper.saleCompletionGracePeriod, () async {
         await DatabaseHelper.instance.completeDueSales();

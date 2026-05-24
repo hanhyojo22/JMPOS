@@ -562,7 +562,7 @@ class _HomePageState extends State<HomePage> {
           final imagePath = product['imagePath']?.toString();
           final remainingStock = dbStock - quantity;
 
-          await txn.insert('sales', {
+          final saleRow = {
             'product_id': productId,
             'product_name': productName,
             'quantity': quantity,
@@ -574,7 +574,13 @@ class _HomePageState extends State<HomePage> {
             'completion_due_at': completionDueAt.toIso8601String(),
             'completed_at': null,
             'created_at': createdAt.toIso8601String(),
-          });
+          };
+          final saleId = await txn.insert('sales', saleRow);
+          await DatabaseHelper.instance.queueSyncUpsert(
+            'sales',
+            {...saleRow, 'id': saleId},
+            executor: txn,
+          );
 
           await txn.update(
             'products',
@@ -585,10 +591,24 @@ class _HomePageState extends State<HomePage> {
             where: 'id = ?',
             whereArgs: [productId],
           );
+          final updatedProductRows = await txn.query(
+            'products',
+            where: 'id = ?',
+            whereArgs: [productId],
+            limit: 1,
+          );
+          if (updatedProductRows.isNotEmpty) {
+            await DatabaseHelper.instance.queueSyncUpsert(
+              'products',
+              updatedProductRows.first,
+              executor: txn,
+            );
+          }
 
           product['stock'] = remainingStock;
         }
       });
+      await DatabaseHelper.instance.syncPendingChanges();
 
       sharedCart.clear();
       Timer(DatabaseHelper.saleCompletionGracePeriod, () async {
