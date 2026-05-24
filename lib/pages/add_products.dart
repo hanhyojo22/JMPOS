@@ -46,6 +46,11 @@ class _AddProductsPageState extends State<AddProductsPage>
   final _stockQuantityController = TextEditingController();
 
   String? _selectedCategory;
+  static const int _maxBarcodeLength = 18;
+  static const int _maxProductNameLength = 120;
+  static const int _maxDescriptionLength = 500;
+  static const int _maxStockQuantity = 999999999;
+  static const double _maxMoneyValue = 9999999.99;
 
   final List<String> _categories = [
     'Beverages',
@@ -78,7 +83,10 @@ class _AddProductsPageState extends State<AddProductsPage>
 
   int get _stockValue => _stockValueFromText(_stockQuantityController.text);
 
-  String _sanitizeSingleLineText(String value, {int maxLength = 120}) {
+  String _sanitizeSingleLineText(
+    String value, {
+    int maxLength = _maxProductNameLength,
+  }) {
     final sanitized = value
         .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
@@ -88,7 +96,10 @@ class _AddProductsPageState extends State<AddProductsPage>
         : sanitized.substring(0, maxLength).trimRight();
   }
 
-  String _sanitizeMultilineText(String value, {int maxLength = 500}) {
+  String _sanitizeMultilineText(
+    String value, {
+    int maxLength = _maxDescriptionLength,
+  }) {
     final sanitized = value
         .replaceAll(
           RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]'),
@@ -101,8 +112,10 @@ class _AddProductsPageState extends State<AddProductsPage>
         : sanitized.substring(0, maxLength).trimRight();
   }
 
-  String _sanitizeDigits(String value, {int maxLength = 18}) {
-    final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+  String _digitsOnly(String value) => value.replaceAll(RegExp(r'[^0-9]'), '');
+
+  String _sanitizeDigits(String value, {int maxLength = _maxBarcodeLength}) {
+    final digits = _digitsOnly(value);
     return digits.length <= maxLength ? digits : digits.substring(0, maxLength);
   }
 
@@ -191,27 +204,44 @@ class _AddProductsPageState extends State<AddProductsPage>
   }
 
   String? _requiredTextValidator(String? value) {
-    return _sanitizeSingleLineText(value ?? '').isEmpty ? 'Required' : null;
+    final text = _sanitizeSingleLineText(value ?? '');
+    if (text.isEmpty) return 'Required';
+    if (text.length > _maxProductNameLength) return 'Too long';
+    return null;
   }
 
   String? _barcodeValidator(String? value) {
+    final digits = _digitsOnly(value ?? '');
     final barcode = _sanitizeDigits(value ?? '');
     if (barcode.isEmpty) return 'Required';
     if (barcode.length < 4) return 'Too short';
+    if (digits.length > _maxBarcodeLength) return 'Too long';
+    if (RegExp(r'^0+$').hasMatch(barcode)) return 'Invalid barcode';
     return null;
   }
 
   String? _moneyValidator(String? value) {
     final sanitized = _sanitizeMoney(value ?? '');
     if (sanitized.isEmpty) return 'Required';
-    if (_moneyValue(sanitized) <= 0) return 'Must be greater than 0';
+    final amount = _moneyValue(sanitized);
+    if (amount <= 0) return 'Must be greater than 0';
+    if (amount > _maxMoneyValue) return 'Amount is too high';
     return null;
   }
 
   String? _stockValidator(String? value) {
     final sanitized = _sanitizeStock(value ?? '');
     if (sanitized.isEmpty) return 'Required';
-    if (int.tryParse(sanitized) == null) return 'Invalid';
+    final stock = int.tryParse(sanitized);
+    if (stock == null) return 'Invalid';
+    if (stock > _maxStockQuantity) return 'Stock is too high';
+    return null;
+  }
+
+  String? _categoryValidator(String? value) {
+    if (value == null || !_categories.contains(value)) {
+      return 'Select a category';
+    }
     return null;
   }
 
@@ -428,6 +458,9 @@ class _AddProductsPageState extends State<AddProductsPage>
     final sellingPrice = _moneyValue(_sellingPriceController.text);
     final costPrice = _moneyValue(_costPriceController.text);
     final stockQuantity = _stockValueFromText(_stockQuantityController.text);
+    final category = _categories.contains(_selectedCategory)
+        ? _selectedCategory!
+        : null;
 
     _barcodeController.text = barcode;
     _nameController.text = name;
@@ -437,6 +470,11 @@ class _AddProductsPageState extends State<AddProductsPage>
     _stockQuantityController.text = _sanitizeStock(
       _stockQuantityController.text,
     );
+
+    if (category == null) {
+      _showBanner('Select a valid category');
+      return;
+    }
 
     if (await DatabaseHelper.instance.barcodeExists(barcode)) {
       if (!mounted) return;
@@ -454,7 +492,7 @@ class _AddProductsPageState extends State<AddProductsPage>
       final newId = await DatabaseHelper.instance.addProduct(
         barcode: barcode,
         productName: name,
-        category: _selectedCategory,
+        category: category,
         description: description.isEmpty ? null : description,
         price: sellingPrice,
         costPrice: costPrice,
@@ -756,7 +794,9 @@ class _AddProductsPageState extends State<AddProductsPage>
                           FilteringTextInputFormatter.deny(
                             RegExp(r'[\u0000-\u001F\u007F]'),
                           ),
-                          LengthLimitingTextInputFormatter(120),
+                          LengthLimitingTextInputFormatter(
+                            _maxProductNameLength,
+                          ),
                         ],
                         validator: _requiredTextValidator,
                       ),
@@ -818,8 +858,7 @@ class _AddProductsPageState extends State<AddProductsPage>
                           ),
                         ),
                         onChanged: (v) => setState(() => _selectedCategory = v),
-                        validator: (v) =>
-                            v == null ? 'Select a category' : null,
+                        validator: _categoryValidator,
                       ),
 
                       const SizedBox(height: 14),
@@ -836,7 +875,9 @@ class _AddProductsPageState extends State<AddProductsPage>
                               r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]',
                             ),
                           ),
-                          LengthLimitingTextInputFormatter(500),
+                          LengthLimitingTextInputFormatter(
+                            _maxDescriptionLength,
+                          ),
                         ],
                         validator: (_) => null,
                       ),

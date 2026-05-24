@@ -34,6 +34,7 @@ class ProductImageConnectionReport {
 class DatabaseHelper {
   static Database? _database;
   static const int _dbVersion = 7;
+  static const saleCompletionGracePeriod = Duration(seconds: 10);
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
   static const int _productImageSize = 300;
   static const int _productImageJpegQuality = 82;
@@ -516,6 +517,8 @@ class DatabaseHelper {
         voided_at TEXT,
         voided_by TEXT,
         void_reason TEXT,
+        completion_due_at TEXT,
+        completed_at TEXT,
         created_at TEXT NOT NULL
       )
     ''');
@@ -649,6 +652,17 @@ class DatabaseHelper {
     if (!columnNames.contains('void_reason')) {
       await db.execute('ALTER TABLE sales ADD COLUMN void_reason TEXT');
     }
+    if (!columnNames.contains('completion_due_at')) {
+      await db.execute('ALTER TABLE sales ADD COLUMN completion_due_at TEXT');
+    }
+    if (!columnNames.contains('completed_at')) {
+      await db.execute('ALTER TABLE sales ADD COLUMN completed_at TEXT');
+      await db.execute('''
+        UPDATE sales
+        SET completed_at = created_at
+        WHERE completed_at IS NULL OR completed_at = ''
+      ''');
+    }
   }
 
   Future<void> recordAuditLog({
@@ -704,6 +718,23 @@ class DatabaseHelper {
     Map.fromEntries(values.entries.where((entry) => entry.value != null)),
   );
 
+  String _sanitizeAuditText(
+    String value, {
+    int maxLength = 250,
+    bool multiline = false,
+  }) {
+    final controlChars = multiline
+        ? RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]')
+        : RegExp(r'[\u0000-\u001F\u007F]');
+    final sanitized = value
+        .replaceAll(controlChars, ' ')
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .trim();
+    return sanitized.length <= maxLength
+        ? sanitized
+        : sanitized.substring(0, maxLength).trimRight();
+  }
+
   // ─── Password hashing ────────────────────────────────────────────────────────
   static String _hashPassword(String password) {
     final bytes = utf8.encode(password);
@@ -711,13 +742,48 @@ class DatabaseHelper {
     return digest.toString();
   }
 
+  String _normalizeAuthUsername(String username) {
+    return username
+        .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '')
+        .trim()
+        .toLowerCase();
+  }
+
+  String _sanitizeAuthSecret(String value, {int maxLength = 128}) {
+    final sanitized = value.replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '');
+    return sanitized.length <= maxLength
+        ? sanitized
+        : sanitized.substring(0, maxLength);
+  }
+
+  String _normalizePin(String pin) {
+    final digits = pin.replaceAll(RegExp(r'[^0-9]'), '');
+    return digits.length <= 6 ? digits : digits.substring(0, 6);
+  }
+
   // ─── Auth methods ─────────────────────────────────────────────────────────────
 
   /// Returns the user map if credentials are valid, null otherwise.
   Future<Map<String, dynamic>?> login(String username, String password) async {
     final db = await database;
-    final hash = _hashPassword(password);
-    final normalizedUsername = username.trim().toLowerCase();
+    final normalizedUsername = _normalizeAuthUsername(username);
+    final normalizedPassword = _sanitizeAuthSecret(password);
+    if (normalizedUsername.length < 3 ||
+        normalizedUsername.length > 40 ||
+        normalizedPassword.length < 6 ||
+        normalizedPassword.length > 128 ||
+        !RegExp(r'^[a-z0-9_]+$').hasMatch(normalizedUsername)) {
+      await recordAuditLog(
+        user: normalizedUsername.isEmpty ? 'unknown' : normalizedUsername,
+        action: 'login_failed',
+        details: _auditDetails({
+          'method': 'password',
+          'reason': 'invalid_input',
+        }),
+      );
+      return null;
+    }
+    final hash = _hashPassword(normalizedPassword);
 
     final result = await db.query(
       'users',
@@ -744,7 +810,9 @@ class DatabaseHelper {
 
   Future<Map<String, dynamic>?> loginWithPin(String pin) async {
     final db = await database;
-    final hash = _hashPassword(pin);
+    final normalizedPin = _normalizePin(pin);
+    if (normalizedPin.length < 4 || normalizedPin.length > 6) return null;
+    final hash = _hashPassword(normalizedPin);
 
     final result = await db.query(
       'users',
@@ -764,6 +832,24 @@ class DatabaseHelper {
       return user;
     }
     return null;
+  }
+
+  Future<Map<String, dynamic>?> verifyAdminPin(String pin) async {
+    final db = await database;
+    final normalizedPin = _normalizePin(pin);
+    if (normalizedPin.length < 4 || normalizedPin.length > 6) return null;
+
+    final hash = _hashPassword(normalizedPin);
+
+    final result = await db.query(
+      'users',
+      where: 'pin_hash = ? AND role = ?',
+      whereArgs: [hash, 'admin'],
+      limit: 1,
+    );
+
+    if (result.isEmpty) return null;
+    return result.first;
   }
 
   Future<bool> ownerPinExists() async {
@@ -936,7 +1022,55 @@ class DatabaseHelper {
     final db = await database;
     await _ensureProductSchema(db);
     final now = DateTime.now().toIso8601String();
-    final trimmedBarcode = barcode.trim();
+    final trimmedBarcode = barcode.replaceAll(RegExp(r'[^0-9]'), '').trim();
+    final trimmedName = productName
+        .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    String? trimmedCategory;
+    if (category != null) {
+      trimmedCategory = category
+          .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+    String? trimmedDescription;
+    if (description != null) {
+      trimmedDescription = description
+          .replaceAll(
+            RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]'),
+            ' ',
+          )
+          .replaceAll(RegExp(r'[ \t]+'), ' ')
+          .trim();
+    }
+    final trimmedImageUrl = imageUrl?.trim();
+
+    if (trimmedBarcode.length < 4 ||
+        trimmedBarcode.length > 18 ||
+        RegExp(r'^0+$').hasMatch(trimmedBarcode)) {
+      throw Exception('Invalid barcode');
+    }
+    if (trimmedName.isEmpty || trimmedName.length > 120) {
+      throw Exception('Invalid product name');
+    }
+    if (trimmedCategory == null ||
+        trimmedCategory.isEmpty ||
+        trimmedCategory.length > 60) {
+      throw Exception('Invalid category');
+    }
+    if (trimmedDescription != null && trimmedDescription.length > 500) {
+      throw Exception('Description is too long');
+    }
+    if (!price.isFinite || price <= 0 || price > 9999999.99) {
+      throw Exception('Invalid selling price');
+    }
+    if (!costPrice.isFinite || costPrice <= 0 || costPrice > 9999999.99) {
+      throw Exception('Invalid cost price');
+    }
+    if (stockQuantity < 0 || stockQuantity > 999999999) {
+      throw Exception('Invalid stock quantity');
+    }
 
     if (await barcodeExists(trimmedBarcode)) {
       throw Exception('Barcode already exists');
@@ -945,13 +1079,15 @@ class DatabaseHelper {
     try {
       final productId = await db.insert('products', {
         'barcode': trimmedBarcode,
-        'product_name': productName.trim(),
-        'category': category?.trim(),
-        'description': description?.trim(),
+        'product_name': trimmedName,
+        'category': trimmedCategory,
+        'description': trimmedDescription?.isEmpty == true
+            ? null
+            : trimmedDescription,
         'price': price,
         'cost_price': costPrice,
         'stock_quantity': stockQuantity,
-        'image_url': imageUrl?.trim(),
+        'image_url': trimmedImageUrl?.isEmpty == true ? null : trimmedImageUrl,
         'created_at': now,
         'updated_at': now,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -960,7 +1096,7 @@ class DatabaseHelper {
         action: 'product_create',
         details: _auditDetails({
           'product_id': productId,
-          'product_name': productName.trim(),
+          'product_name': trimmedName,
           'barcode': trimmedBarcode,
           'stock_quantity': stockQuantity,
           'price': price,
@@ -1064,12 +1200,44 @@ class DatabaseHelper {
 
   Future<int> insertSale(Map<String, dynamic> sale) async {
     final db = await database;
-    return await db.insert('sales', sale);
+    await _ensureSalesSchema(db);
+
+    final row = Map<String, dynamic>.from(sale);
+    final createdAt =
+        DateTime.tryParse(row['created_at']?.toString() ?? '') ??
+        DateTime.now();
+    row['created_at'] ??= createdAt.toIso8601String();
+    row['completion_due_at'] ??= createdAt
+        .add(saleCompletionGracePeriod)
+        .toIso8601String();
+    row.putIfAbsent('completed_at', () => null);
+
+    return await db.insert('sales', row);
+  }
+
+  Future<int> completeDueSales() async {
+    final db = await database;
+    await _ensureSalesSchema(db);
+
+    final now = DateTime.now().toIso8601String();
+    return db.update(
+      'sales',
+      {'completed_at': now},
+      where: '''
+        (completed_at IS NULL OR completed_at = '')
+        AND (voided_at IS NULL OR voided_at = '')
+        AND completion_due_at IS NOT NULL
+        AND completion_due_at != ''
+        AND completion_due_at <= ?
+      ''',
+      whereArgs: [now],
+    );
   }
 
   Future<List<Map<String, dynamic>>> getSales() async {
     final db = await database;
     await _ensureSalesSchema(db);
+    await completeDueSales();
     return await db.query('sales', orderBy: 'created_at DESC');
   }
 
@@ -1077,9 +1245,14 @@ class DatabaseHelper {
     required int saleId,
     required String user,
     String? reason,
+    bool adminApproved = false,
+    bool voidWindowHeld = false,
   }) async {
     final db = await database;
     await _ensureSalesSchema(db);
+    if (!voidWindowHeld) {
+      await completeDueSales();
+    }
 
     final saleRows = await db.query(
       'sales',
@@ -1093,6 +1266,11 @@ class DatabaseHelper {
     if ((selectedSale['voided_at']?.toString() ?? '').isNotEmpty) {
       throw Exception('Sale is already voided');
     }
+    final isCompleted =
+        (selectedSale['completed_at']?.toString() ?? '').isNotEmpty;
+    if (isCompleted && !adminApproved && !voidWindowHeld) {
+      throw Exception('Admin PIN is required to void completed sales');
+    }
 
     final createdAt = DateTime.tryParse(selectedSale['created_at'].toString());
     if (createdAt == null) {
@@ -1102,8 +1280,11 @@ class DatabaseHelper {
     final start = createdAt.subtract(const Duration(seconds: 1));
     final end = createdAt.add(const Duration(seconds: 1));
     final now = DateTime.now().toIso8601String();
-    final normalizedUser = user.trim().isEmpty ? 'unknown' : user.trim();
-    final trimmedReason = reason?.trim();
+    final sanitizedUser = _sanitizeAuditText(user, maxLength: 80);
+    final normalizedUser = sanitizedUser.isEmpty ? 'unknown' : sanitizedUser;
+    final trimmedReason = reason == null
+        ? null
+        : _sanitizeAuditText(reason, maxLength: 250, multiline: true);
 
     late List<Map<String, Object?>> saleItems;
     await db.transaction((txn) async {
@@ -1167,6 +1348,9 @@ class DatabaseHelper {
         'quantity': quantity,
         'total': total,
         'reason': trimmedReason,
+        'completed': isCompleted,
+        'admin_approved': adminApproved,
+        'void_window_held': voidWindowHeld,
       }),
     );
 

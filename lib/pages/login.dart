@@ -30,6 +30,8 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _invalidCredentials = false;
+  static const int _maxUsernameLength = 40;
+  static const int _maxPasswordLength = 128;
 
   @override
   void dispose() {
@@ -43,10 +45,14 @@ class _LoginPageState extends State<LoginPage> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
+    final username = _sanitizeUsername(_usernameController.text);
+    final password = _sanitizePassword(_passwordController.text);
+    _usernameController.text = username;
+    _passwordController.text = password;
 
     final user = await DatabaseHelper.instance.login(
-      _usernameController.text.trim(),
-      _passwordController.text,
+      username,
+      password,
     );
 
     if (!mounted) return;
@@ -71,6 +77,38 @@ class _LoginPageState extends State<LoginPage> {
   void _clearLoginError() {
     if (!_invalidCredentials) return;
     setState(() => _invalidCredentials = false);
+  }
+
+  String _sanitizeUsername(String value) {
+    return value
+        .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '')
+        .trim()
+        .toLowerCase();
+  }
+
+  String _sanitizePassword(String value) {
+    return value.replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '');
+  }
+
+  String? _validateUsername(String? value) {
+    final username = _sanitizeUsername(value ?? '');
+    if (username.isEmpty) return 'Please enter your username';
+    if (username.length < 3) return 'Username must be at least 3 characters';
+    if (username.length > _maxUsernameLength) return 'Username is too long';
+    if (!RegExp(r'^[a-z0-9_]+$').hasMatch(username)) {
+      return 'Use letters, numbers, and underscores only';
+    }
+    if (_invalidCredentials) return 'Invalid username or password';
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    final password = _sanitizePassword(value ?? '');
+    if (password.isEmpty) return 'Please enter your password';
+    if (password.length < 6) return 'Password must be at least 6 characters';
+    if (password.length > _maxPasswordLength) return 'Password is too long';
+    if (_invalidCredentials) return 'Invalid username or password';
+    return null;
   }
 
   void _showForgotPasswordDialog() {
@@ -156,6 +194,14 @@ class _LoginPageState extends State<LoginPage> {
                         TextFormField(
                           controller: _usernameController,
                           onChanged: (_) => _clearLoginError(),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.deny(
+                              RegExp(r'[\u0000-\u001F\u007F\s]'),
+                            ),
+                            LengthLimitingTextInputFormatter(
+                              _maxUsernameLength,
+                            ),
+                          ],
                           decoration: InputDecoration(
                             labelText: 'Username',
                             hintText: 'Enter your username',
@@ -166,15 +212,7 @@ class _LoginPageState extends State<LoginPage> {
                             filled: true,
                             fillColor: fieldColor,
                           ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Please enter your username';
-                            }
-                            if (_invalidCredentials) {
-                              return 'Invalid username or password';
-                            }
-                            return null;
-                          },
+                          validator: _validateUsername,
                         ),
                         const SizedBox(height: 16),
                         TextFormField(
@@ -182,6 +220,14 @@ class _LoginPageState extends State<LoginPage> {
                           onChanged: (_) => _clearLoginError(),
                           obscureText: _obscurePassword,
                           keyboardType: TextInputType.visiblePassword,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.deny(
+                              RegExp(r'[\u0000-\u001F\u007F]'),
+                            ),
+                            LengthLimitingTextInputFormatter(
+                              _maxPasswordLength,
+                            ),
+                          ],
                           decoration: InputDecoration(
                             labelText: 'Password',
                             hintText: 'Enter your password',
@@ -202,18 +248,7 @@ class _LoginPageState extends State<LoginPage> {
                             filled: true,
                             fillColor: fieldColor,
                           ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your password';
-                            }
-                            if (value.length < 6) {
-                              return 'Password must be at least 6 characters';
-                            }
-                            if (_invalidCredentials) {
-                              return 'Invalid username or password';
-                            }
-                            return null;
-                          },
+                          validator: _validatePassword,
                         ),
                         const SizedBox(height: 8),
                         Align(

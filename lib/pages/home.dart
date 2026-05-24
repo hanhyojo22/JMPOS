@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'history_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -96,6 +98,7 @@ class _HomePageState extends State<HomePage> {
     try {
       final db = await DatabaseHelper.instance.database;
       await DatabaseHelper.instance.ensureSalesSchema();
+      await DatabaseHelper.instance.completeDueSales();
 
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
@@ -513,6 +516,10 @@ class _HomePageState extends State<HomePage> {
     final db = await DatabaseHelper.instance.database;
     try {
       await DatabaseHelper.instance.ensureSalesSchema();
+      final createdAt = DateTime.now();
+      final completionDueAt = createdAt.add(
+        DatabaseHelper.saleCompletionGracePeriod,
+      );
       await db.transaction((txn) async {
         for (final item in sharedCart) {
           final product = item['product'] as Map<String, dynamic>;
@@ -564,7 +571,9 @@ class _HomePageState extends State<HomePage> {
             'image_url': imagePath == null || imagePath.isEmpty
                 ? null
                 : imagePath,
-            'created_at': DateTime.now().toIso8601String(),
+            'completion_due_at': completionDueAt.toIso8601String(),
+            'completed_at': null,
+            'created_at': createdAt.toIso8601String(),
           });
 
           await txn.update(
@@ -582,8 +591,11 @@ class _HomePageState extends State<HomePage> {
       });
 
       sharedCart.clear();
+      Timer(DatabaseHelper.saleCompletionGracePeriod, () async {
+        await DatabaseHelper.instance.completeDueSales();
+      });
       await loadRecentTransactions();
-      _showSnack('Sale completed successfully!', top: true);
+      _showSnack('Sale saved. Void available for 10 seconds.', top: true);
       return true;
     } catch (e) {
       final message = e.toString().replaceFirst('Exception: ', '');

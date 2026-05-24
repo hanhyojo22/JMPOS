@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
 
@@ -28,6 +31,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
   bool _loading = true;
   bool _voiding = false;
   String? _error;
+  Timer? _completionTimer;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
@@ -42,6 +46,12 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
     _loadSale();
   }
 
+  @override
+  void dispose() {
+    _completionTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadSale() async {
     setState(() {
       _loading = true;
@@ -51,6 +61,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
     try {
       final db = await DatabaseHelper.instance.database;
       await DatabaseHelper.instance.ensureSalesSchema();
+      await DatabaseHelper.instance.completeDueSales();
 
       final rows = await db.rawQuery(
         '''
@@ -64,6 +75,8 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
           sales.voided_at,
           sales.voided_by,
           sales.void_reason,
+          sales.completion_due_at,
+          sales.completed_at,
           sales.created_at,
           products.category AS category,
           products.barcode AS barcode
@@ -99,6 +112,8 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
               sales.voided_at,
               sales.voided_by,
               sales.void_reason,
+              sales.completion_due_at,
+              sales.completed_at,
               sales.created_at,
               products.category AS category,
               products.barcode AS barcode
@@ -122,6 +137,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
         _items = transactionItems;
         _loading = false;
       });
+      _scheduleCompletionRefresh();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -170,38 +186,57 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
 
   bool get _isVoided => (_sale?['voided_at']?.toString() ?? '').isNotEmpty;
 
+  bool get _isCompleted =>
+      (_sale?['completed_at']?.toString() ?? '').isNotEmpty;
+
+  DateTime? _completionDueAt() {
+    final raw = _sale?['completion_due_at']?.toString();
+    if (raw == null || raw.isEmpty) return null;
+    return DateTime.tryParse(raw)?.toLocal();
+  }
+
+  void _scheduleCompletionRefresh() {
+    _completionTimer?.cancel();
+    if (_sale == null || _isVoided || _isCompleted) return;
+
+    final dueAt = _completionDueAt();
+    if (dueAt == null) return;
+
+    final delay = dueAt.difference(DateTime.now());
+    if (delay <= Duration.zero) {
+      DatabaseHelper.instance.completeDueSales().then((_) {
+        if (mounted) _loadSale();
+      });
+      return;
+    }
+
+    _completionTimer = Timer(delay, () async {
+      await DatabaseHelper.instance.completeDueSales();
+      if (mounted) _loadSale();
+    });
+  }
+
   Future<void> _confirmVoidSale() async {
-    final reasonController = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final requiresAdminPin = _isCompleted;
+    final dueAt = _completionDueAt();
+    final voidWindowHeld =
+        !requiresAdminPin && dueAt != null && DateTime.now().isBefore(dueAt);
+    if (voidWindowHeld) {
+      _completionTimer?.cancel();
+    }
+
+    final voidRequest = await showDialog<_VoidSaleRequest>(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Void sale'),
-        content: TextField(
-          controller: reasonController,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: 'Reason',
-            hintText: 'Optional note',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Void', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+      builder: (_) => _VoidSaleDialog(
+        requiresAdminPin: requiresAdminPin,
+        currentUsername: widget.currentUsername,
+        secondaryText: _secondaryText,
+        successColor: _success,
       ),
     );
 
-    if (confirmed != true || !mounted) {
-      reasonController.dispose();
+    if (voidRequest == null || !mounted) {
+      if (voidWindowHeld) _scheduleCompletionRefresh();
       return;
     }
 
@@ -209,8 +244,10 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
     try {
       final success = await DatabaseHelper.instance.voidSaleTransaction(
         saleId: widget.saleId,
-        user: widget.currentUsername,
-        reason: reasonController.text,
+        user: voidRequest.adminUser,
+        reason: voidRequest.reason,
+        adminApproved: voidRequest.adminApproved,
+        voidWindowHeld: voidRequest.voidWindowHeld,
       );
 
       if (!mounted) return;
@@ -227,9 +264,8 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _voiding = false);
+      if (voidWindowHeld) _scheduleCompletionRefresh();
       _showActionMessage('Error: $e');
-    } finally {
-      reasonController.dispose();
     }
   }
 
@@ -383,7 +419,21 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
 
   Widget _statusPill() {
     final isVoided = _isVoided;
-    final color = isVoided ? Colors.red : _success;
+    final isCompleted = _isCompleted;
+    final Color color;
+    final String label;
+
+    if (isVoided) {
+      color = Colors.red;
+      label = 'Voided';
+    } else if (isCompleted) {
+      color = _success;
+      label = 'Completed';
+    } else {
+      color = const Color(0xFFF59E0B);
+      label = 'Void Window';
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -391,7 +441,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        isVoided ? 'Voided' : 'Completed',
+        label,
         style: TextStyle(
           color: color,
           fontSize: 11,
@@ -761,6 +811,262 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _VoidSaleRequest {
+  const _VoidSaleRequest({
+    required this.reason,
+    required this.adminUser,
+    required this.adminApproved,
+    required this.voidWindowHeld,
+  });
+
+  final String reason;
+  final String adminUser;
+  final bool adminApproved;
+  final bool voidWindowHeld;
+}
+
+class _VoidSaleDialog extends StatefulWidget {
+  const _VoidSaleDialog({
+    required this.requiresAdminPin,
+    required this.currentUsername,
+    required this.secondaryText,
+    required this.successColor,
+  });
+
+  final bool requiresAdminPin;
+  final String currentUsername;
+  final Color secondaryText;
+  final Color successColor;
+
+  @override
+  State<_VoidSaleDialog> createState() => _VoidSaleDialogState();
+}
+
+class _VoidSaleDialogState extends State<_VoidSaleDialog> {
+  static const int _maxReasonLength = 250;
+  static const int _maxPinLength = 6;
+
+  final _reasonController = TextEditingController();
+  final _pinController = TextEditingController();
+  bool _verifyingPin = false;
+  String? _pinError;
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    _pinController.dispose();
+    super.dispose();
+  }
+
+  String _sanitizeReason(String value) {
+    final sanitized = value
+        .replaceAll(
+          RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]'),
+          ' ',
+        )
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .trim();
+    return sanitized.length <= _maxReasonLength
+        ? sanitized
+        : sanitized.substring(0, _maxReasonLength).trimRight();
+  }
+
+  String _sanitizePin(String value) {
+    final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+    return digits.length <= _maxPinLength
+        ? digits
+        : digits.substring(0, _maxPinLength);
+  }
+
+  String? _pinValidationMessage(String pin) {
+    if (pin.isEmpty) return 'Enter admin PIN';
+    if (pin.length < 4) return 'PIN must be 4 to 6 digits';
+    if (pin.length > _maxPinLength) return 'PIN must be 4 to 6 digits';
+    return null;
+  }
+
+  Future<void> _submitVoid() async {
+    if (_verifyingPin) return;
+
+    final reason = _sanitizeReason(_reasonController.text);
+    _reasonController.text = reason;
+
+    if (!widget.requiresAdminPin) {
+      Navigator.pop(
+        context,
+        _VoidSaleRequest(
+          reason: reason,
+          adminUser: widget.currentUsername,
+          adminApproved: false,
+          voidWindowHeld: true,
+        ),
+      );
+      return;
+    }
+
+    final pin = _sanitizePin(_pinController.text);
+    _pinController.text = pin;
+    final pinError = _pinValidationMessage(pin);
+    if (pinError != null) {
+      setState(() => _pinError = pinError);
+      return;
+    }
+
+    setState(() {
+      _verifyingPin = true;
+      _pinError = null;
+    });
+
+    Map<String, dynamic>? admin;
+    try {
+      admin = await DatabaseHelper.instance.verifyAdminPin(pin);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _verifyingPin = false;
+        _pinError = 'Could not verify PIN';
+      });
+      return;
+    }
+    if (!mounted) return;
+
+    if (admin == null) {
+      setState(() {
+        _verifyingPin = false;
+        _pinError = 'Invalid admin PIN';
+      });
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      _VoidSaleRequest(
+        reason: reason,
+        adminUser: admin['username']?.toString() ?? 'admin',
+        adminApproved: true,
+        voidWindowHeld: false,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('Void sale'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (widget.requiresAdminPin)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.admin_panel_settings_outlined,
+                    color: Colors.red,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This sale is completed. Admin PIN is required.',
+                      style: TextStyle(
+                        color: widget.secondaryText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          TextField(
+            controller: _reasonController,
+            maxLines: 3,
+            maxLength: _maxReasonLength,
+            inputFormatters: [
+              FilteringTextInputFormatter.deny(
+                RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]'),
+              ),
+              LengthLimitingTextInputFormatter(_maxReasonLength),
+            ],
+            decoration: const InputDecoration(
+              labelText: 'Reason',
+              hintText: 'Optional note',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          if (widget.requiresAdminPin) ...[
+            const SizedBox(height: 14),
+            TextField(
+              controller: _pinController,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              enabled: !_verifyingPin,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(_maxPinLength),
+              ],
+              onChanged: (_) {
+                if (_pinError != null) {
+                  setState(() => _pinError = null);
+                }
+              },
+              decoration: InputDecoration(
+                labelText: 'Admin PIN',
+                prefixIcon: const Icon(Icons.pin_outlined),
+                errorText: _pinError,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  Icons.timer_outlined,
+                  color: widget.successColor,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Still in void window. No admin PIN required.',
+                    style: TextStyle(
+                      color: widget.secondaryText,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _verifyingPin ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+          onPressed: _verifyingPin ? null : _submitVoid,
+          child: _verifyingPin
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('Void', style: TextStyle(color: Colors.white)),
+        ),
+      ],
     );
   }
 }

@@ -23,20 +23,23 @@ class _PinLoginPageState extends State<PinLoginPage> {
     systemNavigationBarContrastEnforced: false,
   );
 
+  static const int _minPinLength = 4;
+  static const int _maxPinLength = 6;
+
   String _pin = '';
   bool _isLoading = false;
   bool _invalidPin = false;
 
   void _enterDigit(String digit) {
-    if (_pin.length >= 4 || _isLoading) return;
-    final nextPin = _pin + digit;
+    if (_pin.length >= _maxPinLength || _isLoading) return;
+    final nextPin = _sanitizePin(_pin + digit);
     setState(() {
       _invalidPin = false;
       _pin = nextPin;
     });
-    if (nextPin.length == 4) {
+    if (nextPin.length >= _minPinLength) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _login();
+        if (mounted) _login(auto: true);
       });
     }
   }
@@ -49,23 +52,36 @@ class _PinLoginPageState extends State<PinLoginPage> {
     });
   }
 
-  Future<void> _login() async {
-    if (_pin.length != 4) {
-      setState(() => _invalidPin = true);
+  String _sanitizePin(String value) {
+    final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+    return digits.length <= _maxPinLength
+        ? digits
+        : digits.substring(0, _maxPinLength);
+  }
+
+  Future<void> _login({bool auto = false}) async {
+    if (_isLoading) return;
+
+    final pin = _sanitizePin(_pin);
+    if (pin.length < _minPinLength || pin.length > _maxPinLength) {
+      if (!auto) setState(() => _invalidPin = true);
       return;
     }
+    setState(() => _pin = pin);
 
     setState(() {
       _isLoading = true;
       _invalidPin = false;
     });
 
-    final user = await DatabaseHelper.instance.loginWithPin(_pin);
+    final user = await DatabaseHelper.instance.loginWithPin(pin);
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (user == null) {
+      if (auto && pin.length < _maxPinLength) return;
+
       HapticFeedback.mediumImpact();
       setState(() {
         _pin = '';
@@ -164,6 +180,7 @@ class _PinLoginPageState extends State<PinLoginPage> {
                         const SizedBox(height: 26),
                         _PinDots(
                           count: _pin.length,
+                          maxCount: _maxPinLength,
                           invalid: _invalidPin,
                           activeColor: const Color(0xFF667eea),
                           inactiveColor: secondaryText.withValues(alpha: 0.25),
@@ -183,8 +200,11 @@ class _PinLoginPageState extends State<PinLoginPage> {
                         _PinKeypad(
                           textColor: primaryText,
                           surfaceColor: fieldColor,
+                          canSubmit:
+                              _pin.length >= _minPinLength && !_isLoading,
                           onDigit: _enterDigit,
                           onBackspace: _deleteDigit,
+                          onSubmit: () => _login(),
                         ),
                         if (_isLoading) ...[
                           const SizedBox(height: 22),
@@ -215,12 +235,14 @@ class _PinLoginPageState extends State<PinLoginPage> {
 class _PinDots extends StatelessWidget {
   const _PinDots({
     required this.count,
+    required this.maxCount,
     required this.invalid,
     required this.activeColor,
     required this.inactiveColor,
   });
 
   final int count;
+  final int maxCount;
   final bool invalid;
   final Color activeColor;
   final Color inactiveColor;
@@ -229,7 +251,7 @@ class _PinDots extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(4, (index) {
+      children: List.generate(maxCount, (index) {
         final active = index < count;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 160),
@@ -254,14 +276,18 @@ class _PinKeypad extends StatelessWidget {
   const _PinKeypad({
     required this.textColor,
     required this.surfaceColor,
+    required this.canSubmit,
     required this.onDigit,
     required this.onBackspace,
+    required this.onSubmit,
   });
 
   final Color textColor;
   final Color surfaceColor;
+  final bool canSubmit;
   final ValueChanged<String> onDigit;
   final VoidCallback onBackspace;
+  final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
@@ -293,7 +319,17 @@ class _PinKeypad extends StatelessWidget {
         ],
         Row(
           children: [
-            const Expanded(child: SizedBox(height: 54)),
+            Expanded(
+              child: _PinKey(
+                icon: Icons.check_rounded,
+                tooltip: 'Submit PIN',
+                textColor: canSubmit
+                    ? textColor
+                    : textColor.withValues(alpha: 0.35),
+                surfaceColor: surfaceColor,
+                onTap: canSubmit ? onSubmit : null,
+              ),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: _PinKey(
@@ -307,6 +343,7 @@ class _PinKeypad extends StatelessWidget {
             Expanded(
               child: _PinKey(
                 icon: Icons.backspace_outlined,
+                tooltip: 'Backspace',
                 textColor: textColor,
                 surfaceColor: surfaceColor,
                 onTap: onBackspace,
@@ -323,21 +360,23 @@ class _PinKey extends StatelessWidget {
   const _PinKey({
     required this.textColor,
     required this.surfaceColor,
-    required this.onTap,
+    this.onTap,
     this.label,
     this.icon,
+    this.tooltip,
   });
 
   final String? label;
   final IconData? icon;
+  final String? tooltip;
   final Color textColor;
   final Color surfaceColor;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: label == null ? 'Backspace' : 'PIN $label',
+      message: tooltip ?? 'PIN $label',
       child: Material(
         color: surfaceColor,
         borderRadius: BorderRadius.circular(14),

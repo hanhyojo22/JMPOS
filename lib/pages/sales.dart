@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -280,6 +281,10 @@ class _SalesPageState extends State<SalesPage> {
     final db = await DatabaseHelper.instance.database;
     try {
       await DatabaseHelper.instance.ensureSalesSchema();
+      final createdAt = DateTime.now();
+      final completionDueAt = createdAt.add(
+        DatabaseHelper.saleCompletionGracePeriod,
+      );
       for (final item in _cart) {
         final product = item['product'];
         final int quantity = item['quantity'];
@@ -294,7 +299,9 @@ class _SalesPageState extends State<SalesPage> {
           'image_url': imagePath == null || imagePath.isEmpty
               ? null
               : imagePath,
-          'created_at': DateTime.now().toIso8601String(),
+          'completion_due_at': completionDueAt.toIso8601String(),
+          'completed_at': null,
+          'created_at': createdAt.toIso8601String(),
         });
         await db.update(
           'products',
@@ -307,9 +314,12 @@ class _SalesPageState extends State<SalesPage> {
         );
       }
       _cart.clear();
+      Timer(DatabaseHelper.saleCompletionGracePeriod, () async {
+        await DatabaseHelper.instance.completeDueSales();
+      });
       await _loadProducts();
       _notifyCartChanged();
-      _showSnack('Sale completed successfully!', top: true);
+      _showSnack('Sale saved. Void available for 10 seconds.', top: true);
     } catch (e) {
       _showSnack('Error: $e', isError: true);
     }

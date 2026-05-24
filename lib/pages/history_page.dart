@@ -71,6 +71,7 @@ class _HistoryPageState extends State<HistoryPage> {
   Future<void> loadSalesHistory() async {
     final db = await DatabaseHelper.instance.database;
     await DatabaseHelper.instance.ensureSalesSchema();
+    await DatabaseHelper.instance.completeDueSales();
 
     final history = await db.rawQuery('''
       SELECT

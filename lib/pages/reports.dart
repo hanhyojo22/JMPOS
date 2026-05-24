@@ -40,6 +40,8 @@ class _ReportsPageState extends State<ReportsPage>
     setState(() => _loading = true);
     try {
       final db = await DatabaseHelper.instance.database;
+      await DatabaseHelper.instance.ensureSalesSchema();
+      await DatabaseHelper.instance.completeDueSales();
       final rows = await db.query('sales', orderBy: 'created_at DESC');
 
       final now = DateTime.now();
