@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:pos_app/services/env_config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseSyncService {
@@ -9,18 +8,25 @@ class SupabaseSyncService {
   Future<void> uploadEvents(List<Map<String, Object?>> events) async {
     if (events.isEmpty) return;
 
-    final url = EnvConfig.supabaseUrl;
-    final anonKey = EnvConfig.supabaseAnonKey;
-    if (url.isEmpty || anonKey.isEmpty) {
-      throw Exception('Supabase URL or anon key is missing.');
-    }
-
-    final client = SupabaseClient(url, anonKey);
+    final client = _authenticatedClient();
     final rows = events.map(_toSupabaseRow).toList(growable: false);
     await client.from('pos_sync_events').upsert(rows, onConflict: 'event_id');
 
     for (final event in events) {
       await _uploadMirrorRow(client, event);
+    }
+  }
+
+  SupabaseClient _authenticatedClient() {
+    try {
+      final client = Supabase.instance.client;
+      if (client.auth.currentSession == null) {
+        throw Exception('Sign in to Supabase Cloud Sync first.');
+      }
+      return client;
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Supabase is not configured.');
     }
   }
 

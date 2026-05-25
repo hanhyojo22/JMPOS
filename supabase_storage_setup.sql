@@ -10,5 +10,5 @@ drop policy if exists "Allow POS backup uploads" on storage.objects;
 create policy "Allow POS backup uploads"
 on storage.objects
 for insert
-to anon
+to authenticated
 with check (bucket_id = 'backupfiles');

@@ -1120,11 +1120,15 @@ class DatabaseHelper {
     final db = await database;
     final normalizedUsername = _normalizeAuthUsername(username);
     final normalizedPassword = _sanitizeAuthSecret(password);
+    final isEmailLogin = RegExp(
+      r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+    ).hasMatch(normalizedUsername);
     if (normalizedUsername.length < 3 ||
-        normalizedUsername.length > 40 ||
+        normalizedUsername.length > 80 ||
         normalizedPassword.length < 6 ||
         normalizedPassword.length > 128 ||
-        !RegExp(r'^[a-z0-9_]+$').hasMatch(normalizedUsername)) {
+        (!isEmailLogin &&
+            !RegExp(r'^[a-z0-9_]+$').hasMatch(normalizedUsername))) {
       await recordAuditLog(
         user: normalizedUsername.isEmpty ? 'unknown' : normalizedUsername,
         action: 'login_failed',
@@ -1139,7 +1143,9 @@ class DatabaseHelper {
 
     final result = await db.query(
       'users',
-      where: 'username = ? AND password_hash = ?',
+      where: isEmailLogin
+          ? 'email = ? AND password_hash = ?'
+          : 'username = ? AND password_hash = ?',
       whereArgs: [normalizedUsername, hash],
     );
 
@@ -1274,16 +1280,20 @@ class DatabaseHelper {
     required String password,
     String? email,
     String? storeName,
+    String? fullName,
   }) async {
     final db = await database;
     final trimmedStoreName = storeName?.trim();
+    final trimmedFullName = fullName?.trim();
     try {
       return await db.insert('users', {
         'username': username.trim().toLowerCase(),
         'password_hash': _hashPassword(password),
-        'full_name': trimmedStoreName == null || trimmedStoreName.isEmpty
-            ? username.trim()
-            : trimmedStoreName,
+        'full_name': trimmedFullName == null || trimmedFullName.isEmpty
+            ? trimmedStoreName == null || trimmedStoreName.isEmpty
+                  ? username.trim()
+                  : trimmedStoreName
+            : trimmedFullName,
         'email': email?.trim(),
         'role': 'admin',
         'created_at': DateTime.now().toIso8601String(),

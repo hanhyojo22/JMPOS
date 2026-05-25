@@ -30,7 +30,7 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _invalidCredentials = false;
-  static const int _maxUsernameLength = 40;
+  static const int _maxUsernameLength = 80;
   static const int _maxPasswordLength = 128;
 
   @override
@@ -92,11 +92,12 @@ class _LoginPageState extends State<LoginPage> {
 
   String? _validateUsername(String? value) {
     final username = _sanitizeUsername(value ?? '');
-    if (username.isEmpty) return 'Please enter your username';
-    if (username.length < 3) return 'Username must be at least 3 characters';
+    final isEmail = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(username);
+    if (username.isEmpty) return 'Please enter your username or email';
+    if (username.length < 3) return 'Login must be at least 3 characters';
     if (username.length > _maxUsernameLength) return 'Username is too long';
-    if (!RegExp(r'^[a-z0-9_]+$').hasMatch(username)) {
-      return 'Use letters, numbers, and underscores only';
+    if (!isEmail && !RegExp(r'^[a-z0-9_]+$').hasMatch(username)) {
+      return 'Use a username or valid email';
     }
     if (_invalidCredentials) return 'Invalid username or password';
     return null;
@@ -203,8 +204,8 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ],
                           decoration: InputDecoration(
-                            labelText: 'Username',
-                            hintText: 'Enter your username',
+                            labelText: 'Username or email',
+                            hintText: 'Enter your username or email',
                             prefixIcon: const Icon(Icons.person_outline),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),

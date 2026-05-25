@@ -8,6 +8,7 @@ import 'package:pos_app/main.dart';
 import 'package:pos_app/services/env_config.dart';
 import 'package:pos_app/services/supabase_backup_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 // ─── Settings Page ────────────────────────────────────────────────────────────
@@ -62,6 +63,8 @@ class _SettingsPageState extends State<SettingsPage> {
   int _cloudSyncTotal = 0;
   int _cloudSyncStep = 0;
   String _cloudSyncStatus = '';
+  String? _cloudAccountEmail;
+  bool _isCloudAuthBusy = false;
   String _storeName = 'My Sari-Sari Store';
   bool _pinEnabled = false;
 
@@ -84,6 +87,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadLastOnlineBackupDate();
     _loadLastSalesExportDate();
     _loadPendingSyncCount();
+    _loadCloudAccount();
   }
 
   Future<void> _loadStoreName() async {
@@ -255,6 +259,33 @@ class _SettingsPageState extends State<SettingsPage> {
                               )
                             : null,
                         onTap: _isBackingUp ? null : _backupDatabase,
+                      ),
+                      _SettingsRow(
+                        icon: Icons.admin_panel_settings_outlined,
+                        iconBg: const Color(0xFFE8F0FE),
+                        iconColor: const Color(0xFF315BB8),
+                        label: 'Cloud account',
+                        subtitle: _cloudAccountSubtitle,
+                        trailing: _isCloudAuthBusy
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : _cloudAccountEmail == null
+                            ? _buildBadge(
+                                'Sign in',
+                                const Color(0xFFFFF4DE),
+                                const Color(0xFF9A5B00),
+                              )
+                            : _buildBadge(
+                                'Signed in',
+                                const Color(0xFFE1F5EE),
+                                const Color(0xFF0F6E56),
+                              ),
+                        onTap: _isCloudAuthBusy ? null : _openCloudAuth,
                       ),
                       _SettingsRow(
                         icon: Icons.cloud_sync_outlined,
@@ -480,7 +511,14 @@ class _SettingsPageState extends State<SettingsPage> {
     return 'Last upload: ${_formatBackupDate(lastBackupAt)}';
   }
 
+  String get _cloudAccountSubtitle {
+    final email = _cloudAccountEmail;
+    if (email == null || email.isEmpty) return 'Sign in for Supabase sync';
+    return '$email - $_storeName';
+  }
+
   String get _cloudSyncSubtitle {
+    if (_cloudAccountEmail == null) return 'Sign in to cloud account first';
     if (_isSyncingCloud) {
       if (_cloudSyncStatus.isNotEmpty) return _cloudSyncStatus;
       if (_cloudSyncTotal <= 0) return 'Preparing local changes';
@@ -536,8 +574,97 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _pendingSyncCount = count);
   }
 
+  void _loadCloudAccount() {
+    try {
+      final email = Supabase.instance.client.auth.currentUser?.email?.trim();
+      if (!mounted) return;
+      setState(() => _cloudAccountEmail =
+          email == null || email.isEmpty ? null : email);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _cloudAccountEmail = null);
+    }
+  }
+
+  Future<void> _openCloudAuth() async {
+    HapticFeedback.lightImpact();
+    if (_cloudAccountEmail != null) {
+      final signOut = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          title: const Text('Sign out cloud account?'),
+          content: Text(
+            'This device will keep working offline. Cloud sync will pause until you sign in again.',
+            style: TextStyle(color: _secondaryText),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Sign out'),
+            ),
+          ],
+        ),
+      );
+      if (signOut == true) await _signOutCloudAccount();
+      return;
+    }
+
+    final signedIn = await showDialog<bool>(
+      context: context,
+      builder: (_) => const _CloudAuthDialog(),
+    );
+    if (signedIn == true) {
+      _loadCloudAccount();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cloud account signed in'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _signOutCloudAccount() async {
+    setState(() => _isCloudAuthBusy = true);
+    try {
+      await Supabase.instance.client.auth.signOut();
+      if (!mounted) return;
+      setState(() => _cloudAccountEmail = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cloud account signed out'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Cloud sign out failed: $e'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isCloudAuthBusy = false);
+    }
+  }
+
   Future<void> _syncCloudNow() async {
     HapticFeedback.lightImpact();
+    _loadCloudAccount();
+    if (_cloudAccountEmail == null) {
+      await _openCloudAuth();
+      if (_cloudAccountEmail == null) return;
+    }
     setState(() {
       _isSyncingCloud = true;
       _cloudSyncDone = 0;
@@ -1075,6 +1202,172 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CloudAuthDialog extends StatefulWidget {
+  const _CloudAuthDialog();
+
+  @override
+  State<_CloudAuthDialog> createState() => _CloudAuthDialogState();
+}
+
+class _CloudAuthDialogState extends State<_CloudAuthDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isSigningIn = false;
+  bool _obscurePassword = true;
+  String? _error;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _signIn() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    setState(() {
+      _isSigningIn = true;
+      _error = null;
+    });
+
+    try {
+      final response = await Supabase.instance.client.auth.signInWithPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+      if (!mounted) return;
+      setState(() => _isSigningIn = false);
+
+      if (response.session == null) {
+        setState(() => _error = 'Cloud sign in failed');
+        return;
+      }
+
+      Navigator.pop(context, true);
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSigningIn = false;
+        _error = e.message;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSigningIn = false;
+        _error = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+      });
+    }
+  }
+
+  String? _validateEmail(String? value) {
+    final email = value?.trim() ?? '';
+    if (email.isEmpty) return 'Enter Supabase email';
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      return 'Enter a valid email';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) return 'Enter password';
+    if (value.length < 6) return 'Password must be at least 6 characters';
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text(
+        'Cloud account',
+        style: TextStyle(fontWeight: FontWeight.w700),
+      ),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              enabled: !_isSigningIn,
+              decoration: InputDecoration(
+                labelText: 'Supabase email',
+                prefixIcon: const Icon(Icons.email_outlined),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              validator: _validateEmail,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _passwordController,
+              obscureText: _obscurePassword,
+              enabled: !_isSigningIn,
+              decoration: InputDecoration(
+                labelText: 'Supabase password',
+                prefixIcon: const Icon(Icons.lock_outline),
+                suffixIcon: IconButton(
+                  onPressed: _isSigningIn
+                      ? null
+                      : () => setState(
+                            () => _obscurePassword = !_obscurePassword,
+                          ),
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              validator: _validatePassword,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: const TextStyle(
+                  color: Color(0xFFDC2626),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSigningIn ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF667eea),
+            foregroundColor: Colors.white,
+          ),
+          onPressed: _isSigningIn ? null : _signIn,
+          child: _isSigningIn
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('Sign in'),
+        ),
+      ],
     );
   }
 }

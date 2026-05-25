@@ -45,7 +45,7 @@ class SupabaseBackupService {
       throw Exception('Backup file is empty.');
     }
 
-    final normalizedUrl = _normalizeProjectUrl(config.projectUrl);
+    _normalizeProjectUrl(config.projectUrl);
     final bucket = _sanitizePathSegment(config.bucket, fallback: 'backupfiles');
     final store = _sanitizePathSegment(storeName, fallback: 'store');
     final timestamp = DateTime.now().toUtc().toIso8601String().replaceAll(
@@ -57,7 +57,7 @@ class SupabaseBackupService {
         : p.extension(backupPath);
     final objectPath = '$store/pos_backup_$timestamp$extension';
 
-    final client = SupabaseClient(normalizedUrl, config.anonKey.trim());
+    final client = _clientForUpload();
     try {
       await client.storage
           .from(bucket)
@@ -73,6 +73,16 @@ class SupabaseBackupService {
     } on StorageException catch (e) {
       throw Exception(_uploadErrorMessage(e.statusCode, e.message, bucket));
     }
+  }
+
+  SupabaseClient _clientForUpload() {
+    try {
+      final client = Supabase.instance.client;
+      if (client.auth.currentSession != null) return client;
+    } catch (_) {
+      throw Exception('Supabase is not configured.');
+    }
+    throw Exception('Sign in to Supabase Cloud Sync first.');
   }
 
   String _normalizeProjectUrl(String value) {

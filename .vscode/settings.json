@@ -1,3 +1,4 @@
 {
-    "cmake.sourceDirectory": "C:/Users/Administrator/Desktop/POS/pos_app/linux"
+    "cmake.sourceDirectory": "C:/Users/Administrator/Desktop/POS/pos_app/linux",
+    "deno.enable": true
 }
