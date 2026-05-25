@@ -129,6 +129,48 @@ class LicenseActivationService {
     return readLocalActivation();
   }
 
+  Future<LicenseCheckResult> checkLicenseKey(String licenseKey) async {
+    _ensureConfigured();
+    final cleanedLicense = _sanitizeLicenseKey(licenseKey);
+    if (cleanedLicense.isEmpty) {
+      throw Exception('Enter a valid license code.');
+    }
+
+    final installationId = await getOrCreateInstallationId();
+    final response = await _postFunction(
+      'validate-license',
+      {
+        'installationId': installationId,
+        'licenseKey': cleanedLicense,
+      },
+    );
+
+    if (response == null) {
+      throw Exception('License check returned an empty response.');
+    }
+
+    final activated = response['activated'] == true;
+    if (activated) {
+      await saveActivation(
+        licenseKey: response['licenseKey']?.toString() ?? cleanedLicense,
+        installationId: installationId,
+        storeId: response['storeId']?.toString() ?? '',
+        activationToken: response['activationToken']?.toString() ?? '',
+        storeName: response['storeName']?.toString(),
+      );
+    }
+
+    return LicenseCheckResult(
+      licenseKey: cleanedLicense,
+      exists: response['licenseExists'] == true,
+      activated: activated,
+      restored: response['restored'] == true,
+      storeId: response['storeId']?.toString(),
+      storeName: response['storeName']?.toString(),
+      message: response['message']?.toString(),
+    );
+  }
+
   Future<LicenseActivation> activateStore({
     required String licenseKey,
     required String storeName,
@@ -249,6 +291,12 @@ class LicenseActivationService {
     }
   }
 
+  String _sanitizeLicenseKey(String value) {
+    final cleaned = value.trim().toUpperCase();
+    if (!RegExp(r'^[A-Z0-9_-]{4,40}$').hasMatch(cleaned)) return '';
+    return cleaned;
+  }
+
   String _createUuidV4() {
     final random = Random.secure();
     final bytes = List<int>.generate(16, (_) => random.nextInt(256));
@@ -264,4 +312,24 @@ class LicenseActivationService {
       value.substring(20),
     ].join('-');
   }
+}
+
+class LicenseCheckResult {
+  const LicenseCheckResult({
+    required this.licenseKey,
+    required this.exists,
+    required this.activated,
+    required this.restored,
+    this.storeId,
+    this.storeName,
+    this.message,
+  });
+
+  final String licenseKey;
+  final bool exists;
+  final bool activated;
+  final bool restored;
+  final String? storeId;
+  final String? storeName;
+  final String? message;
 }

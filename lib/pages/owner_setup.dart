@@ -6,9 +6,14 @@ import 'package:pos_app/services/license_activation_service.dart';
 import 'home.dart';
 
 class OwnerSetupPage extends StatefulWidget {
-  const OwnerSetupPage({super.key, this.activationRestored = false});
+  const OwnerSetupPage({
+    super.key,
+    this.activationRestored = false,
+    this.verifiedLicenseKey,
+  });
 
   final bool activationRestored;
+  final String? verifiedLicenseKey;
 
   @override
   State<OwnerSetupPage> createState() => _OwnerSetupPageState();
@@ -33,7 +38,6 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _pinController = TextEditingController();
-  final _inviteCodeController = TextEditingController();
 
   bool _isSaving = false;
   bool _obscurePassword = true;
@@ -49,7 +53,6 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _pinController.dispose();
-    _inviteCodeController.dispose();
     super.dispose();
   }
 
@@ -65,7 +68,14 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
     final password = _passwordController.text;
     final pin = _pinController.text.trim();
     if (!widget.activationRestored) {
-      final inviteCode = _inviteCodeController.text.trim().toUpperCase();
+      final inviteCode = widget.verifiedLicenseKey?.trim().toUpperCase() ?? '';
+      if (inviteCode.isEmpty) {
+        setState(() {
+          _isSaving = false;
+          _error = 'Verify a license before creating the owner account.';
+        });
+        return;
+      }
       try {
         await LicenseActivationService.instance.activateStore(
           licenseKey: inviteCode,
@@ -161,17 +171,6 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
     if (pin.isEmpty) return 'Owner PIN is required';
     if (!RegExp(r'^\d{4,6}$').hasMatch(pin)) {
       return 'PIN must be 4 to 6 digits';
-    }
-    return null;
-  }
-
-  String? _validateInviteCode(String? value) {
-    final code = value?.trim() ?? '';
-    if (code.isEmpty) return 'Invite/license code is required';
-    if (code.length < 4) return 'Code is too short';
-    if (code.length > 40) return 'Code is too long';
-    if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(code)) {
-      return 'Use letters, numbers, dash, or underscore only';
     }
     return null;
   }
@@ -402,29 +401,6 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
                           ),
                           validator: _validatePin,
                         ),
-                        if (!widget.activationRestored) ...[
-                          const SizedBox(height: 14),
-                          TextFormField(
-                            controller: _inviteCodeController,
-                            textCapitalization: TextCapitalization.characters,
-                            textInputAction: TextInputAction.done,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                RegExp(r'[a-zA-Z0-9_-]'),
-                              ),
-                              LengthLimitingTextInputFormatter(40),
-                            ],
-                            onFieldSubmitted: (_) {
-                              if (!_isSaving) _completeSetup();
-                            },
-                            decoration: _fieldDecoration(
-                              label: 'Invite/license code',
-                              hint: 'ABCD-1234',
-                              icon: Icons.vpn_key_outlined,
-                            ),
-                            validator: _validateInviteCode,
-                          ),
-                        ],
                         if (_error != null) ...[
                           const SizedBox(height: 14),
                           Text(

@@ -11,6 +11,7 @@ const corsHeaders = {
 type ValidateLicenseBody = {
   installationId?: string;
   activationToken?: string;
+  licenseKey?: string;
 };
 
 serve(async (req: Request) => {
@@ -26,6 +27,7 @@ serve(async (req: Request) => {
     const body = (await req.json()) as ValidateLicenseBody;
     const installationId = sanitizeToken(body.installationId, 120);
     const activationToken = sanitizeToken(body.activationToken, 120);
+    const licenseKey = sanitizeInviteCode(body.licenseKey);
 
     if (!installationId) {
       return jsonResponse({ error: "Installation id is required" }, 400);
@@ -42,6 +44,15 @@ serve(async (req: Request) => {
     });
 
     const installationIdHash = await sha256Hex(installationId);
+    if (licenseKey) {
+      const response = await validateLicenseKeyForDevice(
+        admin,
+        licenseKey,
+        installationIdHash,
+      );
+      return jsonResponse(response.body, response.status);
+    }
+
     const { data: device, error: deviceError } = await admin
       .from("store_devices")
       .select("store_id, invite_id, activation_token_hash, revoked_at")
@@ -121,6 +132,106 @@ function sanitizeToken(value: unknown, maxLength: number) {
   const token = String(value ?? "").trim();
   if (token.length > maxLength) return "";
   return /^[a-zA-Z0-9_.:-]+$/.test(token) ? token : "";
+}
+
+function sanitizeInviteCode(value: unknown) {
+  const code = String(value ?? "").trim().toUpperCase();
+  return /^[A-Z0-9_-]{4,40}$/.test(code) ? code : "";
+}
+
+async function validateLicenseKeyForDevice(
+  admin: ReturnType<typeof createClient>,
+  licenseKey: string,
+  installationIdHash: string,
+) {
+  const codeHash = await sha256Hex(licenseKey);
+  const { data: invite, error: inviteError } = await admin
+    .from("store_invites")
+    .select("id, store_id, max_uses, used_count, expires_at, status")
+    .eq("code_hash", codeHash)
+    .maybeSingle();
+
+  if (inviteError) throw inviteError;
+  if (!invite || invite.status === "revoked") {
+    return {
+      status: 404,
+      body: { error: "License code was not found" },
+    };
+  }
+  if (invite.expires_at && new Date(invite.expires_at) <= new Date()) {
+    return {
+      status: 400,
+      body: { error: "License code has expired" },
+    };
+  }
+
+  const { data: device, error: deviceError } = await admin
+    .from("store_devices")
+    .select("store_id, revoked_at")
+    .eq("installation_id_hash", installationIdHash)
+    .eq("invite_id", invite.id)
+    .maybeSingle();
+
+  if (deviceError) throw deviceError;
+  if (device && !device.revoked_at) {
+    const { data: store, error: storeError } = await admin
+      .from("stores")
+      .select("id, name")
+      .eq("id", device.store_id)
+      .single();
+    if (storeError) throw storeError;
+
+    const activationToken = crypto.randomUUID();
+    const activationTokenHash = await sha256Hex(activationToken);
+    const { error: updateError } = await admin
+      .from("store_devices")
+      .update({
+        activation_token_hash: activationTokenHash,
+        last_seen_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("installation_id_hash", installationIdHash)
+      .eq("invite_id", invite.id);
+    if (updateError) throw updateError;
+
+    return {
+      status: 200,
+      body: {
+        functionVersion: "validate-license-v2",
+        licenseExists: true,
+        activated: true,
+        restored: true,
+        storeId: store.id,
+        storeName: store.name,
+        licenseKey,
+        activationToken,
+        message: "This license was restored for this device.",
+      },
+    };
+  }
+
+  if ((invite.used_count ?? 0) >= invite.max_uses) {
+    return {
+      status: 409,
+      body: {
+        error: "License is already activated on another device",
+        licenseExists: true,
+        activated: false,
+      },
+    };
+  }
+
+  return {
+    status: 200,
+    body: {
+      functionVersion: "validate-license-v2",
+      licenseExists: true,
+      activated: false,
+      restored: false,
+      licenseKey,
+      message: "License is valid and ready for owner setup.",
+    },
+  };
 }
 
 async function sha256Hex(value: string) {

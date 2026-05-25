@@ -6,6 +6,7 @@ import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/services/env_config.dart';
 import 'package:pos_app/services/license_activation_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'pages/license_check_page.dart';
 import 'pages/login.dart';
 import 'pages/owner_setup.dart';
 
@@ -185,7 +186,7 @@ class StartupGate extends StatelessWidget {
           _StartupState.needsLocalOwner => const OwnerSetupPage(
             activationRestored: true,
           ),
-          _ => const OwnerSetupPage(),
+          _ => const LicenseCheckPage(),
         };
       },
     );
