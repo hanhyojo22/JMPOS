@@ -354,7 +354,6 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
   }
 
   Widget _buildSaleDetails() {
-    final sale = _sale!;
     final createdAt = _createdAt();
     final transactionTotal = _items.fold<double>(
       0.0,
