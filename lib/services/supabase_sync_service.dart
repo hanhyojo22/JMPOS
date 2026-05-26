@@ -9,7 +9,7 @@ class SupabaseSyncService {
   Future<void> uploadEvents(List<Map<String, Object?>> events) async {
     if (events.isEmpty) return;
 
-    final client = _authenticatedClient();
+    final client = await _authenticatedClient();
     final storeId = await _activeStoreId();
     final rows = events
         .map((event) => _toSupabaseRow(event, storeId))
@@ -21,11 +21,15 @@ class SupabaseSyncService {
     }
   }
 
-  SupabaseClient _authenticatedClient() {
+  Future<SupabaseClient> _authenticatedClient() async {
     try {
       final client = Supabase.instance.client;
-      if (client.auth.currentSession == null) {
-        throw Exception('Sign in to Supabase Cloud Sync first.');
+      final cloudSignedIn =
+          await LicenseActivationService.instance.ensureCloudSyncSignedIn();
+      if (!cloudSignedIn || client.auth.currentSession == null) {
+        throw Exception(
+          'Cloud sync is not connected. Activate or restore a license while online.',
+        );
       }
       return client;
     } catch (e) {

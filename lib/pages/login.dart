@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
@@ -67,6 +69,7 @@ class _LoginPageState extends State<LoginPage> {
 
     final loggedInUser = user;
     if (loggedInUser != null) {
+      unawaited(_rememberCloudSyncLogin(username, password));
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => HomePage(
@@ -109,6 +112,10 @@ class _LoginPageState extends State<LoginPage> {
         email: email,
         password: password,
       );
+      await LicenseActivationService.instance.saveCloudSyncCredentials(
+        email: email,
+        password: password,
+      );
 
       return DatabaseHelper.instance.upsertOwnerFromCloud(
         email: email,
@@ -118,6 +125,22 @@ class _LoginPageState extends State<LoginPage> {
       );
     } catch (_) {
       return null;
+    }
+  }
+
+  Future<void> _rememberCloudSyncLogin(String email, String password) async {
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      return;
+    }
+
+    try {
+      await LicenseActivationService.instance.saveCloudSyncCredentials(
+        email: email,
+        password: password,
+      );
+      await LicenseActivationService.instance.ensureCloudSyncSignedIn();
+    } catch (_) {
+      // Local login should still succeed if cloud is temporarily unavailable.
     }
   }
 

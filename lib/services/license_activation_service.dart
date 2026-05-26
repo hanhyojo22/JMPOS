@@ -40,6 +40,8 @@ class LicenseActivationService {
   static const _activationTokenKey = 'activation_token';
   static const _lastVerifiedAtKey = 'last_verified_at';
   static const _storeNameKey = 'store_name';
+  static const _cloudEmailKey = 'cloud_sync_email';
+  static const _cloudPasswordKey = 'cloud_sync_password';
   static const _offlineGracePeriod = Duration(days: 14);
 
   Future<String> getOrCreateInstallationId() async {
@@ -216,7 +218,44 @@ class LicenseActivationService {
     if (activation == null) {
       throw Exception('Could not save local activation.');
     }
+    await saveCloudSyncCredentials(email: email, password: password);
+    await ensureCloudSyncSignedIn();
     return activation;
+  }
+
+  Future<void> saveCloudSyncCredentials({
+    required String email,
+    required String password,
+  }) async {
+    final cleanedEmail = email.trim().toLowerCase();
+    if (cleanedEmail.isEmpty || password.isEmpty) return;
+
+    await Future.wait([
+      _secureStorage.write(key: _cloudEmailKey, value: cleanedEmail),
+      _secureStorage.write(key: _cloudPasswordKey, value: password),
+    ]);
+  }
+
+  Future<bool> ensureCloudSyncSignedIn() async {
+    try {
+      if (Supabase.instance.client.auth.currentSession != null) return true;
+
+      final values = await Future.wait([
+        _secureStorage.read(key: _cloudEmailKey),
+        _secureStorage.read(key: _cloudPasswordKey),
+      ]);
+      final email = values[0]?.trim().toLowerCase() ?? '';
+      final password = values[1] ?? '';
+      if (email.isEmpty || password.isEmpty) return false;
+
+      await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      return Supabase.instance.client.auth.currentSession != null;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> saveActivation({

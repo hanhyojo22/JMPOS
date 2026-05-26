@@ -84,7 +84,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (EnvConfig.supabaseUrl.isEmpty || EnvConfig.supabaseAnonKey.isEmpty) {
       return;
     }
-    if (Supabase.instance.client.auth.currentSession == null) {
+    final cloudSignedIn =
+        await LicenseActivationService.instance.ensureCloudSyncSignedIn();
+    if (!cloudSignedIn) {
       return;
     }
 
