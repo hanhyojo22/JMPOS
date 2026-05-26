@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'device_identity_service.dart';
 import 'env_config.dart';
@@ -241,6 +242,18 @@ class LicenseActivationService {
     await prefs.setString(_storeIdKey, storeId);
     if (storeName != null && storeName.trim().isNotEmpty) {
       await prefs.setString(_storeNameKey, storeName.trim());
+    }
+  }
+
+  Future<void> sendPasswordResetEmail(String email) async {
+    final cleanedEmail = email.trim().toLowerCase();
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(cleanedEmail)) {
+      throw Exception('Enter a valid email.');
+    }
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(cleanedEmail);
+    } catch (e) {
+      throw Exception('Could not send password reset email. $e');
     }
   }
 

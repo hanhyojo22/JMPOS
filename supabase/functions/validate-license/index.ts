@@ -220,10 +220,20 @@ async function validateLicenseKeyForDevice(
     if (invite.store_id) {
       const { data: store, error: storeError } = await admin
         .from("stores")
-        .select("id, name")
+        .select("id, name, owner_user_id")
         .eq("id", invite.store_id)
         .single();
       if (storeError) throw storeError;
+
+      let ownerEmailMasked = "";
+      if (store.owner_user_id) {
+        const { data: ownerData, error: ownerError } =
+          await admin.auth.admin.getUserById(store.owner_user_id);
+        if (ownerError) throw ownerError;
+
+        const ownerEmail = ownerData.user?.email?.trim() ?? "";
+        ownerEmailMasked = maskEmail(ownerEmail);
+      }
 
       return {
         status: 200,
@@ -236,8 +246,11 @@ async function validateLicenseKeyForDevice(
           storeId: store.id,
           storeName: store.name,
           licenseKey,
+          ownerEmailMasked,
           message:
-            "License is already registered. Sign in with the original owner account to restore this store.",
+            ownerEmailMasked
+              ? `License is already registered. Sign in with the registered owner email (${ownerEmailMasked}) or use Forgot Password.`
+              : "License is already registered. Sign in with the original owner account or use Forgot Password.",
         },
       };
     }
@@ -263,6 +276,13 @@ async function validateLicenseKeyForDevice(
       message: "License is valid and ready for owner setup.",
     },
   };
+}
+
+function maskEmail(email: string) {
+  const [name, domain] = email.split("@");
+  if (!name || !domain) return "";
+  const visible = name.slice(0, Math.min(2, name.length));
+  return `${visible}${"*".repeat(Math.max(1, name.length - visible.length))}@${domain}`;
 }
 
 async function sha256Hex(value: string) {

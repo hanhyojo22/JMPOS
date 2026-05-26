@@ -1303,6 +1303,59 @@ class DatabaseHelper {
     }
   }
 
+  Future<Map<String, dynamic>?> upsertOwnerFromCloud({
+    required String email,
+    required String password,
+    String? storeName,
+    String? fullName,
+  }) async {
+    final db = await database;
+    final normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail.isEmpty) return null;
+
+    final now = DateTime.now().toIso8601String();
+    final row = {
+      'username': normalizedEmail,
+      'password_hash': _hashPassword(password),
+      'full_name': (fullName?.trim().isNotEmpty == true)
+          ? fullName!.trim()
+          : normalizedEmail,
+      'email': normalizedEmail,
+      'role': 'admin',
+      'created_at': now,
+    };
+
+    final existing = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'role = ?',
+      whereArgs: ['admin'],
+      orderBy: 'created_at ASC',
+      limit: 1,
+    );
+
+    if (existing.isEmpty) {
+      await db.insert('users', row);
+      return getUserByUsername(normalizedEmail);
+    }
+
+    final ownerId = (existing.first['id'] as num).toInt();
+    await db.update(
+      'users',
+      row,
+      where: 'id = ?',
+      whereArgs: [ownerId],
+    );
+
+    await recordAuditLog(
+      user: normalizedEmail,
+      action: 'cloud_owner_login_cached',
+      details: _auditDetails({'store_name': storeName}),
+    );
+
+    return getUserByUsername(normalizedEmail);
+  }
+
   /// Changes password for a given user. Returns true on success.
   Future<bool> changePassword({
     required String username,

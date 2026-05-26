@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
+import 'package:pos_app/services/license_activation_service.dart';
 
 import 'home.dart';
 import 'pin_login.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({
+    super.key,
+    this.cloudRestoreLicenseKey,
+    this.cloudRestoreStoreName,
+  });
+
+  final String? cloudRestoreLicenseKey;
+  final String? cloudRestoreStoreName;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -50,27 +58,66 @@ class _LoginPageState extends State<LoginPage> {
     _usernameController.text = username;
     _passwordController.text = password;
 
-    final user = await DatabaseHelper.instance.login(
-      username,
-      password,
-    );
+    var user = await DatabaseHelper.instance.login(username, password);
+
+    user ??= await _loginWithCloudOwner(username, password);
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (user != null) {
+    final loggedInUser = user;
+    if (loggedInUser != null) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => HomePage(
             title: 'POS Dashboard',
-            username: user['username'] as String,
-            role: user['role'] as String,
+            username: loggedInUser['username'] as String,
+            role: loggedInUser['role'] as String,
           ),
         ),
       );
     } else {
       setState(() => _invalidCredentials = true);
       _formKey.currentState!.validate();
+    }
+  }
+
+  Future<Map<String, dynamic>?> _loginWithCloudOwner(
+    String email,
+    String password,
+  ) async {
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      return null;
+    }
+
+    try {
+      final localActivation = await LicenseActivationService.instance
+          .readLocalActivation();
+      final licenseKey =
+          widget.cloudRestoreLicenseKey?.trim().isNotEmpty == true
+          ? widget.cloudRestoreLicenseKey!.trim()
+          : localActivation?.licenseKey.trim() ?? '';
+      if (licenseKey.isEmpty) return null;
+
+      final activation = await LicenseActivationService.instance.activateStore(
+        licenseKey: licenseKey,
+        storeName:
+            widget.cloudRestoreStoreName ??
+            localActivation?.storeName ??
+            'Restored Store',
+        ownerName: email,
+        email: email,
+        password: password,
+      );
+
+      return DatabaseHelper.instance.upsertOwnerFromCloud(
+        email: email,
+        password: password,
+        storeName: activation.storeName,
+        fullName: email,
+      );
+    } catch (_) {
+      return null;
     }
   }
 
@@ -333,6 +380,8 @@ class _ForgotPasswordDialog extends StatefulWidget {
 class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   final _emailController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  bool _isSending = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -340,9 +389,15 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     super.dispose();
   }
 
-  void _send() {
-    if (_formKey.currentState!.validate()) {
-      final email = _emailController.text.trim();
+  Future<void> _send() async {
+    setState(() => _error = null);
+    if (!_formKey.currentState!.validate()) return;
+
+    final email = _emailController.text.trim();
+    setState(() => _isSending = true);
+    try {
+      await LicenseActivationService.instance.sendPasswordResetEmail(email);
+      if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -353,6 +408,12 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
           ),
         ),
       );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+        _error = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+      });
     }
   }
 
@@ -363,25 +424,38 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       title: const Text('Forgot Password'),
       content: Form(
         key: _formKey,
-        child: TextFormField(
-          controller: _emailController,
-          autovalidateMode: AutovalidateMode.onUserInteraction,
-          decoration: InputDecoration(
-            labelText: 'Email Address',
-            hintText: 'Enter your email',
-            prefixIcon: const Icon(Icons.email_outlined),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          keyboardType: TextInputType.emailAddress,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter your email';
-            }
-            if (!RegExp(r'^[\w\-.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-              return 'Please enter a valid email';
-            }
-            return null;
-          },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: _emailController,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              decoration: InputDecoration(
+                labelText: 'Email Address',
+                hintText: 'Enter your email',
+                prefixIcon: const Icon(Icons.email_outlined),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              keyboardType: TextInputType.emailAddress,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your email';
+                }
+                if (!RegExp(
+                  r'^[\w\-.]+@([\w-]+\.)+[\w-]{2,4}$',
+                ).hasMatch(value)) {
+                  return 'Please enter a valid email';
+                }
+                return null;
+              },
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: Color(0xFFDC2626))),
+            ],
+          ],
         ),
       ),
       actions: [
@@ -393,8 +467,17 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF667eea),
           ),
-          onPressed: _send,
-          child: const Text('Send', style: TextStyle(color: Colors.white)),
+          onPressed: _isSending ? null : _send,
+          child: _isSending
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('Send', style: TextStyle(color: Colors.white)),
         ),
       ],
     );

@@ -119,3 +119,13 @@ values (
   1
 )
 on conflict (code_hash) do nothing;
+
+-- Additional one-time invite/license code:
+-- PRERP-GLYDF-28EWX
+insert into public.store_invites (code_hash, label, max_uses)
+values (
+  encode(digest('PRERP-GLYDF-28EWX', 'sha256'), 'hex'),
+  'Additional POS install invite',
+  1
+)
+on conflict (code_hash) do nothing;

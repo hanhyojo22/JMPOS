@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/services/license_activation_service.dart';
 
 import 'login.dart';
@@ -42,13 +41,12 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
 
       if (!mounted) return;
       if (result.activated) {
-        final hasOwner = await DatabaseHelper.instance.hasOwnerAccount();
-        if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (_) => hasOwner
-                ? const LoginPage()
-                : const OwnerSetupPage(activationRestored: true),
+            builder: (_) => LoginPage(
+              cloudRestoreLicenseKey: result.licenseKey,
+              cloudRestoreStoreName: result.storeName,
+            ),
           ),
         );
         return;
@@ -57,7 +55,10 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
       if (result.restoreAvailable) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (_) => const LoginPage(),
+            builder: (_) => LoginPage(
+              cloudRestoreLicenseKey: result.licenseKey,
+              cloudRestoreStoreName: result.storeName,
+            ),
           ),
         );
         return;
