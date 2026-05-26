@@ -65,6 +65,7 @@ class _SettingsPageState extends State<SettingsPage> {
   int _cloudSyncTotal = 0;
   int _cloudSyncStep = 0;
   String _cloudSyncStatus = '';
+  String? _cloudSyncIssue;
   String? _cloudAccountEmail;
   StreamSubscription<AuthState>? _authSubscription;
   String _storeName = 'My Sari-Sari Store';
@@ -275,8 +276,12 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                       _SettingsRow(
                         icon: Icons.cloud_sync_outlined,
-                        iconBg: const Color(0xFFEAF3FF),
-                        iconColor: const Color(0xFF5B3BB3),
+                        iconBg: _cloudSyncIssue == null
+                            ? const Color(0xFFEAF3FF)
+                            : _dangerBg,
+                        iconColor: _cloudSyncIssue == null
+                            ? const Color(0xFF5B3BB3)
+                            : _danger,
                         label: 'Cloud sync',
                         subtitle: _cloudSyncSubtitle,
                         trailing: _isSyncingCloud
@@ -293,6 +298,8 @@ class _SettingsPageState extends State<SettingsPage> {
                                 const Color(0xFFFFF4DE),
                                 const Color(0xFF9A5B00),
                               )
+                            : _cloudSyncIssue != null
+                            ? _buildBadge('Paused', _dangerBg, _danger)
                             : _buildBadge(
                                 'Synced',
                                 const Color(0xFFE1F5EE),
@@ -506,6 +513,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (_cloudSyncTotal <= 0) return 'Preparing local changes';
       return 'Uploading $_cloudSyncDone of $_cloudSyncTotal changes';
     }
+    if (_cloudSyncIssue != null) return _cloudSyncIssue!;
     if (_pendingSyncCount == 0) return 'Auto connected - SQLite is synced';
     return '$_pendingSyncCount local change${_pendingSyncCount == 1 ? '' : 's'} waiting';
   }
@@ -560,8 +568,10 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final email = Supabase.instance.client.auth.currentUser?.email?.trim();
       if (!mounted) return;
-      setState(() => _cloudAccountEmail =
-          email == null || email.isEmpty ? null : email);
+      setState(
+        () =>
+            _cloudAccountEmail = email == null || email.isEmpty ? null : email,
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() => _cloudAccountEmail = null);
@@ -577,12 +587,13 @@ class _SettingsPageState extends State<SettingsPage> {
       _cloudSyncTotal = _pendingSyncCount;
       _cloudSyncStep = 0;
       _cloudSyncStatus = 'Connecting to Supabase';
+      _cloudSyncIssue = null;
     });
     await WakelockPlus.enable();
 
     try {
-      final cloudSignedIn =
-          await LicenseActivationService.instance.ensureCloudSyncSignedIn();
+      final cloudSignedIn = await LicenseActivationService.instance
+          .ensureCloudSyncSignedIn();
       _loadCloudAccount();
       if (!cloudSignedIn) {
         throw Exception(
@@ -601,6 +612,7 @@ class _SettingsPageState extends State<SettingsPage> {
           _cloudSyncTotal = total;
           _cloudSyncStep = 0;
           _pendingSyncCount = total;
+          _cloudSyncIssue = null;
           _cloudSyncStatus = total == 0
               ? 'SQLite is synced to Supabase'
               : 'Uploading 0 of $total changes';
@@ -621,32 +633,49 @@ class _SettingsPageState extends State<SettingsPage> {
       final pending = await DatabaseHelper.instance.pendingSyncCount();
       final lastError = await DatabaseHelper.instance.lastSyncError();
       if (!mounted) return;
-      setState(() => _pendingSyncCount = pending);
+      final syncIssue = _friendlySyncError(lastError);
+      setState(() {
+        _pendingSyncCount = pending;
+        _cloudSyncIssue = pending == 0 ? null : syncIssue.message;
+      });
 
-      final errorText =
-          lastError == null || lastError.trim().isEmpty
-          ? ''
-          : ' Error: ${lastError.trim()}';
+      final snackText = pending == 0
+          ? 'Cloud sync complete. Uploaded $synced change${synced == 1 ? '' : 's'}.'
+          : 'Sync paused. $pending change${pending == 1 ? '' : 's'} will retry later.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            pending == 0
-                ? 'Cloud sync complete. Uploaded $synced change${synced == 1 ? '' : 's'}.'
-                : 'Cloud sync paused. $pending change${pending == 1 ? '' : 's'} still waiting.$errorText',
-          ),
+          content: Text(snackText),
           behavior: SnackBarBehavior.floating,
           backgroundColor: pending == 0 ? const Color(0xFF0F6E56) : _danger,
+          action: pending == 0 || syncIssue.details == null
+              ? null
+              : SnackBarAction(
+                  label: 'Details',
+                  textColor: Colors.white,
+                  onPressed: () => _showSyncIssueDetails(syncIssue),
+                ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
       await _loadPendingSyncCount();
       if (!mounted) return;
+      final syncIssue = _friendlySyncError(e);
+      setState(() {
+        _cloudSyncIssue = syncIssue.message;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Cloud sync failed: $e'),
+          content: Text(syncIssue.message),
           behavior: SnackBarBehavior.floating,
           backgroundColor: _danger,
+          action: syncIssue.details == null
+              ? null
+              : SnackBarAction(
+                  label: 'Details',
+                  textColor: Colors.white,
+                  onPressed: () => _showSyncIssueDetails(syncIssue),
+                ),
         ),
       );
     } finally {
@@ -661,6 +690,86 @@ class _SettingsPageState extends State<SettingsPage> {
         });
       }
     }
+  }
+
+  _SyncUiError _friendlySyncError(Object? error) {
+    final raw = error?.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+    final message = raw?.trim() ?? '';
+    if (message.isEmpty) {
+      return const _SyncUiError(
+        'Sync paused. Your local changes are still saved.',
+      );
+    }
+
+    final lower = message.toLowerCase();
+    if (lower.contains('failed host lookup') ||
+        lower.contains('socketexception') ||
+        lower.contains('no address associated with hostname')) {
+      return _SyncUiError(
+        'No internet connection. Changes will sync later.',
+        details: message,
+      );
+    }
+    if (lower.contains('pos-image-delete') &&
+        (lower.contains('not deployed') || lower.contains('not_found'))) {
+      return _SyncUiError(
+        'Image cleanup service is not deployed yet.',
+        details: message,
+      );
+    }
+    if (lower.contains('bucket') && lower.contains('not found')) {
+      return _SyncUiError(
+        'Storage bucket is missing. Recreate backupfiles.',
+        details: message,
+      );
+    }
+    if (lower.contains('cloud sync is not connected') ||
+        lower.contains('sign in') ||
+        lower.contains('activate or restore')) {
+      return _SyncUiError(
+        'Cloud account is not connected. Sign in again.',
+        details: message,
+      );
+    }
+    if (lower.contains('row level security') ||
+        lower.contains('permission denied') ||
+        lower.contains('unauthorized')) {
+      return _SyncUiError(
+        'Supabase permissions blocked sync.',
+        details: message,
+      );
+    }
+
+    return _SyncUiError(
+      'Sync paused. Your local changes are still saved.',
+      details: message,
+    );
+  }
+
+  Future<void> _showSyncIssueDetails(_SyncUiError error) async {
+    final details = error.details;
+    if (details == null || details.isEmpty || !mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text(
+          'Cloud sync issue',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        content: SelectableText(
+          details,
+          style: TextStyle(color: _secondaryText, height: 1.35),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadLastSalesExportDate() async {
@@ -1271,6 +1380,13 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
 }
 
 // ─── Settings Row ─────────────────────────────────────────────────────────────
+class _SyncUiError {
+  const _SyncUiError(this.message, {this.details});
+
+  final String message;
+  final String? details;
+}
+
 class _SettingsRow extends StatelessWidget {
   const _SettingsRow({
     required this.icon,
@@ -1346,6 +1462,7 @@ class _SettingsRow extends StatelessWidget {
                         Text(
                           subtitle!,
                           style: TextStyle(fontSize: 12, color: secondaryText),
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],

@@ -859,6 +859,55 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
   }
 }
 
+class _VoidSaleNotice extends StatelessWidget {
+  const _VoidSaleNotice({
+    required this.icon,
+    required this.iconColor,
+    required this.backgroundColor,
+    required this.textColor,
+    required this.message,
+    this.bottomMargin = 12,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final Color backgroundColor;
+  final Color textColor;
+  final String message;
+  final double bottomMargin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: EdgeInsets.only(bottom: bottomMargin),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: iconColor, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _VoidSaleRequest {
   const _VoidSaleRequest({
     required this.reason,
@@ -893,6 +942,8 @@ class _VoidSaleDialog extends StatefulWidget {
 class _VoidSaleDialogState extends State<_VoidSaleDialog> {
   static const int _maxReasonLength = 250;
   static const int _maxPinLength = 6;
+  static const Color _danger = Color(0xFFDC2626);
+  static const Color _dangerBg = Color(0xFFFEE2E2);
 
   final _reasonController = TextEditingController();
   final _pinController = TextEditingController();
@@ -972,7 +1023,7 @@ class _VoidSaleDialogState extends State<_VoidSaleDialog> {
       if (!mounted) return;
       setState(() {
         _verifyingPin = false;
-        _pinError = 'Could not verify PIN';
+        _pinError = 'Could not verify PIN. Please try again.';
       });
       return;
     }
@@ -981,7 +1032,7 @@ class _VoidSaleDialogState extends State<_VoidSaleDialog> {
     if (admin == null) {
       setState(() {
         _verifyingPin = false;
-        _pinError = 'Invalid admin PIN';
+        _pinError = 'Admin PIN is incorrect. Check the PIN and try again.';
       });
       return;
     }
@@ -999,97 +1050,97 @@ class _VoidSaleDialogState extends State<_VoidSaleDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final maxDialogHeight = MediaQuery.sizeOf(context).height * 0.62;
+
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: const Text('Void sale'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (widget.requiresAdminPin)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.admin_panel_settings_outlined,
-                    color: Colors.red,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'This sale is completed. Admin PIN is required.',
-                      style: TextStyle(
-                        color: widget.secondaryText,
-                        fontWeight: FontWeight.w700,
+      content: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxDialogHeight),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: _reasonController,
+                      maxLines: 3,
+                      maxLength: _maxReasonLength,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.deny(
+                          RegExp(
+                            r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]',
+                          ),
+                        ),
+                        LengthLimitingTextInputFormatter(_maxReasonLength),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'Reason',
+                        hintText: 'Optional note',
+                        border: OutlineInputBorder(),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          TextField(
-            controller: _reasonController,
-            maxLines: 3,
-            maxLength: _maxReasonLength,
-            inputFormatters: [
-              FilteringTextInputFormatter.deny(
-                RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]'),
-              ),
-              LengthLimitingTextInputFormatter(_maxReasonLength),
-            ],
-            decoration: const InputDecoration(
-              labelText: 'Reason',
-              hintText: 'Optional note',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          if (widget.requiresAdminPin) ...[
-            const SizedBox(height: 14),
-            TextField(
-              controller: _pinController,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              enabled: !_verifyingPin,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(_maxPinLength),
-              ],
-              onChanged: (_) {
-                if (_pinError != null) {
-                  setState(() => _pinError = null);
-                }
-              },
-              decoration: InputDecoration(
-                labelText: 'Admin PIN',
-                prefixIcon: const Icon(Icons.pin_outlined),
-                errorText: _pinError,
-                border: const OutlineInputBorder(),
-              ),
-            ),
-          ] else ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  Icons.timer_outlined,
-                  color: widget.successColor,
-                  size: 18,
+                    if (widget.requiresAdminPin) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _pinController,
+                        obscureText: true,
+                        keyboardType: TextInputType.number,
+                        enabled: !_verifyingPin,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(_maxPinLength),
+                        ],
+                        onChanged: (_) {
+                          if (_pinError != null) {
+                            setState(() => _pinError = null);
+                          }
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'Admin PIN',
+                          prefixIcon: Icon(Icons.pin_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 12),
+                      _VoidSaleNotice(
+                        icon: Icons.timer_outlined,
+                        iconColor: widget.successColor,
+                        backgroundColor: widget.successColor.withValues(
+                          alpha: 0.12,
+                        ),
+                        textColor: widget.secondaryText,
+                        message: 'Still in void window. No admin PIN required.',
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Still in void window. No admin PIN required.',
-                    style: TextStyle(
-                      color: widget.secondaryText,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
+            if (widget.requiresAdminPin)
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: _pinError == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        key: ValueKey(_pinError),
+                        padding: const EdgeInsets.only(top: 10),
+                        child: _VoidSaleNotice(
+                          icon: Icons.error_outline_rounded,
+                          iconColor: _danger,
+                          backgroundColor: _dangerBg,
+                          textColor: _danger,
+                          message: _pinError!,
+                          bottomMargin: 0,
+                        ),
+                      ),
+              ),
           ],
-        ],
+        ),
       ),
       actions: [
         TextButton(

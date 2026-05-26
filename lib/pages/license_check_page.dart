@@ -159,7 +159,7 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Enter your license code. If this device was already activated, the app will restore it from Supabase.',
+                          'Enter your license code. If this device was already activated, the app will restore it from server.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: secondaryText,
