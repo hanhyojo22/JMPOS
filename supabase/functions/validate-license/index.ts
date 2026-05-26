@@ -210,7 +210,38 @@ async function validateLicenseKeyForDevice(
     };
   }
 
-  if ((invite.used_count ?? 0) >= invite.max_uses) {
+  const licenseAlreadyUsed =
+    invite.store_id !== null ||
+    (invite.used_count ?? 0) > 0 ||
+    invite.status === "used" ||
+    (invite.used_count ?? 0) >= invite.max_uses;
+
+  if (licenseAlreadyUsed) {
+    if (invite.store_id) {
+      const { data: store, error: storeError } = await admin
+        .from("stores")
+        .select("id, name")
+        .eq("id", invite.store_id)
+        .single();
+      if (storeError) throw storeError;
+
+      return {
+        status: 200,
+        body: {
+          functionVersion: "validate-license-v3",
+          licenseExists: true,
+          activated: false,
+          restored: false,
+          restoreAvailable: true,
+          storeId: store.id,
+          storeName: store.name,
+          licenseKey,
+          message:
+            "License is already registered. Sign in with the original owner account to restore this store.",
+        },
+      };
+    }
+
     return {
       status: 409,
       body: {

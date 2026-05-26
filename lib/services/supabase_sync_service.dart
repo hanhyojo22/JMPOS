@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:pos_app/services/license_activation_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseSyncService {
@@ -9,11 +10,14 @@ class SupabaseSyncService {
     if (events.isEmpty) return;
 
     final client = _authenticatedClient();
-    final rows = events.map(_toSupabaseRow).toList(growable: false);
+    final storeId = await _activeStoreId();
+    final rows = events
+        .map((event) => _toSupabaseRow(event, storeId))
+        .toList(growable: false);
     await client.from('pos_sync_events').upsert(rows, onConflict: 'event_id');
 
     for (final event in events) {
-      await _uploadMirrorRow(client, event);
+      await _uploadMirrorRow(client, event, storeId);
     }
   }
 
@@ -30,9 +34,24 @@ class SupabaseSyncService {
     }
   }
 
-  Map<String, Object?> _toSupabaseRow(Map<String, Object?> event) {
+  Future<String> _activeStoreId() async {
+    final activation = await LicenseActivationService.instance
+        .readLocalActivation();
+    final storeId = activation?.storeId.trim() ?? '';
+    if (storeId.isEmpty) {
+      throw Exception('Activate this device before syncing POS data.');
+    }
+    return storeId;
+  }
+
+  Map<String, Object?> _toSupabaseRow(
+    Map<String, Object?> event,
+    String storeId,
+  ) {
+    final queueKey = event['queue_key']?.toString();
     return {
-      'event_id': event['queue_key']?.toString(),
+      'event_id': '$storeId:$queueKey',
+      'store_id': storeId,
       'local_queue_id': event['id'],
       'table_name': event['table_name']?.toString(),
       'local_id': event['local_id']?.toString(),
@@ -46,6 +65,7 @@ class SupabaseSyncService {
   Future<void> _uploadMirrorRow(
     SupabaseClient client,
     Map<String, Object?> event,
+    String storeId,
   ) async {
     final sourceTable = event['table_name']?.toString();
     final targetTable = _targetTable(sourceTable);
@@ -56,16 +76,20 @@ class SupabaseSyncService {
 
     final operation = event['operation']?.toString() ?? 'upsert';
     if (operation == 'delete') {
-      await client.from(targetTable).delete().eq(
-        _deleteColumn(sourceTable),
-        _deleteValue(sourceTable, event) ?? localId,
-      );
+      await client
+          .from(targetTable)
+          .delete()
+          .eq('store_id', storeId)
+          .eq(
+            _deleteColumn(sourceTable),
+            _deleteValue(sourceTable, event) ?? localId,
+          );
       return;
     }
 
     await client.from(targetTable).upsert(
-      _toMirrorRow(event),
-      onConflict: _conflictColumn(sourceTable),
+      _toMirrorRow(event, storeId),
+      onConflict: 'store_id,${_conflictColumn(sourceTable)}',
     );
   }
 
@@ -96,7 +120,10 @@ class SupabaseSyncService {
     return null;
   }
 
-  Map<String, Object?> _toMirrorRow(Map<String, Object?> event) {
+  Map<String, Object?> _toMirrorRow(
+    Map<String, Object?> event,
+    String storeId,
+  ) {
     final payloadText = event['payload']?.toString() ?? '{}';
     final payload = _decodePayload(payloadText);
 
@@ -134,9 +161,10 @@ class SupabaseSyncService {
 
     return {
       ...payloadMap,
+      'store_id': storeId,
       'local_id': event['local_id']?.toString(),
       'source_table': sourceTable,
-      'sync_event_id': event['queue_key']?.toString(),
+      'sync_event_id': '$storeId:${event['queue_key']?.toString()}',
       'operation': event['operation']?.toString(),
       'payload': payload,
       'local_updated_at': event['updated_at']?.toString(),

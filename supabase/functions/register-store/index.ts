@@ -14,6 +14,8 @@ type RegisterStoreBody = {
   email?: string;
   password?: string;
   inviteCode?: string;
+  installationId?: string;
+  deviceName?: string;
 };
 
 serve(async (req: Request) => {
@@ -32,6 +34,8 @@ serve(async (req: Request) => {
     const email = sanitizeEmail(body.email);
     const password = body.password ?? "";
     const inviteCode = sanitizeInviteCode(body.inviteCode);
+    const installationId = sanitizeToken(body.installationId, 120);
+    const deviceName = sanitizeText(body.deviceName, 80);
 
     if (!storeName) return jsonResponse({ error: "Store name is required" }, 400);
     if (!ownerName) return jsonResponse({ error: "Owner name is required" }, 400);
@@ -45,6 +49,7 @@ serve(async (req: Request) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY") ?? "";
+    const anonKey = Deno.env.get("PUBLIC_ANON_KEY") ?? "";
     if (!supabaseUrl || !serviceRoleKey) {
       return jsonResponse({ error: "Registration service is not configured" }, 500);
     }
@@ -61,14 +66,48 @@ serve(async (req: Request) => {
       .maybeSingle();
 
     if (inviteError) throw inviteError;
-    if (!invite || invite.status !== "active") {
+    if (!invite || invite.status === "revoked") {
       return jsonResponse({ error: "Invite/license code is invalid" }, 400);
     }
     if (invite.expires_at && new Date(invite.expires_at) <= new Date()) {
       return jsonResponse({ error: "Invite/license code has expired" }, 400);
     }
-    if ((invite.used_count ?? 0) >= invite.max_uses) {
-      return jsonResponse({ error: "Invite/license code has already been used" }, 400);
+
+    const licenseAlreadyUsed =
+      invite.store_id !== null ||
+      (invite.used_count ?? 0) > 0 ||
+      invite.status === "used" ||
+      (invite.used_count ?? 0) >= invite.max_uses;
+
+    if (licenseAlreadyUsed) {
+      if (!installationId) {
+        return jsonResponse(
+          { error: "Installation id is required to restore a used license" },
+          400,
+        );
+      }
+
+      const restored = await restoreUsedLicenseForOwner({
+        admin,
+        supabaseUrl,
+        anonKey,
+        invite,
+        licenseKey: inviteCode,
+        email,
+        password,
+        installationIdHash: await sha256Hex(installationId),
+        deviceName,
+      });
+      if (restored) return jsonResponse(restored);
+
+      return jsonResponse(
+        { error: "Invite/license code is already registered. Sign in with the original owner account to restore this store." },
+        400,
+      );
+    }
+
+    if (invite.status !== "active") {
+      return jsonResponse({ error: "Invite/license code is invalid" }, 400);
     }
 
     const { data: authData, error: authError } =
@@ -189,6 +228,98 @@ function sanitizeEmail(value: unknown) {
 function sanitizeInviteCode(value: unknown) {
   const code = String(value ?? "").trim().toUpperCase();
   return /^[A-Z0-9_-]{4,40}$/.test(code) ? code : "";
+}
+
+function sanitizeToken(value: unknown, maxLength: number) {
+  const token = String(value ?? "").trim();
+  if (token.length > maxLength) return "";
+  return /^[a-zA-Z0-9_.:-]+$/.test(token) ? token : "";
+}
+
+async function restoreUsedLicenseForOwner({
+  admin,
+  supabaseUrl,
+  anonKey,
+  invite,
+  licenseKey,
+  email,
+  password,
+  installationIdHash,
+  deviceName,
+}: {
+  admin: ReturnType<typeof createClient>;
+  supabaseUrl: string;
+  anonKey: string;
+  invite: {
+    id: string;
+    store_id: string | null;
+  };
+  licenseKey: string;
+  email: string;
+  password: string;
+  installationIdHash: string;
+  deviceName: string;
+}) {
+  if (!invite.store_id) return null;
+
+  const { data: store, error: storeError } = await admin
+    .from("stores")
+    .select("id, name, owner_user_id")
+    .eq("id", invite.store_id)
+    .single();
+
+  if (storeError) throw storeError;
+  if (!store.owner_user_id) return null;
+
+  const { data: ownerData, error: ownerError } =
+    await admin.auth.admin.getUserById(store.owner_user_id);
+
+  if (ownerError) throw ownerError;
+  if (ownerData.user?.email?.toLowerCase() !== email) return null;
+
+  if (!anonKey) {
+    throw new Error("License recovery service is missing anon key");
+  }
+
+  const publicClient = createClient(supabaseUrl, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { error: loginError } = await publicClient.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (loginError) return null;
+
+  const activationToken = crypto.randomUUID();
+  const activationTokenHash = await sha256Hex(activationToken);
+  const { error: deviceError } = await admin.from("store_devices").upsert(
+    {
+      store_id: store.id,
+      invite_id: invite.id,
+      installation_id_hash: installationIdHash,
+      activation_token_hash: activationTokenHash,
+      device_name: deviceName || null,
+      last_seen_at: new Date().toISOString(),
+      revoked_at: null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "installation_id_hash" },
+  );
+
+  if (deviceError) throw deviceError;
+
+  return {
+    functionVersion: "register-store-admin-v2-restore",
+    storeId: store.id,
+    storeName: store.name,
+    licenseKey,
+    activationToken,
+    restored: true,
+    session: null,
+    sessionCreated: false,
+    message: "License was restored for the existing store.",
+  };
 }
 
 async function sha256Hex(value: string) {

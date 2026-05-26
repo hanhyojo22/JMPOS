@@ -70,13 +70,20 @@ serve(async (req: Request) => {
       .maybeSingle();
 
     if (inviteError) throw inviteError;
-    if (!invite || invite.status !== "active") {
+    if (!invite || invite.status === "revoked") {
       return jsonResponse({ error: "Invite/license code is invalid" }, 400);
     }
     if (invite.expires_at && new Date(invite.expires_at) <= new Date()) {
       return jsonResponse({ error: "Invite/license code has expired" }, 400);
     }
-    if ((invite.used_count ?? 0) >= invite.max_uses) {
+
+    const licenseAlreadyUsed =
+      invite.store_id !== null ||
+      (invite.used_count ?? 0) > 0 ||
+      invite.status === "used" ||
+      (invite.used_count ?? 0) >= invite.max_uses;
+
+    if (licenseAlreadyUsed) {
       const restored = await restoreExistingDevice(
         admin,
         installationIdHash,
@@ -105,9 +112,13 @@ serve(async (req: Request) => {
       if (restoredByOwner) return jsonResponse(restoredByOwner);
 
       return jsonResponse(
-        { error: "Invite/license code has already been used on another device" },
+        { error: "Invite/license code is already registered. Sign in with the original owner account to restore this store." },
         400,
       );
+    }
+
+    if (invite.status !== "active") {
+      return jsonResponse({ error: "Invite/license code is invalid" }, 400);
     }
 
     const { data: authData, error: authError } =

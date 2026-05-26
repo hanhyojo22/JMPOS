@@ -17,6 +17,7 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
   final _formKey = GlobalKey<FormState>();
   final _licenseController = TextEditingController();
   bool _isChecking = false;
+  bool _hasLicenseInput = false;
   String? _error;
 
   @override
@@ -27,6 +28,10 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
 
   Future<void> _checkLicense() async {
     setState(() => _error = null);
+    if (!_hasLicenseInput) {
+      _formKey.currentState?.validate();
+      return;
+    }
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     setState(() => _isChecking = true);
@@ -44,6 +49,15 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
             builder: (_) => hasOwner
                 ? const LoginPage()
                 : const OwnerSetupPage(activationRestored: true),
+          ),
+        );
+        return;
+      }
+
+      if (result.restoreAvailable) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const LoginPage(),
           ),
         );
         return;
@@ -168,6 +182,12 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
                           onFieldSubmitted: (_) {
                             if (!_isChecking) _checkLicense();
                           },
+                          onChanged: (value) {
+                            final hasInput = value.trim().isNotEmpty;
+                            if (hasInput != _hasLicenseInput) {
+                              setState(() => _hasLicenseInput = hasInput);
+                            }
+                          },
                           decoration: InputDecoration(
                             labelText: 'License code',
                             hintText: 'ABCD-1234',
@@ -197,7 +217,9 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
                         SizedBox(
                           height: 52,
                           child: ElevatedButton(
-                            onPressed: _isChecking ? null : _checkLicense,
+                            onPressed: _isChecking || !_hasLicenseInput
+                                ? null
+                                : _checkLicense,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF667eea),
                               foregroundColor: Colors.white,

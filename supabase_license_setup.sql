@@ -109,3 +109,13 @@ values (
   1
 )
 on conflict (code_hash) do nothing;
+
+-- Additional one-time invite/license code:
+-- V46QC-SBH9E-JHDLS
+insert into public.store_invites (code_hash, label, max_uses)
+values (
+  encode(digest('V46QC-SBH9E-JHDLS', 'sha256'), 'hex'),
+  'Additional POS install invite',
+  1
+)
+on conflict (code_hash) do nothing;

@@ -10,10 +10,14 @@ class OwnerSetupPage extends StatefulWidget {
     super.key,
     this.activationRestored = false,
     this.verifiedLicenseKey,
+    this.restoreExistingLicense = false,
+    this.restoredStoreName,
   });
 
   final bool activationRestored;
   final String? verifiedLicenseKey;
+  final bool restoreExistingLicense;
+  final String? restoredStoreName;
 
   @override
   State<OwnerSetupPage> createState() => _OwnerSetupPageState();
@@ -62,9 +66,16 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
 
     setState(() => _isSaving = true);
 
-    final storeName = _storeNameController.text.trim();
-    final ownerName = _ownerNameController.text.trim();
+    final isRestoreExisting = widget.restoreExistingLicense;
     final email = _emailController.text.trim();
+    final storeName = isRestoreExisting
+        ? (widget.restoredStoreName?.trim().isNotEmpty == true
+              ? widget.restoredStoreName!.trim()
+              : 'Restored Store')
+        : _storeNameController.text.trim();
+    final ownerName = isRestoreExisting
+        ? email
+        : _ownerNameController.text.trim();
     final password = _passwordController.text;
     final pin = _pinController.text.trim();
     if (!widget.activationRestored) {
@@ -275,6 +286,8 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
                         Text(
                           widget.activationRestored
                               ? 'Cloud activation was restored. Create the local owner account for this device.'
+                              : widget.restoreExistingLicense
+                              ? 'This license already belongs to an existing store. Sign in with the original owner account to restore it on this device.'
                               : 'Register the owner account for local POS access and Supabase Cloud Sync.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
@@ -284,35 +297,37 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
                           ),
                         ),
                         const SizedBox(height: 26),
-                        TextFormField(
-                          controller: _storeNameController,
-                          textInputAction: TextInputAction.next,
-                          inputFormatters: [
-                            LengthLimitingTextInputFormatter(80),
-                          ],
-                          decoration: _fieldDecoration(
-                            label: 'Store name',
-                            hint: 'e.g. My Sari-Sari Store',
-                            icon: Icons.store_mall_directory_outlined,
+                        if (!widget.restoreExistingLicense) ...[
+                          TextFormField(
+                            controller: _storeNameController,
+                            textInputAction: TextInputAction.next,
+                            inputFormatters: [
+                              LengthLimitingTextInputFormatter(80),
+                            ],
+                            decoration: _fieldDecoration(
+                              label: 'Store name',
+                              hint: 'e.g. My Sari-Sari Store',
+                              icon: Icons.store_mall_directory_outlined,
+                            ),
+                            validator: (value) => _required(value, 'Store name'),
                           ),
-                          validator: (value) => _required(value, 'Store name'),
-                        ),
-                        const SizedBox(height: 14),
-                        TextFormField(
-                          controller: _ownerNameController,
-                          textInputAction: TextInputAction.next,
-                          inputFormatters: [
-                            LengthLimitingTextInputFormatter(80),
-                          ],
-                          decoration: _fieldDecoration(
-                            label: 'Owner full name',
-                            hint: 'Juan Dela Cruz',
-                            icon: Icons.person_outline_rounded,
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: _ownerNameController,
+                            textInputAction: TextInputAction.next,
+                            inputFormatters: [
+                              LengthLimitingTextInputFormatter(80),
+                            ],
+                            decoration: _fieldDecoration(
+                              label: 'Owner full name',
+                              hint: 'Juan Dela Cruz',
+                              icon: Icons.person_outline_rounded,
+                            ),
+                            validator: (value) =>
+                                _required(value, 'Owner full name'),
                           ),
-                          validator: (value) =>
-                              _required(value, 'Owner full name'),
-                        ),
-                        const SizedBox(height: 14),
+                          const SizedBox(height: 14),
+                        ],
                         TextFormField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
@@ -324,7 +339,9 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
                             LengthLimitingTextInputFormatter(80),
                           ],
                           decoration: _fieldDecoration(
-                            label: 'Owner email',
+                            label: widget.restoreExistingLicense
+                                ? 'Original owner email'
+                                : 'Owner email',
                             hint: 'owner@example.com',
                             icon: Icons.email_outlined,
                           ),
@@ -336,7 +353,9 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
                           obscureText: _obscurePassword,
                           textInputAction: TextInputAction.next,
                           decoration: _fieldDecoration(
-                            label: 'Password',
+                            label: widget.restoreExistingLicense
+                                ? 'Original owner password'
+                                : 'Password',
                             hint: 'At least 6 characters',
                             icon: Icons.lock_outline_rounded,
                             suffixIcon: IconButton(
@@ -352,29 +371,31 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
                           ),
                           validator: _validatePassword,
                         ),
-                        const SizedBox(height: 14),
-                        TextFormField(
-                          controller: _confirmPasswordController,
-                          obscureText: _obscureConfirmPassword,
-                          textInputAction: TextInputAction.next,
-                          decoration: _fieldDecoration(
-                            label: 'Confirm password',
-                            hint: 'Re-enter password',
-                            icon: Icons.lock_outline_rounded,
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscureConfirmPassword
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
-                              ),
-                              onPressed: () => setState(
-                                () => _obscureConfirmPassword =
-                                    !_obscureConfirmPassword,
+                        if (!widget.restoreExistingLicense) ...[
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: _confirmPasswordController,
+                            obscureText: _obscureConfirmPassword,
+                            textInputAction: TextInputAction.next,
+                            decoration: _fieldDecoration(
+                              label: 'Confirm password',
+                              hint: 'Re-enter password',
+                              icon: Icons.lock_outline_rounded,
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscureConfirmPassword
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                ),
+                                onPressed: () => setState(
+                                  () => _obscureConfirmPassword =
+                                      !_obscureConfirmPassword,
+                                ),
                               ),
                             ),
+                            validator: _validateConfirmPassword,
                           ),
-                          validator: _validateConfirmPassword,
-                        ),
+                        ],
                         const SizedBox(height: 14),
                         TextFormField(
                           controller: _pinController,
@@ -440,6 +461,8 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
                                 : Text(
                                     widget.activationRestored
                                         ? 'Restore Local Owner'
+                                        : widget.restoreExistingLicense
+                                        ? 'Restore Existing Store'
                                         : 'Register Store',
                                     style: const TextStyle(
                                       fontSize: 16,

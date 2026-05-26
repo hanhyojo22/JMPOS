@@ -165,6 +165,7 @@ class LicenseActivationService {
       exists: response['licenseExists'] == true,
       activated: activated,
       restored: response['restored'] == true,
+      restoreAvailable: response['restoreAvailable'] == true,
       storeId: response['storeId']?.toString(),
       storeName: response['storeName']?.toString(),
       message: response['message']?.toString(),
@@ -320,6 +321,7 @@ class LicenseCheckResult {
     required this.exists,
     required this.activated,
     required this.restored,
+    this.restoreAvailable = false,
     this.storeId,
     this.storeName,
     this.message,
@@ -329,6 +331,7 @@ class LicenseCheckResult {
   final bool exists;
   final bool activated;
   final bool restored;
+  final bool restoreAvailable;
   final String? storeId;
   final String? storeName;
   final String? message;
