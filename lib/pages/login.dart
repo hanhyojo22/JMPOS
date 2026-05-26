@@ -116,6 +116,7 @@ class _LoginPageState extends State<LoginPage> {
         email: email,
         password: password,
       );
+      await DatabaseHelper.instance.pullCloudSnapshotToLocal();
 
       return DatabaseHelper.instance.upsertOwnerFromCloud(
         email: email,
@@ -182,10 +183,10 @@ class _LoginPageState extends State<LoginPage> {
     return null;
   }
 
-  void _showForgotPasswordDialog() {
+  void _showMagicLinkDialog() {
     showDialog<void>(
       context: context,
-      builder: (_) => const _ForgotPasswordDialog(),
+      builder: (_) => const _MagicLinkDialog(),
     );
   }
 
@@ -325,8 +326,8 @@ class _LoginPageState extends State<LoginPage> {
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            onPressed: _showForgotPasswordDialog,
-                            child: const Text('Forgot Password?'),
+                            onPressed: _showMagicLinkDialog,
+                            child: const Text('Email Magic Link'),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -393,14 +394,14 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-class _ForgotPasswordDialog extends StatefulWidget {
-  const _ForgotPasswordDialog();
+class _MagicLinkDialog extends StatefulWidget {
+  const _MagicLinkDialog();
 
   @override
-  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+  State<_MagicLinkDialog> createState() => _MagicLinkDialogState();
 }
 
-class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+class _MagicLinkDialogState extends State<_MagicLinkDialog> {
   final _emailController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isSending = false;
@@ -419,12 +420,12 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     final email = _emailController.text.trim();
     setState(() => _isSending = true);
     try {
-      await LicenseActivationService.instance.sendPasswordResetEmail(email);
+      await LicenseActivationService.instance.sendMagicLinkEmail(email);
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Password reset link sent to $email'),
+          content: Text('Magic link sent to $email'),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
@@ -444,7 +445,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text('Forgot Password'),
+      title: const Text('Email Magic Link'),
       content: Form(
         key: _formKey,
         child: Column(
@@ -476,7 +477,35 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),
-              Text(_error!, style: const TextStyle(color: Color(0xFFDC2626))),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFECACA)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.info_outline,
+                      color: Color(0xFFDC2626),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _error!,
+                        style: const TextStyle(
+                          color: Color(0xFF991B1B),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ],
         ),

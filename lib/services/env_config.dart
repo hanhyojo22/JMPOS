@@ -11,6 +11,9 @@ class EnvConfig {
     'SUPABASE_BACKUP_BUCKET',
     defaultValue: 'backupfiles',
   );
+  static const _supabaseMagicLinkRedirectDefine = String.fromEnvironment(
+    'SUPABASE_MAGIC_LINK_REDIRECT_URL',
+  );
   static const _supabasePasswordResetRedirectDefine = String.fromEnvironment(
     'SUPABASE_PASSWORD_RESET_REDIRECT_URL',
   );
@@ -36,10 +39,17 @@ class EnvConfig {
   static String get supabaseBackupBucket =>
       _value('SUPABASE_BACKUP_BUCKET', _supabaseBackupBucketDefine);
 
-  static String get supabasePasswordResetRedirectUrl => _value(
-    'SUPABASE_PASSWORD_RESET_REDIRECT_URL',
-    _supabasePasswordResetRedirectDefine,
-  );
+  static String get supabaseMagicLinkRedirectUrl {
+    final magicLinkUrl = _value(
+      'SUPABASE_MAGIC_LINK_REDIRECT_URL',
+      _supabaseMagicLinkRedirectDefine,
+    );
+    if (magicLinkUrl.isNotEmpty) return magicLinkUrl;
+    return _value(
+      'SUPABASE_PASSWORD_RESET_REDIRECT_URL',
+      _supabasePasswordResetRedirectDefine,
+    );
+  }
 
   static String _value(String key, String dartDefineValue) {
     final fromDartDefine = dartDefineValue.trim();

@@ -1,6 +1,8 @@
 -- Run this once in Supabase SQL Editor after supabase_license_setup.sql.
 -- It creates the sync event table and prepares your existing tables for per-store SQLite-to-Supabase sync.
 
+create extension if not exists pgcrypto;
+
 create table if not exists public.pos_sync_events (
   event_id text primary key,
   store_id uuid not null references public.stores(id) on delete cascade,
@@ -24,8 +26,28 @@ add column if not exists source_table text not null default 'products',
 add column if not exists sync_event_id text,
 add column if not exists operation text not null default 'upsert',
 add column if not exists payload jsonb not null default '{}'::jsonb,
+add column if not exists pending_delete boolean not null default false,
+add column if not exists pending_delete_at timestamptz,
 add column if not exists local_updated_at timestamptz,
 add column if not exists cloud_updated_at timestamptz not null default now();
+
+create table if not exists public.product_image_deletions (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid not null references public.stores(id) on delete cascade,
+  local_product_id text not null,
+  bucket_id text not null,
+  object_path text not null,
+  image_reference text,
+  sync_event_id text,
+  reason text not null default 'product_delete',
+  status text not null default 'pending',
+  requested_by uuid references auth.users(id),
+  requested_at timestamptz not null default now(),
+  completed_at timestamptz,
+  last_error text,
+  constraint product_image_deletions_status_check
+    check (status in ('pending', 'completed', 'failed'))
+);
 
 alter table public.products
 drop constraint if exists products_barcode_key;
@@ -87,6 +109,7 @@ begin
   foreach table_name in array array[
     'pos_sync_events',
     'products',
+    'product_image_deletions',
     'sales',
     'users',
     'audit_logs'
@@ -131,6 +154,9 @@ alter column store_id set not null;
 alter table public.products
 alter column store_id set not null;
 
+alter table public.product_image_deletions
+alter column store_id set not null;
+
 alter table public.sales
 alter column store_id set not null;
 
@@ -148,6 +174,12 @@ alter table public.audit_logs drop constraint if exists audit_logs_local_id_key;
 create unique index if not exists products_store_local_id_unique_idx
 on public.products (store_id, local_id);
 
+create unique index if not exists product_image_deletions_unique_idx
+on public.product_image_deletions (store_id, bucket_id, object_path);
+
+create index if not exists product_image_deletions_pending_idx
+on public.product_image_deletions (store_id, status, requested_at);
+
 create unique index if not exists sales_store_local_id_unique_idx
 on public.sales (store_id, local_id);
 
@@ -159,6 +191,7 @@ on public.audit_logs (store_id, local_id);
 
 alter table public.pos_sync_events enable row level security;
 alter table public.products enable row level security;
+alter table public.product_image_deletions enable row level security;
 alter table public.sales enable row level security;
 alter table public.users enable row level security;
 alter table public.audit_logs enable row level security;
@@ -216,6 +249,8 @@ using (
 
 drop policy if exists "Allow POS product sync writes" on public.products;
 drop policy if exists "Allow POS product sync reads" on public.products;
+drop policy if exists "Allow POS product image deletion reads" on public.product_image_deletions;
+drop policy if exists "Allow POS product image deletion inserts" on public.product_image_deletions;
 
 create policy "Allow POS product sync writes"
 on public.products
@@ -247,6 +282,32 @@ using (
     select 1
     from public.store_members
     where store_members.store_id = products.store_id
+      and store_members.user_id = auth.uid()
+  )
+);
+
+create policy "Allow POS product image deletion reads"
+on public.product_image_deletions
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.store_members
+    where store_members.store_id = product_image_deletions.store_id
+      and store_members.user_id = auth.uid()
+  )
+);
+
+create policy "Allow POS product image deletion inserts"
+on public.product_image_deletions
+for insert
+to authenticated
+with check (
+  exists (
+    select 1
+    from public.store_members
+    where store_members.store_id = product_image_deletions.store_id
       and store_members.user_id = auth.uid()
   )
 );

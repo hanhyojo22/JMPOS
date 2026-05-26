@@ -54,6 +54,7 @@ class _HomePageState extends State<HomePage> {
   bool _loadingHome = true;
   String? _topMessage;
   bool _topMessageSuccess = false;
+  String? _currentUserDisplayName;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   bool get _isStaff => widget.role.toLowerCase() == 'staff';
@@ -90,7 +91,37 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    unawaited(_loadCurrentUserDisplayName());
     loadRecentTransactions();
+  }
+
+  Future<void> _loadCurrentUserDisplayName() async {
+    final user = await DatabaseHelper.instance.getUserByUsername(
+      widget.username,
+    );
+    if (!mounted) return;
+    setState(() {
+      _currentUserDisplayName =
+          user?['full_name']?.toString().trim().isNotEmpty == true
+          ? user!['full_name'].toString().trim()
+          : _fallbackDisplayName(widget.username);
+    });
+  }
+
+  String _fallbackDisplayName(String username) {
+    final normalized = username.trim();
+    final generatedStaffName = RegExp(
+      r'^staff_\d+_(.+)$',
+    ).firstMatch(normalized);
+    if (generatedStaffName != null) {
+      return generatedStaffName
+          .group(1)!
+          .split('_')
+          .where((part) => part.isNotEmpty)
+          .map((part) => part[0].toUpperCase() + part.substring(1))
+          .join(' ');
+    }
+    return normalized;
   }
 
   Future<void> loadRecentTransactions() async {
@@ -596,11 +627,10 @@ class _HomePageState extends State<HomePage> {
             'created_at': createdAt.toIso8601String(),
           };
           final saleId = await txn.insert('sales', saleRow);
-          await DatabaseHelper.instance.queueSyncUpsert(
-            'sales',
-            {...saleRow, 'id': saleId},
-            executor: txn,
-          );
+          await DatabaseHelper.instance.queueSyncUpsert('sales', {
+            ...saleRow,
+            'id': saleId,
+          }, executor: txn);
 
           await txn.update(
             'products',
@@ -1328,7 +1358,8 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(height: 14),
 
                     Text(
-                      widget.username,
+                      _currentUserDisplayName ??
+                          _fallbackDisplayName(widget.username),
 
                       style: const TextStyle(
                         color: Colors.white,

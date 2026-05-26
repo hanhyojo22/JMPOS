@@ -66,9 +66,7 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => OwnerSetupPage(
-            verifiedLicenseKey: result.licenseKey,
-          ),
+          builder: (_) => OwnerSetupPage(verifiedLicenseKey: result.licenseKey),
         ),
       );
     } catch (e) {
@@ -185,8 +183,12 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
                           },
                           onChanged: (value) {
                             final hasInput = value.trim().isNotEmpty;
-                            if (hasInput != _hasLicenseInput) {
-                              setState(() => _hasLicenseInput = hasInput);
+                            if (hasInput != _hasLicenseInput ||
+                                _error != null) {
+                              setState(() {
+                                _hasLicenseInput = hasInput;
+                                _error = null;
+                              });
                             }
                           },
                           decoration: InputDecoration(
@@ -205,14 +207,7 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
                         ),
                         if (_error != null) ...[
                           const SizedBox(height: 14),
-                          Text(
-                            _error!,
-                            style: const TextStyle(
-                              color: Color(0xFFDC2626),
-                              fontWeight: FontWeight.w600,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
+                          _ErrorNotice(message: _error!),
                         ],
                         const SizedBox(height: 24),
                         SizedBox(
@@ -258,6 +253,38 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ErrorNotice extends StatelessWidget {
+  const _ErrorNotice({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, color: Color(0xFFDC2626), size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(color: Color(0xFF991B1B), fontSize: 13),
+            ),
+          ),
+        ],
       ),
     );
   }

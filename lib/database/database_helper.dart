@@ -36,7 +36,7 @@ class ProductImageConnectionReport {
 class DatabaseHelper {
   static Database? _database;
   static bool _syncInProgress = false;
-  static const int _dbVersion = 8;
+  static const int _dbVersion = 9;
   static const saleCompletionGracePeriod = Duration(seconds: 10);
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
   static const int _productImageSize = 300;
@@ -506,6 +506,8 @@ class DatabaseHelper {
         cost_price REAL NOT NULL,
         stock_quantity INTEGER NOT NULL,
         image_url TEXT,
+        pending_delete INTEGER NOT NULL DEFAULT 0,
+        pending_delete_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -573,6 +575,9 @@ class DatabaseHelper {
     if (oldVersion < 8) {
       await _createSyncQueueTable(db);
       await _createIndexes(db);
+    }
+    if (oldVersion < 9) {
+      await _ensureProductSchema(db);
     }
   }
 
@@ -673,9 +678,23 @@ class DatabaseHelper {
     final hasDescription = columns.cast<Map<String, Object?>>().any(
       (column) => column['name'] == 'description',
     );
+    final columnNames = columns
+        .cast<Map<String, Object?>>()
+        .map((column) => column['name'])
+        .toSet();
 
     if (!hasDescription) {
       await db.execute('ALTER TABLE products ADD COLUMN description TEXT');
+    }
+    if (!columnNames.contains('pending_delete')) {
+      await db.execute(
+        'ALTER TABLE products ADD COLUMN pending_delete INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (!columnNames.contains('pending_delete_at')) {
+      await db.execute(
+        'ALTER TABLE products ADD COLUMN pending_delete_at TEXT',
+      );
     }
   }
 
@@ -955,10 +974,9 @@ class DatabaseHelper {
     final db = await database;
     await _createSyncQueueTable(db);
     final count = Sqflite.firstIntValue(
-      await db.rawQuery(
-        "SELECT COUNT(*) FROM sync_queue WHERE status != ?",
-        ['synced'],
-      ),
+      await db.rawQuery("SELECT COUNT(*) FROM sync_queue WHERE status != ?", [
+        'synced',
+      ]),
     );
     return count ?? 0;
   }
@@ -969,7 +987,8 @@ class DatabaseHelper {
     final rows = await db.query(
       'sync_queue',
       columns: ['last_error'],
-      where: "status != ? AND last_error IS NOT NULL AND TRIM(last_error) != ''",
+      where:
+          "status != ? AND last_error IS NOT NULL AND TRIM(last_error) != ''",
       whereArgs: ['synced'],
       orderBy: 'updated_at DESC',
       limit: 1,
@@ -1004,6 +1023,328 @@ class DatabaseHelper {
     for (final row in auditLogs) {
       await _queueSnapshotUpsert(db, 'audit_logs', row);
     }
+
+    const service = SupabaseSyncService();
+    await service.deleteLegacySalesImageFolder();
+    await service.deleteCloudRowsMissingLocally(
+      localIdsByTable: {
+        'products': _localIdSet(products),
+        'sales': _localIdSet(sales),
+        'users': _localIdSet(users),
+      },
+    );
+  }
+
+  Set<String> _localIdSet(List<Map<String, Object?>> rows) {
+    return rows
+        .map((row) => row['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Future<int> pullCloudSnapshotToLocal({
+    void Function(int imported, int total, String status)? onProgress,
+  }) async {
+    final db = await database;
+    await _ensureProductSchema(db);
+    await _ensureSalesSchema(db);
+    await _createAuditLogTable(db);
+    await _createSyncQueueTable(db);
+
+    const service = SupabaseSyncService();
+    onProgress?.call(0, 0, 'Downloading cloud data');
+    final snapshot = await service.downloadStoreSnapshot();
+    final imageDirPath = await productImagesDirectoryPath();
+    await Directory(imageDirPath).create(recursive: true);
+
+    final total = snapshot.values.fold<int>(
+      0,
+      (sum, rows) => sum + rows.length,
+    );
+    var imported = 0;
+
+    await db.transaction((txn) async {
+      imported += await _importCloudRows(
+        txn,
+        'products',
+        snapshot['products'] ?? const [],
+        (row) => _cloudProductToLocalRow(row, service, imageDirPath),
+      );
+      onProgress?.call(imported, total, 'Restored products');
+
+      imported += await _importCloudRows(
+        txn,
+        'users',
+        snapshot['users'] ?? const [],
+        _cloudUserToLocalRow,
+      );
+      onProgress?.call(imported, total, 'Restored users');
+
+      imported += await _importCloudRows(
+        txn,
+        'sales',
+        snapshot['sales'] ?? const [],
+        _cloudSaleToLocalRow,
+      );
+      onProgress?.call(imported, total, 'Restored sales');
+
+      imported += await _importCloudRows(
+        txn,
+        'audit_logs',
+        snapshot['audit_logs'] ?? const [],
+        _cloudAuditLogToLocalRow,
+      );
+      onProgress?.call(imported, total, 'Restored audit log');
+    });
+
+    await _markCloudSnapshotSynced(snapshot);
+    onProgress?.call(imported, total, 'Cloud data restored');
+    return imported;
+  }
+
+  Future<int> _importCloudRows(
+    DatabaseExecutor db,
+    String tableName,
+    List<Map<String, dynamic>> cloudRows,
+    FutureOr<Map<String, Object?>> Function(Map<String, dynamic>) mapper,
+  ) async {
+    var imported = 0;
+    for (final cloudRow in cloudRows) {
+      final row = await mapper(cloudRow);
+      final id = row['id'];
+      if (id == null) continue;
+      await db.insert(
+        tableName,
+        row,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      imported += 1;
+    }
+    return imported;
+  }
+
+  Future<void> _markCloudSnapshotSynced(
+    Map<String, List<Map<String, dynamic>>> snapshot,
+  ) async {
+    final db = await database;
+    await _createSyncQueueTable(db);
+    final syncedAt = DateTime.now().toIso8601String();
+
+    for (final entry in snapshot.entries) {
+      for (final cloudRow in entry.value) {
+        final localId = cloudRow['local_id']?.toString();
+        if (localId == null || localId.isEmpty) continue;
+        await db.insert('sync_queue', {
+          'queue_key': '${entry.key}:$localId',
+          'table_name': entry.key,
+          'local_id': localId,
+          'operation': cloudRow['operation']?.toString() ?? 'upsert',
+          'payload': jsonEncode(_cloudPayloadMap(cloudRow)),
+          'status': 'synced',
+          'attempts': 0,
+          'last_error': null,
+          'next_retry_at': null,
+          'created_at':
+              cloudRow['local_updated_at']?.toString() ??
+              cloudRow['created_at']?.toString() ??
+              syncedAt,
+          'updated_at': syncedAt,
+          'synced_at': syncedAt,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    }
+  }
+
+  Future<Map<String, Object?>> _cloudProductToLocalRow(
+    Map<String, dynamic> cloudRow,
+    SupabaseSyncService service,
+    String imageDirPath,
+  ) async {
+    final payload = _cloudPayloadMap(cloudRow);
+    return {
+      'id': _cloudLocalId(cloudRow),
+      'barcode': _cloudString(payload, cloudRow, 'barcode'),
+      'product_name': _cloudString(payload, cloudRow, 'product_name'),
+      'category': _cloudNullableString(payload, cloudRow, 'category'),
+      'description': _cloudNullableString(payload, cloudRow, 'description'),
+      'price': _cloudNumber(payload, cloudRow, 'price'),
+      'cost_price': _cloudNumber(payload, cloudRow, 'cost_price'),
+      'stock_quantity': _cloudInt(payload, cloudRow, 'stock_quantity'),
+      'image_url': await _localImagePathFromCloud(
+        _cloudNullableString(payload, cloudRow, 'image_url'),
+        service,
+        imageDirPath,
+      ),
+      'pending_delete': _cloudBoolInt(payload, cloudRow, 'pending_delete'),
+      'pending_delete_at': _cloudNullableString(
+        payload,
+        cloudRow,
+        'pending_delete_at',
+      ),
+      'created_at':
+          _cloudNullableString(payload, cloudRow, 'created_at') ??
+          DateTime.now().toIso8601String(),
+      'updated_at':
+          _cloudNullableString(payload, cloudRow, 'updated_at') ??
+          cloudRow['local_updated_at']?.toString() ??
+          DateTime.now().toIso8601String(),
+    };
+  }
+
+  Map<String, Object?> _cloudUserToLocalRow(Map<String, dynamic> cloudRow) {
+    final payload = _cloudPayloadMap(cloudRow);
+    return {
+      'id': _cloudLocalId(cloudRow),
+      'username': _cloudString(payload, cloudRow, 'username'),
+      'password_hash': _cloudString(payload, cloudRow, 'password_hash'),
+      'pin_hash': _cloudNullableString(payload, cloudRow, 'pin_hash'),
+      'full_name': _cloudNullableString(payload, cloudRow, 'full_name'),
+      'email': _cloudNullableString(payload, cloudRow, 'email'),
+      'role': _cloudNullableString(payload, cloudRow, 'role') ?? 'staff',
+      'created_at':
+          _cloudNullableString(payload, cloudRow, 'created_at') ??
+          DateTime.now().toIso8601String(),
+    };
+  }
+
+  Map<String, Object?> _cloudSaleToLocalRow(Map<String, dynamic> cloudRow) {
+    final payload = _cloudPayloadMap(cloudRow);
+    return {
+      'id': _cloudLocalId(cloudRow),
+      'product_id': _cloudInt(payload, cloudRow, 'local_product_id'),
+      'product_name': _cloudString(payload, cloudRow, 'product_name'),
+      'quantity': _cloudInt(payload, cloudRow, 'quantity'),
+      'price': _cloudNumber(payload, cloudRow, 'price'),
+      'total': _cloudNumber(payload, cloudRow, 'total'),
+      'image_url': null,
+      'voided_at': _cloudNullableString(payload, cloudRow, 'voided_at'),
+      'voided_by': _cloudNullableString(payload, cloudRow, 'voided_by'),
+      'void_reason': _cloudNullableString(payload, cloudRow, 'void_reason'),
+      'completion_due_at': _cloudNullableString(
+        payload,
+        cloudRow,
+        'completion_due_at',
+      ),
+      'completed_at': _cloudNullableString(payload, cloudRow, 'completed_at'),
+      'receipt_number': _cloudNullableString(
+        payload,
+        cloudRow,
+        'receipt_number',
+      ),
+      'created_at':
+          _cloudNullableString(payload, cloudRow, 'created_at') ??
+          DateTime.now().toIso8601String(),
+    };
+  }
+
+  Map<String, Object?> _cloudAuditLogToLocalRow(Map<String, dynamic> cloudRow) {
+    final payload = _cloudPayloadMap(cloudRow);
+    return {
+      'id': _cloudLocalId(cloudRow),
+      'user':
+          _cloudNullableString(payload, cloudRow, 'local_user') ??
+          _cloudNullableString(payload, cloudRow, 'user') ??
+          'unknown',
+      'action': _cloudString(payload, cloudRow, 'action'),
+      'details': _cloudNullableString(payload, cloudRow, 'details'),
+      'timestamp':
+          _cloudNullableString(payload, cloudRow, 'timestamp') ??
+          DateTime.now().toIso8601String(),
+    };
+  }
+
+  Map<String, Object?> _cloudPayloadMap(Map<String, dynamic> cloudRow) {
+    final payload = cloudRow['payload'];
+    if (payload is Map) {
+      return Map<String, Object?>.from(payload);
+    }
+    if (payload is String && payload.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(payload);
+        if (decoded is Map) return Map<String, Object?>.from(decoded);
+      } catch (_) {
+        return <String, Object?>{};
+      }
+    }
+    return <String, Object?>{};
+  }
+
+  int? _cloudLocalId(Map<String, dynamic> cloudRow) {
+    return int.tryParse(cloudRow['local_id']?.toString() ?? '');
+  }
+
+  String _cloudString(
+    Map<String, Object?> payload,
+    Map<String, dynamic> cloudRow,
+    String key,
+  ) {
+    return _cloudNullableString(payload, cloudRow, key) ?? '';
+  }
+
+  String? _cloudNullableString(
+    Map<String, Object?> payload,
+    Map<String, dynamic> cloudRow,
+    String key,
+  ) {
+    final value = payload.containsKey(key) ? payload[key] : cloudRow[key];
+    final text = value?.toString().trim();
+    return text == null || text.isEmpty ? null : text;
+  }
+
+  num _cloudNumber(
+    Map<String, Object?> payload,
+    Map<String, dynamic> cloudRow,
+    String key,
+  ) {
+    final value = payload.containsKey(key) ? payload[key] : cloudRow[key];
+    if (value is num) return value;
+    return num.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  int _cloudInt(
+    Map<String, Object?> payload,
+    Map<String, dynamic> cloudRow,
+    String key,
+  ) {
+    final value = payload.containsKey(key) ? payload[key] : cloudRow[key];
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  int _cloudBoolInt(
+    Map<String, Object?> payload,
+    Map<String, dynamic> cloudRow,
+    String key,
+  ) {
+    final value = payload.containsKey(key) ? payload[key] : cloudRow[key];
+    if (value is bool) return value ? 1 : 0;
+    if (value is num) return value == 0 ? 0 : 1;
+    return value?.toString().toLowerCase() == 'true' ? 1 : 0;
+  }
+
+  Future<String?> _localImagePathFromCloud(
+    String? imageReference,
+    SupabaseSyncService service,
+    String imageDirPath,
+  ) async {
+    final imagePath = imageReference?.trim();
+    if (imagePath == null || imagePath.isEmpty) return null;
+    if (imagePath.startsWith('http')) return imagePath;
+
+    if (!imagePath.startsWith(SupabaseSyncService.cloudImagePrefix)) {
+      return await File(imagePath).exists() ? imagePath : null;
+    }
+
+    final bytes = await service.downloadCloudImage(imagePath);
+    if (bytes == null || bytes.isEmpty) return null;
+
+    final fileName = service.cloudImageFileName(imagePath);
+    final safeFileName = (fileName == null || fileName.trim().isEmpty)
+        ? 'cloud_image_${DateTime.now().microsecondsSinceEpoch}.jpg'
+        : fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]+'), '_');
+    final targetPath = join(imageDirPath, safeFileName);
+    await File(targetPath).writeAsBytes(bytes, flush: true);
+    return targetPath;
   }
 
   Future<void> _queueSnapshotUpsert(
@@ -1017,12 +1358,15 @@ class DatabaseHelper {
     final queueKey = '$tableName:$localId';
     final existing = await db.query(
       'sync_queue',
-      columns: ['id'],
+      columns: ['id', 'status', 'payload'],
       where: 'queue_key = ?',
       whereArgs: [queueKey],
       limit: 1,
     );
-    if (existing.isNotEmpty) return;
+    if (existing.isNotEmpty &&
+        !await _shouldRefreshSnapshotSync(tableName, row, existing.first)) {
+      return;
+    }
 
     await _queueSyncEvent(
       db,
@@ -1031,6 +1375,38 @@ class DatabaseHelper {
       operation: 'upsert',
       payload: row,
     );
+  }
+
+  Future<bool> _shouldRefreshSnapshotSync(
+    String tableName,
+    Map<String, Object?> row,
+    Map<String, Object?> existingQueueRow,
+  ) async {
+    if (tableName != 'products') return false;
+    if (existingQueueRow['status']?.toString() != 'synced') return false;
+
+    final imagePath = row['image_url']?.toString().trim() ?? '';
+    if (imagePath.isEmpty ||
+        imagePath.startsWith('http') ||
+        imagePath.startsWith(SupabaseSyncService.cloudImagePrefix)) {
+      return false;
+    }
+    if (!await File(imagePath).exists()) return false;
+
+    final payload = existingQueueRow['payload']?.toString() ?? '{}';
+    final decoded = _decodeSyncPayload(payload);
+    final syncedImagePath = decoded['image_url']?.toString().trim() ?? '';
+    return !syncedImagePath.startsWith(SupabaseSyncService.cloudImagePrefix);
+  }
+
+  Map<String, Object?> _decodeSyncPayload(String payloadText) {
+    try {
+      final decoded = jsonDecode(payloadText);
+      if (decoded is Map) return Map<String, Object?>.from(decoded);
+    } catch (_) {
+      return <String, Object?>{};
+    }
+    return <String, Object?>{};
   }
 
   Future<void> recordVoidSaleAudit({
@@ -1340,12 +1716,7 @@ class DatabaseHelper {
     }
 
     final ownerId = (existing.first['id'] as num).toInt();
-    await db.update(
-      'users',
-      row,
-      where: 'id = ?',
-      whereArgs: [ownerId],
-    );
+    await db.update('users', row, where: 'id = ?', whereArgs: [ownerId]);
 
     await recordAuditLog(
       user: normalizedEmail,
@@ -1503,6 +1874,8 @@ class DatabaseHelper {
         'cost_price': costPrice,
         'stock_quantity': stockQuantity,
         'image_url': trimmedImageUrl?.isEmpty == true ? null : trimmedImageUrl,
+        'pending_delete': 0,
+        'pending_delete_at': null,
         'created_at': now,
         'updated_at': now,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -1518,6 +1891,8 @@ class DatabaseHelper {
         'cost_price': costPrice,
         'stock_quantity': stockQuantity,
         'image_url': trimmedImageUrl?.isEmpty == true ? null : trimmedImageUrl,
+        'pending_delete': 0,
+        'pending_delete_at': null,
         'created_at': now,
         'updated_at': now,
       });
@@ -1611,7 +1986,23 @@ class DatabaseHelper {
 
   Future<int> deleteProduct(int id, {String? actorUsername}) async {
     final db = await database;
+    await _ensureProductSchema(db);
     final oldRows = await db.query(
+      'products',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (oldRows.isEmpty) return 0;
+
+    final pendingDeleteAt = DateTime.now().toIso8601String();
+    await db.update(
+      'products',
+      {'pending_delete': 1, 'pending_delete_at': pendingDeleteAt},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    final pendingRows = await db.query(
       'products',
       where: 'id = ?',
       whereArgs: [id],
@@ -1624,7 +2015,9 @@ class DatabaseHelper {
     );
 
     if (result > 0) {
-      final oldProduct = oldRows.isEmpty ? <String, Object?>{} : oldRows.first;
+      final oldProduct = pendingRows.isEmpty
+          ? oldRows.first
+          : pendingRows.first;
       await queueSyncDelete('products', id, oldProduct);
       await recordAuditLog(
         user: actorUsername ?? 'system',
@@ -1812,18 +2205,14 @@ class DatabaseHelper {
             await queueSyncUpsert('products', rows.first, executor: txn);
           }
         }
-        await queueSyncUpsert(
-          'sales',
-          {
-            ...item,
-            'voided_at': now,
-            'voided_by': normalizedUser,
-            'void_reason': trimmedReason == null || trimmedReason.isEmpty
-                ? null
-                : trimmedReason,
-          },
-          executor: txn,
-        );
+        await queueSyncUpsert('sales', {
+          ...item,
+          'voided_at': now,
+          'voided_by': normalizedUser,
+          'void_reason': trimmedReason == null || trimmedReason.isEmpty
+              ? null
+              : trimmedReason,
+        }, executor: txn);
       }
     });
 
@@ -1907,11 +2296,22 @@ class DatabaseHelper {
   /// Deletes a staff member by id.
   Future<bool> deleteStaff(int userId) async {
     final db = await database;
+    final oldRows = await db.query(
+      'users',
+      where: 'id = ? AND role = ?',
+      whereArgs: [userId, 'staff'],
+      limit: 1,
+    );
     final result = await db.delete(
       'users',
       where: 'id = ? AND role = ?',
       whereArgs: [userId, 'staff'],
     );
+    if (result > 0) {
+      final oldUser = oldRows.isEmpty ? <String, Object?>{} : oldRows.first;
+      await queueSyncDelete('users', userId, oldUser);
+      unawaited(syncPendingChanges());
+    }
     return result > 0;
   }
 

@@ -30,8 +30,7 @@ class LicenseActivation {
 class LicenseActivationService {
   LicenseActivationService._();
 
-  static final LicenseActivationService instance =
-      LicenseActivationService._();
+  static final LicenseActivationService instance = LicenseActivationService._();
 
   static const _secureStorage = FlutterSecureStorage();
   static const _licenseKey = 'license_key';
@@ -60,10 +59,7 @@ class LicenseActivationService {
     }
 
     final installationId = _createUuidV4();
-    await _secureStorage.write(
-      key: _installationIdKey,
-      value: installationId,
-    );
+    await _secureStorage.write(key: _installationIdKey, value: installationId);
     return installationId;
   }
 
@@ -112,14 +108,11 @@ class LicenseActivationService {
     final installationId = await getOrCreateInstallationId();
     final existingToken = await _secureStorage.read(key: _activationTokenKey);
 
-    final response = await _postFunction(
-      'validate-license',
-      {
-        'installationId': installationId,
-        if (existingToken != null && existingToken.trim().isNotEmpty)
-          'activationToken': existingToken.trim(),
-      },
-    );
+    final response = await _postFunction('validate-license', {
+      'installationId': installationId,
+      if (existingToken != null && existingToken.trim().isNotEmpty)
+        'activationToken': existingToken.trim(),
+    });
 
     if (response == null) return null;
     await saveActivation(
@@ -140,16 +133,15 @@ class LicenseActivationService {
     }
 
     final installationId = await getOrCreateInstallationId();
-    final response = await _postFunction(
-      'validate-license',
-      {
-        'installationId': installationId,
-        'licenseKey': cleanedLicense,
-      },
-    );
+    final response = await _postFunction('validate-license', {
+      'installationId': installationId,
+      'licenseKey': cleanedLicense,
+    });
 
     if (response == null) {
-      throw Exception('License check returned an empty response.');
+      throw Exception(
+        'Could not verify this license. Please check the code and try again.',
+      );
     }
 
     final activated = response['activated'] == true;
@@ -184,17 +176,14 @@ class LicenseActivationService {
   }) async {
     _ensureConfigured();
     final installationId = await getOrCreateInstallationId();
-    final response = await _postFunction(
-      'register-store-v2',
-      {
-        'storeName': storeName,
-        'ownerName': ownerName,
-        'email': email,
-        'password': password,
-        'inviteCode': licenseKey,
-        'installationId': installationId,
-      },
-    );
+    final response = await _postFunction('register-store-v2', {
+      'storeName': storeName,
+      'ownerName': ownerName,
+      'email': email,
+      'password': password,
+      'inviteCode': licenseKey,
+      'installationId': installationId,
+    });
 
     if (response == null) {
       throw Exception('Cloud registration returned an empty response.');
@@ -284,52 +273,180 @@ class LicenseActivationService {
     }
   }
 
-  Future<void> sendPasswordResetEmail(String email) async {
+  Future<void> sendMagicLinkEmail(String email) async {
     final cleanedEmail = email.trim().toLowerCase();
     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(cleanedEmail)) {
       throw Exception('Enter a valid email.');
     }
     try {
-      final redirectUrl = EnvConfig.supabasePasswordResetRedirectUrl;
-      await Supabase.instance.client.auth.resetPasswordForEmail(
-        cleanedEmail,
-        redirectTo: redirectUrl.isEmpty ? null : redirectUrl,
+      final redirectUrl = EnvConfig.supabaseMagicLinkRedirectUrl;
+      await Supabase.instance.client.auth.signInWithOtp(
+        email: cleanedEmail,
+        emailRedirectTo: redirectUrl.isEmpty ? null : redirectUrl,
+        shouldCreateUser: false,
       );
+    } on AuthException catch (e) {
+      throw Exception(_magicLinkErrorMessage(e));
     } catch (e) {
-      throw Exception('Could not send password reset email. $e');
+      throw Exception(_magicLinkErrorMessage(e));
     }
+  }
+
+  String _magicLinkErrorMessage(Object error) {
+    if (error is AuthException && _isRateLimitError(error)) {
+      final waitSeconds = _waitSecondsFromMessage(error.message);
+      if (waitSeconds != null) {
+        return 'Too many requests. Please wait $waitSeconds seconds before sending another magic link.';
+      }
+      return 'Too many requests. Please wait a minute before sending another magic link.';
+    }
+
+    if (_isRateLimitMessage(error.toString())) {
+      return 'Too many requests. Please wait a minute before sending another magic link.';
+    }
+
+    return 'Could not send the magic link. Please check the email and try again.';
+  }
+
+  bool _isRateLimitError(AuthException error) {
+    return error.statusCode == '429' ||
+        _isRateLimitMessage(error.code ?? '') ||
+        _isRateLimitMessage(error.message);
+  }
+
+  bool _isRateLimitMessage(String value) {
+    final normalized = value.toLowerCase();
+    return normalized.contains('rate limit') ||
+        normalized.contains('rate_limit') ||
+        normalized.contains('too many') ||
+        normalized.contains('429');
+  }
+
+  String? _waitSecondsFromMessage(String message) {
+    return RegExp(
+      r'(\d+)\s*seconds?',
+      caseSensitive: false,
+    ).firstMatch(message)?.group(1);
   }
 
   Future<Map<String, dynamic>?> _postFunction(
     String functionName,
     Map<String, Object?> body,
   ) async {
-    final response = await http.post(
-      Uri.parse('${EnvConfig.supabaseUrl}/functions/v1/$functionName'),
-      headers: {
-        'apikey': EnvConfig.supabaseAnonKey,
-        'Authorization': 'Bearer ${EnvConfig.supabaseAnonKey}',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode(body),
-    );
+    final http.Response response;
+    try {
+      response = await http.post(
+        Uri.parse('${EnvConfig.supabaseUrl}/functions/v1/$functionName'),
+        headers: {
+          'apikey': EnvConfig.supabaseAnonKey,
+          'Authorization': 'Bearer ${EnvConfig.supabaseAnonKey}',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+    } catch (_) {
+      throw Exception(
+        'Could not reach the license server. Check your internet connection and try again.',
+      );
+    }
 
     final decoded = _decodeJson(response.body);
-    if (response.statusCode == 404) return null;
+    if (response.statusCode == 404) {
+      if (functionName == 'validate-license' &&
+          body.containsKey('licenseKey')) {
+        throw Exception(
+          _licenseActivationErrorMessage(
+            functionName: functionName,
+            statusCode: response.statusCode,
+            message: 'License not found.',
+          ),
+        );
+      }
+      if (functionName == 'register-store-v2') {
+        throw Exception(
+          'The license activation service is unavailable. Please try again in a few minutes.',
+        );
+      }
+      return null;
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final message = decoded is Map && decoded['error'] != null
           ? decoded['error'].toString()
           : response.body;
-      throw Exception('Cloud license check failed (${response.statusCode}): $message');
+      throw Exception(
+        _licenseActivationErrorMessage(
+          functionName: functionName,
+          statusCode: response.statusCode,
+          message: message,
+        ),
+      );
     }
     if (decoded is Map && decoded['error'] != null) {
-      throw Exception(decoded['error'].toString());
+      throw Exception(
+        _licenseActivationErrorMessage(
+          functionName: functionName,
+          message: decoded['error'].toString(),
+        ),
+      );
     }
     return decoded is Map<String, dynamic>
         ? decoded
         : decoded is Map
-            ? decoded.map((key, value) => MapEntry(key.toString(), value))
-            : null;
+        ? decoded.map((key, value) => MapEntry(key.toString(), value))
+        : null;
+  }
+
+  String _licenseActivationErrorMessage({
+    required String functionName,
+    int? statusCode,
+    required String message,
+  }) {
+    final normalized = message.toLowerCase();
+
+    if (statusCode == 429 || _isRateLimitMessage(message)) {
+      return 'Too many attempts. Please wait a minute before trying again.';
+    }
+
+    if (statusCode != null && statusCode >= 500) {
+      return 'The license server is temporarily unavailable. Please try again in a few minutes.';
+    }
+
+    if (normalized.contains('not found') ||
+        normalized.contains('invalid') ||
+        normalized.contains('invite') && normalized.contains('code')) {
+      return 'We could not find that license code. Check the code and try again.';
+    }
+
+    if (normalized.contains('expired')) {
+      return 'This license has expired. Contact support to renew it.';
+    }
+
+    if (normalized.contains('already') &&
+        (normalized.contains('activated') ||
+            normalized.contains('used') ||
+            normalized.contains('store'))) {
+      return 'This license is already active. Sign in with the owner account to restore this device.';
+    }
+
+    if (functionName == 'register-store-v2' &&
+        (normalized.contains('email') ||
+            normalized.contains('user') ||
+            normalized.contains('duplicate'))) {
+      return 'That owner email is already registered. Sign in with the owner account or use a different email.';
+    }
+
+    if (functionName == 'register-store-v2' &&
+        normalized.contains('password')) {
+      return 'Use a stronger owner password and try again.';
+    }
+
+    if (statusCode == 401 || statusCode == 403) {
+      return 'The license server rejected the request. Please check your Supabase settings or contact support.';
+    }
+
+    return functionName == 'register-store-v2'
+        ? 'Could not activate this license. Please check your details and try again.'
+        : 'Could not verify this license. Please check the code and try again.';
   }
 
   Object? _decodeJson(String body) {

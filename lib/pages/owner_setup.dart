@@ -309,7 +309,8 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
                               hint: 'e.g. My Sari-Sari Store',
                               icon: Icons.store_mall_directory_outlined,
                             ),
-                            validator: (value) => _required(value, 'Store name'),
+                            validator: (value) =>
+                                _required(value, 'Store name'),
                           ),
                           const SizedBox(height: 14),
                           TextFormField(
@@ -424,14 +425,7 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
                         ),
                         if (_error != null) ...[
                           const SizedBox(height: 14),
-                          Text(
-                            _error!,
-                            style: const TextStyle(
-                              color: Color(0xFFDC2626),
-                              fontWeight: FontWeight.w600,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
+                          _ErrorNotice(message: _error!),
                         ],
                         const SizedBox(height: 24),
                         SizedBox(
@@ -479,6 +473,38 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ErrorNotice extends StatelessWidget {
+  const _ErrorNotice({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, color: Color(0xFFDC2626), size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(color: Color(0xFF991B1B), fontSize: 13),
+            ),
+          ),
+        ],
       ),
     );
   }
