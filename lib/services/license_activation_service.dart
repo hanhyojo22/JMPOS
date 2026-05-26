@@ -251,7 +251,11 @@ class LicenseActivationService {
       throw Exception('Enter a valid email.');
     }
     try {
-      await Supabase.instance.client.auth.resetPasswordForEmail(cleanedEmail);
+      final redirectUrl = EnvConfig.supabasePasswordResetRedirectUrl;
+      await Supabase.instance.client.auth.resetPasswordForEmail(
+        cleanedEmail,
+        redirectTo: redirectUrl.isEmpty ? null : redirectUrl,
+      );
     } catch (e) {
       throw Exception('Could not send password reset email. $e');
     }

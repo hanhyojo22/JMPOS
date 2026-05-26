@@ -8,7 +8,6 @@ import 'package:pos_app/services/license_activation_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'pages/license_check_page.dart';
 import 'pages/login.dart';
-import 'pages/owner_setup.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -174,7 +173,7 @@ class StartupGate extends StatelessWidget {
       future: _resolveStartupState(),
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const LicenseCheckPage();
+          return const StartupBlankScreen();
         }
 
         if (snapshot.hasError) {
@@ -213,3 +212,17 @@ class StartupGate extends StatelessWidget {
 }
 
 enum _StartupState { ready, needsSetup }
+
+class StartupBlankScreen extends StatelessWidget {
+  const StartupBlankScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      backgroundColor: isDark
+          ? const Color(0xFF0F172A)
+          : const Color(0xFFF4F5FF),
+    );
+  }
+}
