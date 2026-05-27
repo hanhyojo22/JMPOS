@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/services/license_activation_service.dart';
 
 import 'login.dart';
@@ -40,28 +41,41 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
       );
 
       if (!mounted) return;
-      if (result.activated) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => LoginPage(
-              cloudRestoreLicenseKey: result.licenseKey,
-              cloudRestoreStoreName: result.storeName,
-            ),
-          ),
-        );
-        return;
-      }
+      final existingStoreId = result.storeId?.trim() ?? '';
+      final isExistingStoreLicense =
+          existingStoreId.isNotEmpty &&
+          (result.activated || result.restoreAvailable);
 
-      if (result.restoreAvailable) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => LoginPage(
-              cloudRestoreLicenseKey: result.licenseKey,
-              cloudRestoreStoreName: result.storeName,
+      if (isExistingStoreLicense) {
+        final hasOwner = await DatabaseHelper.instance.hasOwnerAccount();
+        final matchesStore = await LicenseActivationService.instance
+            .localOwnerMatchesStore(existingStoreId);
+        if (!mounted) return;
+
+        if (hasOwner && matchesStore) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => LoginPage(
+                cloudRestoreLicenseKey: result.licenseKey,
+                cloudRestoreStoreName: result.storeName,
+              ),
             ),
-          ),
-        );
-        return;
+          );
+          return;
+        }
+
+        if (!hasOwner || !matchesStore) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => OwnerSetupPage(
+                verifiedLicenseKey: result.licenseKey,
+                restoreExistingLicense: true,
+                restoredStoreName: result.storeName,
+              ),
+            ),
+          );
+          return;
+        }
       }
 
       Navigator.of(context).pushReplacement(

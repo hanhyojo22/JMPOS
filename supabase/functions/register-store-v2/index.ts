@@ -1,5 +1,4 @@
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,7 +17,9 @@ type RegisterStoreBody = {
   deviceName?: string;
 };
 
-serve(async (req: Request) => {
+type AdminClient = SupabaseClient;
+
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -110,6 +111,23 @@ serve(async (req: Request) => {
         deviceName,
       });
       if (restoredByOwner) return jsonResponse(restoredByOwner);
+
+      if (invite.store_id) {
+        const ownerMatches = await licenseOwnerEmailMatches(
+          admin,
+          invite.store_id,
+          email,
+        );
+        if (ownerMatches === false) {
+          return jsonResponse(
+            {
+              error:
+                "This email does not match the existing license account.",
+            },
+            403,
+          );
+        }
+      }
 
       return jsonResponse(
         { error: "Invite/license code is already registered. Sign in with the original owner account to restore this store." },
@@ -268,7 +286,7 @@ function sanitizeToken(value: unknown, maxLength: number) {
 }
 
 async function restoreExistingDevice(
-  admin: ReturnType<typeof createClient>,
+  admin: AdminClient,
   installationIdHash: string,
   inviteId: string,
   licenseKey: string,
@@ -328,7 +346,7 @@ async function restoreUsedLicenseForOwner({
   installationIdHash,
   deviceName,
 }: {
-  admin: ReturnType<typeof createClient>;
+  admin: AdminClient;
   supabaseUrl: string;
   anonKey: string;
   invite: {
@@ -397,6 +415,26 @@ async function restoreUsedLicenseForOwner({
     sessionCreated: false,
     message: "License was restored after owner verification.",
   };
+}
+
+async function licenseOwnerEmailMatches(
+  admin: AdminClient,
+  storeId: string,
+  email: string,
+) {
+  const { data: store, error: storeError } = await admin
+    .from("stores")
+    .select("owner_user_id")
+    .eq("id", storeId)
+    .single();
+  if (storeError) throw storeError;
+  if (!store.owner_user_id) return null;
+
+  const { data: ownerData, error: ownerError } =
+    await admin.auth.admin.getUserById(store.owner_user_id);
+  if (ownerError) throw ownerError;
+
+  return ownerData.user?.email?.trim().toLowerCase() === email;
 }
 
 async function sha256Hex(value: string) {

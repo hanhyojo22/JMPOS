@@ -84,8 +84,8 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (EnvConfig.supabaseUrl.isEmpty || EnvConfig.supabaseAnonKey.isEmpty) {
       return;
     }
-    final cloudSignedIn =
-        await LicenseActivationService.instance.ensureCloudSyncSignedIn();
+    final cloudSignedIn = await LicenseActivationService.instance
+        .ensureCloudSyncSignedIn();
     if (!cloudSignedIn) {
       return;
     }
@@ -192,23 +192,36 @@ class StartupGate extends StatelessWidget {
 
   Future<_StartupState> _resolveStartupState() async {
     final hasOwner = await DatabaseHelper.instance.hasOwnerAccount();
-    if (!hasOwner) {
-      return _StartupState.needsSetup;
-    }
+    final licenseService = LicenseActivationService.instance;
 
-    if (await LicenseActivationService.instance.hasValidLocalActivation()) {
-      return _StartupState.ready;
+    final localActivation = await licenseService.readLocalActivation();
+    if (localActivation != null &&
+        DateTime.now().difference(localActivation.lastVerifiedAt) <=
+            const Duration(days: 14)) {
+      return _stateForActivation(hasOwner, localActivation);
     }
 
     try {
-      final activation = await LicenseActivationService.instance
-          .recoverActivation();
+      final activation = await licenseService.recoverActivation();
       if (activation != null) {
-        return _StartupState.ready;
+        return _stateForActivation(hasOwner, activation);
       }
     } catch (_) {
       // No valid cloud activation: require license activation again.
     }
+    return _StartupState.needsSetup;
+  }
+
+  Future<_StartupState> _stateForActivation(
+    bool hasOwner,
+    LicenseActivation activation,
+  ) async {
+    if (!hasOwner) return _StartupState.needsSetup;
+
+    final licenseService = LicenseActivationService.instance;
+    final localOwnerStoreId = await licenseService.readLocalOwnerStoreId();
+    if (localOwnerStoreId == activation.storeId) return _StartupState.ready;
+
     return _StartupState.needsSetup;
   }
 }

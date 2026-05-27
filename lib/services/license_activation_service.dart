@@ -41,6 +41,7 @@ class LicenseActivationService {
   static const _storeNameKey = 'store_name';
   static const _cloudEmailKey = 'cloud_sync_email';
   static const _cloudPasswordKey = 'cloud_sync_password';
+  static const _localOwnerStoreIdKey = 'local_owner_store_id';
   static const _offlineGracePeriod = Duration(days: 14);
 
   Future<String> getOrCreateInstallationId() async {
@@ -225,23 +226,43 @@ class LicenseActivationService {
     ]);
   }
 
+  Future<String?> readLocalOwnerStoreId() async {
+    final storeId = await _secureStorage.read(key: _localOwnerStoreIdKey);
+    final trimmed = storeId?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  Future<void> saveLocalOwnerStoreId(String storeId) async {
+    final trimmed = storeId.trim();
+    if (trimmed.isEmpty) return;
+    await _secureStorage.write(key: _localOwnerStoreIdKey, value: trimmed);
+  }
+
+  Future<bool> localOwnerMatchesStore(String storeId) async {
+    final localStoreId = await readLocalOwnerStoreId();
+    return localStoreId != null && localStoreId == storeId.trim();
+  }
+
   Future<bool> ensureCloudSyncSignedIn() async {
     try {
-      if (Supabase.instance.client.auth.currentSession != null) return true;
-
       final values = await Future.wait([
         _secureStorage.read(key: _cloudEmailKey),
         _secureStorage.read(key: _cloudPasswordKey),
       ]);
       final email = values[0]?.trim().toLowerCase() ?? '';
       final password = values[1] ?? '';
+
+      final client = Supabase.instance.client;
+      final currentEmail = client.auth.currentUser?.email?.trim().toLowerCase();
+      if (client.auth.currentSession != null) {
+        if (email.isEmpty || currentEmail == email) return true;
+        await client.auth.signOut();
+      }
+
       if (email.isEmpty || password.isEmpty) return false;
 
-      await Supabase.instance.client.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
-      return Supabase.instance.client.auth.currentSession != null;
+      await client.auth.signInWithPassword(email: email, password: password);
+      return client.auth.currentSession != null;
     } catch (_) {
       return false;
     }
@@ -409,6 +430,19 @@ class LicenseActivationService {
 
     if (statusCode != null && statusCode >= 500) {
       return 'The license server is temporarily unavailable. Please try again in a few minutes.';
+    }
+
+    if (functionName == 'register-store-v2' &&
+        normalized.contains('email') &&
+        normalized.contains('does not match')) {
+      return 'This email does not match the existing license account.';
+    }
+
+    if (functionName == 'register-store-v2' &&
+        (normalized.contains('already registered') ||
+            normalized.contains('original owner') ||
+            normalized.contains('owner account'))) {
+      return 'This email or password does not match the existing license account.';
     }
 
     if (normalized.contains('not found') ||

@@ -78,6 +78,7 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
         : _ownerNameController.text.trim();
     final password = _passwordController.text;
     final pin = _pinController.text.trim();
+    LicenseActivation? activation;
     if (!widget.activationRestored) {
       final inviteCode = widget.verifiedLicenseKey?.trim().toUpperCase() ?? '';
       if (inviteCode.isEmpty) {
@@ -88,13 +89,16 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
         return;
       }
       try {
-        await LicenseActivationService.instance.activateStore(
+        activation = await LicenseActivationService.instance.activateStore(
           licenseKey: inviteCode,
           storeName: storeName,
           ownerName: ownerName,
           email: email,
           password: password,
         );
+        if (isRestoreExisting) {
+          await DatabaseHelper.instance.pullCloudSnapshotToLocal();
+        }
       } catch (e) {
         if (!mounted) return;
         setState(() {
@@ -103,6 +107,9 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
         });
         return;
       }
+    } else {
+      activation = await LicenseActivationService.instance
+          .readLocalActivation();
     }
 
     final userId = await DatabaseHelper.instance.createOwner(
@@ -135,6 +142,10 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
         _error = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
       });
       return;
+    }
+    final storeId = activation?.storeId.trim() ?? '';
+    if (storeId.isNotEmpty) {
+      await LicenseActivationService.instance.saveLocalOwnerStoreId(storeId);
     }
 
     if (!mounted) return;
@@ -274,7 +285,11 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
                         ),
                         const SizedBox(height: 18),
                         Text(
-                          'Set up your store',
+                          widget.restoreExistingLicense
+                              ? 'Restore existing store'
+                              : widget.activationRestored
+                              ? 'Set up this device'
+                              : 'Set up your store',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: primaryText,
@@ -287,7 +302,7 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
                           widget.activationRestored
                               ? 'Cloud activation was restored. Create the local owner account for this device.'
                               : widget.restoreExistingLicense
-                              ? 'This license already belongs to an existing store. Sign in with the original owner account to restore it on this device.'
+                              ? 'This license already belongs to ${widget.restoredStoreName ?? 'an existing store'}. Sign in with the registered owner email, then set the local PIN for this device.'
                               : 'Register the owner account for local POS access and Supabase Cloud Sync.',
                           textAlign: TextAlign.center,
                           style: TextStyle(

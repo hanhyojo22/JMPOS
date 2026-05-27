@@ -1520,9 +1520,11 @@ class DatabaseHelper {
     final result = await db.query(
       'users',
       where: isEmailLogin
-          ? 'email = ? AND password_hash = ?'
+          ? '(LOWER(email) = ? OR username = ?) AND password_hash = ?'
           : 'username = ? AND password_hash = ?',
-      whereArgs: [normalizedUsername, hash],
+      whereArgs: isEmailLogin
+          ? [normalizedUsername, normalizedUsername, hash]
+          : [normalizedUsername, hash],
     );
 
     if (result.isNotEmpty) {
@@ -1659,21 +1661,41 @@ class DatabaseHelper {
     String? fullName,
   }) async {
     final db = await database;
+    final normalizedUsername = _normalizeAuthUsername(username);
+    final normalizedEmail = email == null
+        ? null
+        : _normalizeAuthUsername(email);
     final trimmedStoreName = storeName?.trim();
     final trimmedFullName = fullName?.trim();
+    final row = {
+      'username': normalizedUsername,
+      'password_hash': _hashPassword(password),
+      'full_name': trimmedFullName == null || trimmedFullName.isEmpty
+          ? trimmedStoreName == null || trimmedStoreName.isEmpty
+                ? normalizedUsername
+                : trimmedStoreName
+          : trimmedFullName,
+      'email': normalizedEmail,
+      'role': 'admin',
+      'created_at': DateTime.now().toIso8601String(),
+    };
+
     try {
-      return await db.insert('users', {
-        'username': username.trim().toLowerCase(),
-        'password_hash': _hashPassword(password),
-        'full_name': trimmedFullName == null || trimmedFullName.isEmpty
-            ? trimmedStoreName == null || trimmedStoreName.isEmpty
-                  ? username.trim()
-                  : trimmedStoreName
-            : trimmedFullName,
-        'email': email?.trim(),
-        'role': 'admin',
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      final existingOwner = await db.query(
+        'users',
+        columns: ['id'],
+        where: 'role = ?',
+        whereArgs: ['admin'],
+        orderBy: 'created_at ASC',
+        limit: 1,
+      );
+      if (existingOwner.isNotEmpty) {
+        final ownerId = (existingOwner.first['id'] as num).toInt();
+        await db.update('users', row, where: 'id = ?', whereArgs: [ownerId]);
+        return ownerId;
+      }
+
+      return await db.insert('users', row);
     } catch (_) {
       return -1;
     }

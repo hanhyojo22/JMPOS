@@ -60,15 +60,23 @@ class _LoginPageState extends State<LoginPage> {
     _usernameController.text = username;
     _passwordController.text = password;
 
-    var user = await DatabaseHelper.instance.login(username, password);
+    final restoringCloudLicense =
+        widget.cloudRestoreLicenseKey?.trim().isNotEmpty == true;
+    var user = restoringCloudLicense
+        ? null
+        : await DatabaseHelper.instance.login(username, password);
 
-    user ??= await _loginWithCloudOwner(username, password);
+    if (restoringCloudLicense) {
+      user = await _loginWithCloudOwner(username, password);
+    }
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
     final loggedInUser = user;
     if (loggedInUser != null) {
+      await _bindLocalOwnerStoreIfNeeded(loggedInUser);
+      if (!mounted) return;
       unawaited(_rememberCloudSyncLogin(username, password));
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -82,6 +90,21 @@ class _LoginPageState extends State<LoginPage> {
     } else {
       setState(() => _invalidCredentials = true);
       _formKey.currentState!.validate();
+    }
+  }
+
+  Future<void> _bindLocalOwnerStoreIfNeeded(Map<String, dynamic> user) async {
+    if (user['role']?.toString() != 'admin') return;
+
+    final activation = await LicenseActivationService.instance
+        .readLocalActivation();
+    final storeId = activation?.storeId.trim() ?? '';
+    if (storeId.isEmpty) return;
+
+    final matches = await LicenseActivationService.instance
+        .localOwnerMatchesStore(storeId);
+    if (!matches) {
+      await LicenseActivationService.instance.saveLocalOwnerStoreId(storeId);
     }
   }
 
@@ -117,6 +140,9 @@ class _LoginPageState extends State<LoginPage> {
         password: password,
       );
       await DatabaseHelper.instance.pullCloudSnapshotToLocal();
+      await LicenseActivationService.instance.saveLocalOwnerStoreId(
+        activation.storeId,
+      );
 
       return DatabaseHelper.instance.upsertOwnerFromCloud(
         email: email,
@@ -170,7 +196,6 @@ class _LoginPageState extends State<LoginPage> {
     if (!isEmail && !RegExp(r'^[a-z0-9_]+$').hasMatch(username)) {
       return 'Use a username or valid email';
     }
-    if (_invalidCredentials) return 'Invalid username or password';
     return null;
   }
 
@@ -179,7 +204,6 @@ class _LoginPageState extends State<LoginPage> {
     if (password.isEmpty) return 'Please enter your password';
     if (password.length < 6) return 'Password must be at least 6 characters';
     if (password.length > _maxPasswordLength) return 'Password is too long';
-    if (_invalidCredentials) return 'Invalid username or password';
     return null;
   }
 
@@ -322,6 +346,18 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           validator: _validatePassword,
                         ),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          child: !_invalidCredentials
+                              ? const SizedBox.shrink()
+                              : const Padding(
+                                  padding: EdgeInsets.only(top: 12),
+                                  child: _LoginErrorNotice(
+                                    message:
+                                        'Username or password is incorrect. Please check your credentials and try again.',
+                                  ),
+                                ),
+                        ),
                         const SizedBox(height: 8),
                         Align(
                           alignment: Alignment.centerRight,
@@ -389,6 +425,47 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _LoginErrorNotice extends StatelessWidget {
+  const _LoginErrorNotice({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            color: Color(0xFFDC2626),
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF991B1B),
+                fontSize: 13,
+                height: 1.25,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

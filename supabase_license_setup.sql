@@ -139,3 +139,13 @@ values (
   1
 )
 on conflict (code_hash) do nothing;
+
+-- Additional one-time invite/license code:
+-- ZZAM6-LABGF-7298B
+insert into public.store_invites (code_hash, label, max_uses)
+values (
+  encode(digest('ZZAM6-LABGF-7298B', 'sha256'), 'hex'),
+  'Additional POS install invite',
+  1
+)
+on conflict (code_hash) do nothing;
