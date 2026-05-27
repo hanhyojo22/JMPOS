@@ -51,53 +51,6 @@ class SupabaseSyncService {
     return snapshot;
   }
 
-  Future<int> deleteCloudRowsMissingLocally({
-    required Map<String, Set<String>> localIdsByTable,
-  }) async {
-    final client = await _authenticatedClient();
-    final storeId = await _activeStoreId();
-    var deleted = 0;
-
-    for (final entry in localIdsByTable.entries) {
-      final sourceTable = entry.key;
-      final targetTable = _targetTable(sourceTable);
-      if (targetTable == null) continue;
-
-      final localIds = entry.value;
-      final cloudRows = await client
-          .from(targetTable)
-          .select()
-          .eq('store_id', storeId);
-
-      for (final rawRow in cloudRows) {
-        final cloudRow = Map<String, dynamic>.from(rawRow as Map);
-        final localId = cloudRow['local_id']?.toString();
-        if (localId == null || localId.isEmpty || localIds.contains(localId)) {
-          continue;
-        }
-
-        if (sourceTable == 'products') {
-          await _requestProductImageDeletion(
-            client: client,
-            storeId: storeId,
-            localId: localId,
-            imagePath: _cloudRowImagePath(cloudRow),
-            syncEventId: cloudRow['sync_event_id']?.toString(),
-          );
-        }
-
-        await client
-            .from(targetTable)
-            .delete()
-            .eq('store_id', storeId)
-            .eq('local_id', localId);
-        deleted += 1;
-      }
-    }
-
-    return deleted;
-  }
-
   Future<int> deleteLegacySalesImageFolder() async {
     final client = await _authenticatedClient();
     final storeId = await _activeStoreId();
@@ -321,20 +274,6 @@ class SupabaseSyncService {
     final payload = _decodePayload(event['payload']?.toString() ?? '{}');
     if (payload is! Map) return null;
     return payload['image_url']?.toString();
-  }
-
-  String? _cloudRowImagePath(Map<String, dynamic> cloudRow) {
-    final payload = cloudRow['payload'];
-    if (payload is Map && payload['image_url'] != null) {
-      return payload['image_url']?.toString();
-    }
-    if (payload is String && payload.trim().isNotEmpty) {
-      final decoded = _decodePayload(payload);
-      if (decoded is Map && decoded['image_url'] != null) {
-        return decoded['image_url']?.toString();
-      }
-    }
-    return cloudRow['image_url']?.toString();
   }
 
   Future<Map<String, Object?>> _toMirrorRow(

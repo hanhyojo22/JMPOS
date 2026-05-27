@@ -51,7 +51,9 @@ class _ReportsPageState extends State<ReportsPage>
 
       for (final period in ['Today', 'Weekly', 'Monthly']) {
         double revenue = 0;
+        double voidedAmount = 0;
         int orders = 0;
+        int voidedOrders = 0;
         final Map<String, double> productRevenue = {};
         final Map<String, int> productQty = {};
         final Map<String, double> categoryRevenue = {};
@@ -72,6 +74,14 @@ class _ReportsPageState extends State<ReportsPage>
 
           final double total = (row['total'] as num?)?.toDouble() ?? 0;
           final int qty = (row['quantity'] as num?)?.toInt() ?? 0;
+          final bool isVoided = (row['voided_at']?.toString() ?? '').isNotEmpty;
+
+          if (isVoided) {
+            voidedAmount += total;
+            voidedOrders += 1;
+            continue;
+          }
+
           final String name = row['product_name'] as String? ?? 'Unknown';
 
           // Get category from products table
@@ -108,6 +118,8 @@ class _ReportsPageState extends State<ReportsPage>
         _data[period] = _ReportData(
           revenue: revenue,
           orders: orders,
+          voidedAmount: voidedAmount,
+          voidedOrders: voidedOrders,
           topProducts: topProducts,
           categoryPct: categoryPct,
         );
@@ -210,12 +222,16 @@ class _ReportsPageState extends State<ReportsPage>
 class _ReportData {
   final double revenue;
   final int orders;
+  final double voidedAmount;
+  final int voidedOrders;
   final List<MapEntry<String, int>> topProducts;
   final Map<String, int> categoryPct;
 
   _ReportData({
     this.revenue = 0,
     this.orders = 0,
+    this.voidedAmount = 0,
+    this.voidedOrders = 0,
     this.topProducts = const [],
     this.categoryPct = const {},
   });
@@ -232,7 +248,8 @@ class _ReportView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool empty = data.revenue == 0 && data.orders == 0;
+    final bool empty =
+        data.revenue == 0 && data.orders == 0 && data.voidedOrders == 0;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryText = isDark ? const Color(0xFFF8FAFC) : Colors.black87;
     final secondaryText = isDark ? const Color(0xFFCBD5E1) : Colors.grey[500]!;
@@ -364,6 +381,12 @@ class _ReportView extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
+
+            // ── Void audit ─────────────────────────────────────────
+            if (data.voidedOrders > 0) ...[
+              _VoidSummaryCard(data: data),
+              const SizedBox(height: 20),
+            ],
 
             // ── Category breakdown ─────────────────────────────────
             if (data.categoryPct.isNotEmpty) ...[
@@ -650,6 +673,93 @@ class _ReportView extends StatelessWidget {
 }
 
 // ─── Hero stat ────────────────────────────────────────────────────────────────
+class _VoidSummaryCard extends StatelessWidget {
+  final _ReportData data;
+
+  const _VoidSummaryCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surface = isDark ? const Color(0xFF111827) : Colors.white;
+    final primaryText = isDark ? const Color(0xFFF8FAFC) : Colors.black87;
+    final secondaryText = isDark ? const Color(0xFFCBD5E1) : Colors.grey[600]!;
+    final borderColor = const Color(0xFFF59E0B).withValues(alpha: 0.28);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: borderColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.22 : 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.undo_rounded,
+              color: Color(0xFFF59E0B),
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Voids',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: primaryText,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${data.voidedOrders} voided order${data.voidedOrders == 1 ? '' : 's'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: secondaryText, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              CurrencyFormatter.format(data.voidedAmount),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: Color(0xFFF59E0B),
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _HeroStat extends StatelessWidget {
   final String label, value;
   final IconData icon;

@@ -1026,20 +1026,6 @@ class DatabaseHelper {
 
     const service = SupabaseSyncService();
     await service.deleteLegacySalesImageFolder();
-    await service.deleteCloudRowsMissingLocally(
-      localIdsByTable: {
-        'products': _localIdSet(products),
-        'sales': _localIdSet(sales),
-        'users': _localIdSet(users),
-      },
-    );
-  }
-
-  Set<String> _localIdSet(List<Map<String, Object?>> rows) {
-    return rows
-        .map((row) => row['id']?.toString() ?? '')
-        .where((id) => id.isNotEmpty)
-        .toSet();
   }
 
   Future<int> pullCloudSnapshotToLocal({

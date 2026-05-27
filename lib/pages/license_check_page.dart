@@ -54,12 +54,7 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
 
         if (hasOwner && matchesStore) {
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (_) => LoginPage(
-                cloudRestoreLicenseKey: result.licenseKey,
-                cloudRestoreStoreName: result.storeName,
-              ),
-            ),
+            MaterialPageRoute(builder: (_) => const LoginPage()),
           );
           return;
         }
