@@ -327,7 +327,6 @@ class _HistoryPageState extends State<HistoryPage>
     final receipt = sale['receiptNumber']?.toString().trim() ?? '';
     final isVoided = sale['isVoided'] == true;
     final accentColor = isVoided ? _red : _purple;
-    final voidReason = sale['voidReason']?.toString().trim() ?? '';
 
     return InkWell(
       onTap: () async {
@@ -395,12 +394,6 @@ class _HistoryPageState extends State<HistoryPage>
                           label: 'Completed',
                           color: _purple,
                           bg: _purpleLight,
-                        )
-                      else if (voidReason.isNotEmpty)
-                        _StatusBadge(
-                          label: voidReason,
-                          color: _red,
-                          bg: _redLight,
                         )
                       else
                         _StatusBadge(
