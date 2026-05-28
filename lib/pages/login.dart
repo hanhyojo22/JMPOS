@@ -1,9 +1,10 @@
 import 'dart:async';
-
+import 'package:pos_app/utils/message_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/services/license_activation_service.dart';
+import 'package:pos_app/utils/login_input_validator.dart';
 
 import 'home.dart';
 import 'pin_login.dart';
@@ -40,8 +41,6 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _invalidCredentials = false;
-  static const int _maxUsernameLength = 80;
-  static const int _maxPasswordLength = 128;
 
   @override
   void dispose() {
@@ -55,8 +54,12 @@ class _LoginPageState extends State<LoginPage> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-    final username = _sanitizeUsername(_usernameController.text);
-    final password = _sanitizePassword(_passwordController.text);
+    final username = LoginInputValidator.sanitizeUsername(
+      _usernameController.text,
+    );
+    final password = LoginInputValidator.sanitizePassword(
+      _passwordController.text,
+    );
     _usernameController.text = username;
     _passwordController.text = password;
 
@@ -112,7 +115,7 @@ class _LoginPageState extends State<LoginPage> {
     String email,
     String password,
   ) async {
-    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+    if (!LoginInputValidator.isEmail(email)) {
       return null;
     }
 
@@ -156,7 +159,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _rememberCloudSyncLogin(String email, String password) async {
-    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+    if (!LoginInputValidator.isEmail(email)) {
       return;
     }
 
@@ -176,35 +179,19 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _invalidCredentials = false);
   }
 
-  String _sanitizeUsername(String value) {
-    return value
-        .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '')
-        .trim()
-        .toLowerCase();
-  }
-
-  String _sanitizePassword(String value) {
-    return value.replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '');
-  }
-
   String? _validateUsername(String? value) {
-    final username = _sanitizeUsername(value ?? '');
-    final isEmail = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(username);
-    if (username.isEmpty) return 'Please enter your username or email';
-    if (username.length < 3) return 'Login must be at least 3 characters';
-    if (username.length > _maxUsernameLength) return 'Username is too long';
-    if (!isEmail && !RegExp(r'^[a-z0-9_]+$').hasMatch(username)) {
-      return 'Use a username or valid email';
-    }
-    return null;
+    return LoginInputValidator.validateUsername(value);
   }
 
   String? _validatePassword(String? value) {
-    final password = _sanitizePassword(value ?? '');
-    if (password.isEmpty) return 'Please enter your password';
-    if (password.length < 6) return 'Password must be at least 6 characters';
-    if (password.length > _maxPasswordLength) return 'Password is too long';
-    return null;
+    final error = LoginInputValidator.validatePassword(value);
+    final password = LoginInputValidator.sanitizePassword(value ?? '');
+    if (password.isNotEmpty && password.length < 6) {
+      setState(() {
+        _invalidCredentials = true;
+      });
+    }
+    return error;
   }
 
   void _showMagicLinkDialog() {
@@ -292,10 +279,10 @@ class _LoginPageState extends State<LoginPage> {
                           onChanged: (_) => _clearLoginError(),
                           inputFormatters: [
                             FilteringTextInputFormatter.deny(
-                              RegExp(r'[\u0000-\u001F\u007F\s]'),
+                              LoginInputValidator.usernameDeniedCharacters,
                             ),
                             LengthLimitingTextInputFormatter(
-                              _maxUsernameLength,
+                              LoginInputValidator.maxUsernameLength,
                             ),
                           ],
                           decoration: InputDecoration(
@@ -318,10 +305,10 @@ class _LoginPageState extends State<LoginPage> {
                           keyboardType: TextInputType.visiblePassword,
                           inputFormatters: [
                             FilteringTextInputFormatter.deny(
-                              RegExp(r'[\u0000-\u001F\u007F]'),
+                              LoginInputValidator.controlCharacters,
                             ),
                             LengthLimitingTextInputFormatter(
-                              _maxPasswordLength,
+                              LoginInputValidator.maxPasswordLength,
                             ),
                           ],
                           decoration: InputDecoration(
@@ -352,12 +339,13 @@ class _LoginPageState extends State<LoginPage> {
                               ? const SizedBox.shrink()
                               : const Padding(
                                   padding: EdgeInsets.only(top: 12),
-                                  child: _LoginErrorNotice(
+                                  child: MessageBanner(
                                     message:
                                         'Username or password is incorrect. Please check your credentials and try again.',
                                   ),
                                 ),
                         ),
+
                         const SizedBox(height: 8),
                         Align(
                           alignment: Alignment.centerRight,
@@ -430,47 +418,6 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-class _LoginErrorNotice extends StatelessWidget {
-  const _LoginErrorNotice({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFFECACA)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            color: Color(0xFFDC2626),
-            size: 20,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: const TextStyle(
-                color: Color(0xFF991B1B),
-                fontSize: 13,
-                height: 1.25,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _MagicLinkDialog extends StatefulWidget {
   const _MagicLinkDialog();
 
@@ -494,7 +441,8 @@ class _MagicLinkDialogState extends State<_MagicLinkDialog> {
     setState(() => _error = null);
     if (!_formKey.currentState!.validate()) return;
 
-    final email = _emailController.text.trim();
+    final email = LoginInputValidator.sanitizeUsername(_emailController.text);
+    _emailController.text = email;
     setState(() => _isSending = true);
     try {
       await LicenseActivationService.instance.sendMagicLinkEmail(email);
@@ -540,17 +488,15 @@ class _MagicLinkDialogState extends State<_MagicLinkDialog> {
                 ),
               ),
               keyboardType: TextInputType.emailAddress,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter your email';
-                }
-                if (!RegExp(
-                  r'^[\w\-.]+@([\w-]+\.)+[\w-]{2,4}$',
-                ).hasMatch(value)) {
-                  return 'Please enter a valid email';
-                }
-                return null;
-              },
+              inputFormatters: [
+                FilteringTextInputFormatter.deny(
+                  LoginInputValidator.usernameDeniedCharacters,
+                ),
+                LengthLimitingTextInputFormatter(
+                  LoginInputValidator.maxUsernameLength,
+                ),
+              ],
+              validator: LoginInputValidator.validateEmail,
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),

@@ -11,6 +11,7 @@ import 'package:path/path.dart';
 import 'package:crypto/crypto.dart';
 import 'package:archive/archive_io.dart';
 import 'package:pos_app/services/supabase_sync_service.dart';
+import 'package:pos_app/utils/login_input_validator.dart';
 
 class RestoreDatabaseException implements Exception {
   const RestoreDatabaseException(this.message);
@@ -1457,14 +1458,11 @@ class DatabaseHelper {
   }
 
   String _normalizeAuthUsername(String username) {
-    return username
-        .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '')
-        .trim()
-        .toLowerCase();
+    return LoginInputValidator.sanitizeUsername(username);
   }
 
   String _sanitizeAuthSecret(String value, {int maxLength = 128}) {
-    final sanitized = value.replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '');
+    final sanitized = LoginInputValidator.sanitizePassword(value);
     return sanitized.length <= maxLength
         ? sanitized
         : sanitized.substring(0, maxLength);
@@ -1482,15 +1480,9 @@ class DatabaseHelper {
     final db = await database;
     final normalizedUsername = _normalizeAuthUsername(username);
     final normalizedPassword = _sanitizeAuthSecret(password);
-    final isEmailLogin = RegExp(
-      r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-    ).hasMatch(normalizedUsername);
-    if (normalizedUsername.length < 3 ||
-        normalizedUsername.length > 80 ||
-        normalizedPassword.length < 6 ||
-        normalizedPassword.length > 128 ||
-        (!isEmailLogin &&
-            !RegExp(r'^[a-z0-9_]+$').hasMatch(normalizedUsername))) {
+    final isEmailLogin = LoginInputValidator.isEmail(normalizedUsername);
+    if (!LoginInputValidator.isValidUsernameOrEmail(normalizedUsername) ||
+        !LoginInputValidator.isValidPassword(normalizedPassword)) {
       await recordAuditLog(
         user: normalizedUsername.isEmpty ? 'unknown' : normalizedUsername,
         action: 'login_failed',
