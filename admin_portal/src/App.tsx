@@ -18,7 +18,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { adminApi, LicenseSummary, supabase } from "./api.ts";
+import { adminApi, LicenseSummary, supabase } from "./api";
 
 type Dashboard = {
   total: number;
