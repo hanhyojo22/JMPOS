@@ -12,9 +12,11 @@ import {
   LogOut,
   Plus,
   RefreshCw,
+  RotateCw,
   Search,
   ShieldAlert,
   Store,
+  Trash2,
   UsersRound,
   X,
 } from "lucide-react";
@@ -65,8 +67,8 @@ export function App() {
   useEffect(() => { if (signedIn) void refresh(); }, [signedIn]);
   useEffect(() => {
     if (!signedIn) return;
-    const timer = window.setTimeout(() => void refresh(), 300);
-    return () => window.clearTimeout(timer);
+    const timer = globalThis.setTimeout(() => void refresh(), 300);
+    return () => globalThis.clearTimeout(timer);
   }, [query, status]);
 
   async function refresh() {
@@ -87,10 +89,12 @@ export function App() {
   async function mutate(action: string, body: Record<string, unknown>) {
     setError("");
     try {
-      await adminApi({ action, ...body });
-      if (selected) await openLicense(selected.license.id);
+      const result = await adminApi<Record<string, unknown>>({ action, ...body });
+      if (action === "remove-unused") setSelected(null);
+      else if (selected) await openLicense(selected.license.id);
       await refresh();
-    } catch (e) { setError(message(e)); }
+      return result;
+    } catch (e) { setError(message(e)); return null; }
   }
   if (!sessionReady) return <Loading />;
   if (!signedIn) return <Login />;
@@ -130,7 +134,7 @@ function LicenseList(p: { licenses: LicenseSummary[]; query: string; setQuery: (
 }
 function LicenseTable({ licenses, open }: { licenses: LicenseSummary[]; open: (id: string) => void }) { return <div className="table-wrap"><table><thead><tr><th>License</th><th>Account</th><th>Store</th><th>Status</th><th>Devices</th><th>Expires</th><th>Last activity</th><th/></tr></thead><tbody>{licenses.map(l=><tr key={l.id} onClick={()=>open(l.id)}><td><strong>{l.label}</strong></td><td>{l.ownerEmail||"Not activated"}</td><td>{l.storeName}</td><td><Badge state={l.state}/></td><td>{l.activeDeviceCount} / {l.slotLimit}</td><td>{date(l.licenseExpiresAt)}</td><td>{date(l.lastActivityAt)}</td><td><ChevronRight size={16}/></td></tr>)}</tbody></table><div className="mobile-license-list">{licenses.map(l=><button className="mobile-license" key={l.id} onClick={()=>open(l.id)}><div className="mobile-license-head"><strong>{l.label}</strong><Badge state={l.state}/></div><span className="mobile-license-account">{l.ownerEmail||"Not activated"}</span><span>{l.storeName}</span><div className="mobile-license-meta"><span><Laptop size={14}/>{l.activeDeviceCount} / {l.slotLimit}</span><span><CalendarClock size={14}/>{date(l.licenseExpiresAt)}</span><ChevronRight size={17}/></div></button>)}</div>{licenses.length===0&&<div className="empty">No licenses found.</div>}</div>; }
 function Badge({ state }: { state: string }) { return <span className={`badge ${state}`}>{state}</span>; }
-function LicenseDrawer({ detail, close, mutate }: { detail: LicenseDetail; close:()=>void; mutate:(a:string,b:Record<string,unknown>)=>void }) { const l=detail.license; return <div className="overlay"><aside className="drawer"><div className="drawer-head"><div><h2>{l.label}</h2><Badge state={l.state}/></div><button className="icon-button" onClick={close}><X/></button></div><dl><dt>Store</dt><dd>{l.storeName}</dd><dt>Owner email</dt><dd>{l.ownerEmail||"Not activated"}</dd><dt>Expires</dt><dd>{date(l.licenseExpiresAt)}</dd><dt>Devices</dt><dd>{l.activeDeviceCount} of {l.slotLimit} active</dd></dl><div className="drawer-actions"><button className="primary" onClick={()=>mutate("renew",{inviteId:l.id,durationMonths:12})}><CircleDollarSign/>Renew 1 year</button><button className="secondary" onClick={()=>{const n=prompt("Device slot limit",String(l.slotLimit));if(n)mutate("set-slot-limit",{inviteId:l.id,slotLimit:Number(n)})}}><Laptop/>Change slots</button><button className="secondary" onClick={()=>mutate(l.state==="suspended"?"reactivate":"suspend",{inviteId:l.id})}><ShieldAlert/>{l.state==="suspended"?"Reactivate":"Suspend"}</button></div><h3>Devices</h3>{l.devices.map(d=><div className="device" key={d.id}><div><strong>{d.device_name||"POS Device"}</strong><span>{d.revoked_at?"Revoked":`Last seen ${date(d.last_seen_at)}`}</span></div>{!d.revoked_at&&<button className="link-danger" onClick={()=>confirmDeviceRevoke(d.device_name)&&mutate("revoke-device",{inviteId:l.id,deviceId:d.id})}>Revoke</button>}</div>)}<h3>Admin activity</h3>{detail.audit.map(a=><div className="audit" key={a.id}><span>{a.action}</span><time>{date(a.created_at)}</time></div>)}</aside></div>; }
+function LicenseDrawer({ detail, close, mutate }: { detail: LicenseDetail; close:()=>void; mutate:(a:string,b:Record<string,unknown>)=>Promise<Record<string,unknown>|null> }) { const l=detail.license; const isUnused=l.state==="unused"; const [replacementCode,setReplacementCode]=useState(""); const [copied,setCopied]=useState(false); async function replaceCode(){if(!confirmUnusedCodeReplacement())return;const result=await mutate("replace-unused-code",{inviteId:l.id});if(typeof result?.code==="string"){setReplacementCode(result.code);setCopied(false)}} async function copyReplacement(){await navigator.clipboard.writeText(replacementCode);setCopied(true)} return <div className="overlay"><aside className="drawer"><div className="drawer-head"><div><h2>{l.label}</h2><Badge state={l.state}/></div><button className="icon-button" aria-label="Close" onClick={close}><X/></button></div><dl><dt>Store</dt><dd>{l.storeName}</dd><dt>Owner email</dt><dd>{l.ownerEmail||"Not activated"}</dd><dt>Expires</dt><dd>{date(l.licenseExpiresAt)}</dd><dt>Devices</dt><dd>{l.activeDeviceCount} of {l.slotLimit} active</dd></dl>{isUnused&&<div className="unused-warning"><ShieldAlert/><div><strong>Unused license code</strong><span>This license has not been activated. For security, the original code cannot be viewed again. Replace it only when the customer needs a new code.</span></div></div>}{replacementCode&&<div className="generated"><span>New replacement license code</span><strong>{replacementCode}</strong><small>Copy this now. It is shown once only, and the previous code no longer works.</small><button type="button" className="secondary wide generated-copy" onClick={()=>void copyReplacement()}><Copy/>{copied?"Copied":"Copy code"}</button></div>}<div className="drawer-actions">{isUnused?<><button className="secondary" onClick={()=>{const n=prompt("Device slot limit",String(l.slotLimit));if(n)void mutate("set-slot-limit",{inviteId:l.id,slotLimit:Number(n)})}}><Laptop/>Change slots</button><button className="secondary" onClick={()=>void replaceCode()}><RotateCw/>Replace code</button><button className="danger" onClick={()=>confirmUnusedRemoval(l.label)&&void mutate("remove-unused",{inviteId:l.id})}><Trash2/>Remove unused</button></>:<><button className="primary" onClick={()=>void mutate("renew",{inviteId:l.id,durationMonths:12})}><CircleDollarSign/>Renew 1 year</button><button className="secondary" onClick={()=>{const n=prompt("Device slot limit",String(l.slotLimit));if(n)void mutate("set-slot-limit",{inviteId:l.id,slotLimit:Number(n)})}}><Laptop/>Change slots</button><button className="secondary" onClick={()=>void mutate(l.state==="suspended"?"reactivate":"suspend",{inviteId:l.id})}><ShieldAlert/>{l.state==="suspended"?"Reactivate":"Suspend"}</button></>}</div><h3>Devices</h3>{l.devices.length===0&&<div className="empty compact">No activated devices.</div>}{l.devices.map(d=><div className="device" key={d.id}><div><strong>{d.device_name||"POS Device"}</strong><span>{d.revoked_at?"Revoked":`Last seen ${date(d.last_seen_at)}`}</span></div>{!d.revoked_at&&<button className="link-danger" onClick={()=>confirmDeviceRevoke(d.device_name)&&void mutate("revoke-device",{inviteId:l.id,deviceId:d.id})}>Revoke</button>}</div>)}<h3>Admin activity</h3>{detail.audit.map(a=><div className="audit" key={a.id}><span>{a.action}</span><time>{date(a.created_at)}</time></div>)}</aside></div>; }
 function CreateModal({ close, created }: { close:()=>void; created:()=>void }) {
   const [label,setLabel]=useState("");
   const [slots,setSlots]=useState(1);
@@ -152,5 +156,7 @@ function CreateModal({ close, created }: { close:()=>void; created:()=>void }) {
 function Loading(){return <div className="loading">Loading...</div>}
 function date(v:string|null){return v?new Intl.DateTimeFormat(undefined,{dateStyle:"medium"}).format(new Date(v)):"-"}
 function message(e:unknown){return e instanceof Error?e.message:String(e)}
-function confirmDeviceRevoke(deviceName:string|null){return window.confirm(`Revoke ${deviceName||"this POS device"}?\n\nThe customer's account and store data will remain safe. This device slot will be released. The phone can be activated again later with owner verification unless the license is suspended.`)}
+function confirmDeviceRevoke(deviceName:string|null){return globalThis.confirm(`Revoke ${deviceName||"this POS device"}?\n\nThe customer's account and store data will remain safe. This device slot will be released. The phone can be activated again later with owner verification unless the license is suspended.`)}
+function confirmUnusedCodeReplacement(){return globalThis.confirm("Replace this unused license code?\n\nThe previous code will stop working immediately. This is allowed only before the license has been activated.")}
+function confirmUnusedRemoval(label:string){return globalThis.confirm(`Remove unused license \"${label}\"?\n\nThis permanently deletes the license. This action is allowed only before activation and cannot be undone.`)}
 function exportCsv(rows:LicenseSummary[]){const cells=[["License","Account","Store","Status","Expiry","Active devices","Slots","Last activity"],...rows.map(r=>[r.label,r.ownerEmail||"Not activated",r.storeName,r.state,r.licenseExpiresAt??"",String(r.activeDeviceCount),String(r.slotLimit),r.lastActivityAt??""])];const csv=cells.map(row=>row.map(v=>`"${v.replaceAll('"','""')}"`).join(",")).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="tindapos-licenses.csv";a.click();URL.revokeObjectURL(a.href)}

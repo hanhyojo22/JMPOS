@@ -72,6 +72,10 @@ Deno.serve(async (req: Request) => {
         return json(await setStatus(admin, adminUserId, body, "active"));
       case "revoke-device":
         return json(await revokeDevice(admin, adminUserId, body));
+      case "replace-unused-code":
+        return json(await replaceUnusedCode(admin, adminUserId, body));
+      case "remove-unused":
+        return json(await removeUnusedLicense(admin, adminUserId, body));
       default:
         return json({ error: "Unsupported action" }, 400);
     }
@@ -255,6 +259,30 @@ async function revokeDevice(admin: AdminClient, adminUserId: string, body: Body)
   return { revoked: true };
 }
 
+async function replaceUnusedCode(admin: AdminClient, adminUserId: string, body: Body) {
+  const inviteId = requiredUuid(body.inviteId);
+  const before = await unusedInviteById(admin, inviteId);
+  const code = licenseCode();
+  const { data, error } = await admin
+    .from("store_invites")
+    .update({ code_hash: await sha256Hex(code) })
+    .eq("id", inviteId)
+    .select()
+    .single();
+  if (error) throw error;
+  await audit(admin, adminUserId, inviteId, "replace-unused-code", before, data);
+  return { code };
+}
+
+async function removeUnusedLicense(admin: AdminClient, adminUserId: string, body: Body) {
+  const inviteId = requiredUuid(body.inviteId);
+  const before = await unusedInviteById(admin, inviteId);
+  await audit(admin, adminUserId, inviteId, "remove-unused", before, null);
+  const { error } = await admin.from("store_invites").delete().eq("id", inviteId);
+  if (error) throw error;
+  return { removed: true };
+}
+
 async function licenseRows(admin: AdminClient) {
   const { data, error } = await admin
     .from("store_invites")
@@ -326,9 +354,10 @@ function sanitizeText(value: unknown, max: number) { return replaceAsciiControlC
 function replaceAsciiControlCharacters(value: string) { return Array.from(value, (character) => { const code = character.charCodeAt(0); return code <= 31 || code === 127 ? " " : character; }).join(""); }
 function positiveInt(value: unknown, fallback: number, max: number) { const n = Number(value ?? fallback); if (!Number.isInteger(n) || n < 1 || n > max) throw new HttpError("Invalid numeric value", 400); return n; }
 function requiredUuid(value: unknown) { const id = String(value ?? "").trim(); if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError("Valid id is required", 400); return id; }
-function licenseCode() { const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const part = () => Array.from(crypto.getRandomValues(new Uint8Array(5))).map((n) => alphabet[n % alphabet.length]).join(""); return `POS-${part()}-${part()}-${part()}`; }
+function licenseCode() { const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const part = () => Array.from(crypto.getRandomValues(new Uint8Array(5))).map((n) => alphabet[n % alphabet.length]).join(""); return `${part()}-${part()}-${part()}`; }
 async function sha256Hex(value: string) { const bytes = new TextEncoder().encode(value); const digest = await crypto.subtle.digest("SHA-256", bytes); return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join(""); }
 async function inviteById(admin: AdminClient, id: string) { const { data, error } = await admin.from("store_invites").select().eq("id", id).single(); if (error) throw error; return data; }
+async function unusedInviteById(admin: AdminClient, id: string) { const invite = await inviteById(admin, id); if (invite.store_id || invite.used_count !== 0 || invite.used_at) throw new HttpError("Only unused licenses can be changed or removed", 409); return invite; }
 async function emailForUser(admin: AdminClient, id?: string | null) { if (!id) return ""; const { data, error } = await admin.auth.admin.getUserById(id); if (error) throw error; return data.user?.email ?? ""; }
 async function audit(admin: AdminClient, userId: string, inviteId: string, action: string, before: unknown, after: unknown) { const { error } = await admin.from("license_admin_audit_logs").insert({ admin_user_id: userId, invite_id: inviteId, action, before_values: before, after_values: after }); if (error) throw error; }
 function json(body: Record<string, unknown>, status = 200) { return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }); }
