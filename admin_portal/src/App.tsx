@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   CalendarClock,
@@ -15,12 +15,10 @@ import {
   RotateCw,
   Search,
   ShieldAlert,
-  Store,
   Trash2,
-  UsersRound,
   X,
 } from "lucide-react";
-import { adminApi, LicenseSummary, supabase } from "./api";
+import { adminApi, LicenseSummary, supabase } from "./api.ts";
 
 type Dashboard = {
   total: number;
@@ -104,6 +102,8 @@ export function App() {
       <aside className="sidebar">
         <div className="brand"><div className="brand-mark"><img src="/app-icon.png" alt=""/></div><div><strong>TindaPOS</strong><span>License Admin</span></div></div>
         <nav>
+          // deno-lint-ignore jsx-button-has-type
+          // deno-lint-ignore jsx-button-has-type
           <button className={page === "dashboard" ? "active" : ""} onClick={() => setPage("dashboard")}><Activity/>Dashboard</button>
           <button className={page === "licenses" ? "active" : ""} onClick={() => setPage("licenses")}><KeyRound/>Licenses</button>
         </nav>
