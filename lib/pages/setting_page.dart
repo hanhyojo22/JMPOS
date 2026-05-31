@@ -1289,6 +1289,60 @@ class _LicenseStatusCard extends StatefulWidget {
 
 class _LicenseStatusCardState extends State<_LicenseStatusCard> {
   bool _expanded = false;
+  Timer? _countdownTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncCountdownTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LicenseStatusCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activation?.licenseExpiresAt !=
+        widget.activation?.licenseExpiresAt) {
+      _syncCountdownTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
+
+  void _syncCountdownTimer() {
+    _countdownTimer?.cancel();
+    final expiry = widget.activation?.licenseExpiresAt;
+    if (expiry == null || !expiry.isAfter(DateTime.now())) return;
+    final remaining = expiry.difference(DateTime.now());
+    if (remaining > const Duration(days: 1)) {
+      _countdownTimer = Timer(remaining - const Duration(days: 1), () {
+        if (!mounted) return;
+        _syncCountdownTimer();
+        setState(() {});
+      });
+      return;
+    }
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (!expiry.isAfter(DateTime.now())) {
+        _countdownTimer?.cancel();
+      }
+      setState(() {});
+    });
+  }
+
+  String _formatCountdown(DateTime expiry) {
+    final remaining = expiry.difference(DateTime.now());
+    if (remaining.isNegative) return '00:00:00';
+    final hours = remaining.inHours.toString().padLeft(2, '0');
+    final minutes = (remaining.inMinutes % 60).toString().padLeft(2, '0');
+    final seconds = (remaining.inSeconds % 60).toString().padLeft(2, '0');
+    return '$hours:$minutes:$seconds';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1389,9 +1443,11 @@ class _LicenseStatusCardState extends State<_LicenseStatusCard> {
                 ),
                 const SizedBox(height: 12),
                 _LicenseStatusValue(
-                  label: 'Days Remaining',
+                  label: days == 0 ? 'Time Remaining' : 'Days Remaining',
                   value: days == null
                       ? 'Not available'
+                      : days == 0 && expiry != null
+                      ? _formatCountdown(expiry)
                       : '$days day${days == 1 ? '' : 's'}',
                 ),
                 const SizedBox(height: 12),
