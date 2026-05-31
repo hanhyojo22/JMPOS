@@ -1,5 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+
+type AdminClient = SupabaseClient;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,8 +51,13 @@ serve(async (req: Request) => {
         admin,
         licenseKey,
         installationIdHash,
+        activationToken,
       );
       return jsonResponse(response.body, response.status);
+    }
+
+    if (!activationToken) {
+      return jsonResponse({ error: "Activation token is required" }, 401);
     }
 
     const { data: device, error: deviceError } = await admin
@@ -64,11 +71,9 @@ serve(async (req: Request) => {
       return jsonResponse({ error: "No activation found for this device" }, 404);
     }
 
-    if (activationToken) {
-      const activationTokenHash = await sha256Hex(activationToken);
-      if (activationTokenHash !== device.activation_token_hash) {
-        return jsonResponse({ error: "Activation token is invalid" }, 401);
-      }
+    const activationTokenHash = await sha256Hex(activationToken);
+    if (activationTokenHash !== device.activation_token_hash) {
+      return jsonResponse({ error: "Activation token is invalid" }, 401);
     }
 
     const { data: store, error: storeError } = await admin
@@ -140,14 +145,15 @@ function sanitizeInviteCode(value: unknown) {
 }
 
 async function validateLicenseKeyForDevice(
-  admin: ReturnType<typeof createClient>,
+  admin: AdminClient,
   licenseKey: string,
   installationIdHash: string,
+  activationToken: string,
 ) {
   const codeHash = await sha256Hex(licenseKey);
   const { data: invite, error: inviteError } = await admin
     .from("store_invites")
-    .select("id, store_id, max_uses, used_count, expires_at, status")
+    .select("id, store_id, max_uses, device_slot_limit, used_count, expires_at, status")
     .eq("code_hash", codeHash)
     .maybeSingle();
 
@@ -167,13 +173,18 @@ async function validateLicenseKeyForDevice(
 
   const { data: device, error: deviceError } = await admin
     .from("store_devices")
-    .select("store_id, revoked_at")
+    .select("store_id, activation_token_hash, revoked_at")
     .eq("installation_id_hash", installationIdHash)
     .eq("invite_id", invite.id)
     .maybeSingle();
 
   if (deviceError) throw deviceError;
-  if (device && !device.revoked_at) {
+  const hasValidDeviceToken =
+    device &&
+    !device.revoked_at &&
+    activationToken &&
+    (await sha256Hex(activationToken)) === device.activation_token_hash;
+  if (hasValidDeviceToken) {
     const { data: store, error: storeError } = await admin
       .from("stores")
       .select("id, name")
@@ -218,6 +229,7 @@ async function validateLicenseKeyForDevice(
 
   if (licenseAlreadyUsed) {
     if (invite.store_id) {
+      const activeDeviceCount = await countActiveDevices(admin, invite.store_id);
       const { data: store, error: storeError } = await admin
         .from("stores")
         .select("id, name, owner_user_id")
@@ -246,6 +258,8 @@ async function validateLicenseKeyForDevice(
           storeId: store.id,
           storeName: store.name,
           licenseKey,
+          slotLimit: invite.device_slot_limit ?? 1,
+          activeDeviceCount,
           ownerEmailMasked,
           message:
             ownerEmailMasked
@@ -273,9 +287,24 @@ async function validateLicenseKeyForDevice(
       activated: false,
       restored: false,
       licenseKey,
+      slotLimit: invite.device_slot_limit ?? 1,
+      activeDeviceCount: 0,
       message: "License is valid and ready for owner setup.",
     },
   };
+}
+
+async function countActiveDevices(
+  admin: AdminClient,
+  storeId: string,
+) {
+  const { count, error } = await admin
+    .from("store_devices")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", storeId)
+    .is("revoked_at", null);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 function maskEmail(email: string) {

@@ -14,6 +14,7 @@ type RegisterStoreBody = {
   password?: string;
   inviteCode?: string;
   installationId?: string;
+  activationToken?: string;
   deviceName?: string;
 };
 
@@ -36,6 +37,7 @@ Deno.serve(async (req: Request) => {
     const password = body.password ?? "";
     const inviteCode = sanitizeInviteCode(body.inviteCode);
     const installationId = sanitizeToken(body.installationId, 120);
+    const presentedActivationToken = sanitizeToken(body.activationToken, 120);
     const deviceName = sanitizeText(body.deviceName, 80);
 
     if (!storeName) return jsonResponse({ error: "Store name is required" }, 400);
@@ -66,7 +68,7 @@ Deno.serve(async (req: Request) => {
     const installationIdHash = await sha256Hex(installationId);
     const { data: invite, error: inviteError } = await admin
       .from("store_invites")
-      .select("id, store_id, max_uses, used_count, expires_at, status")
+      .select("id, store_id, max_uses, device_slot_limit, used_count, expires_at, status")
       .eq("code_hash", codeHash)
       .maybeSingle();
 
@@ -90,6 +92,7 @@ Deno.serve(async (req: Request) => {
         installationIdHash,
         invite.id,
         inviteCode,
+        presentedActivationToken,
       );
       if (restored) return jsonResponse(restored);
 
@@ -109,6 +112,7 @@ Deno.serve(async (req: Request) => {
         password,
         installationIdHash,
         deviceName,
+        deviceSlotLimit: invite.device_slot_limit ?? 1,
       });
       if (restoredByOwner) return jsonResponse(restoredByOwner);
 
@@ -244,6 +248,16 @@ Deno.serve(async (req: Request) => {
         "Cloud account and store were registered. Sign in to Cloud Sync with the owner email and password.",
     });
   } catch (error) {
+    if (error instanceof SlotLimitError) {
+      return jsonResponse(
+        {
+          error: error.message,
+          slotLimit: error.slotLimit,
+          activeDeviceCount: error.activeDeviceCount,
+        },
+        409,
+      );
+    }
     return jsonResponse(
       { error: error instanceof Error ? error.message : String(error) },
       500,
@@ -290,6 +304,7 @@ async function restoreExistingDevice(
   installationIdHash: string,
   inviteId: string,
   licenseKey: string,
+  presentedActivationToken: string,
 ) {
   const { data: device, error: deviceError } = await admin
     .from("store_devices")
@@ -299,7 +314,10 @@ async function restoreExistingDevice(
     .maybeSingle();
 
   if (deviceError) throw deviceError;
-  if (!device || device.revoked_at) return null;
+  if (!device || device.revoked_at || !presentedActivationToken) return null;
+  if (
+    (await sha256Hex(presentedActivationToken)) !== device.activation_token_hash
+  ) return null;
 
   const { data: store, error: storeError } = await admin
     .from("stores")
@@ -309,8 +327,8 @@ async function restoreExistingDevice(
 
   if (storeError) throw storeError;
 
-  const activationToken = crypto.randomUUID();
-  const activationTokenHash = await sha256Hex(activationToken);
+  const newActivationToken = crypto.randomUUID();
+  const activationTokenHash = await sha256Hex(newActivationToken);
   const { error: updateError } = await admin
     .from("store_devices")
     .update({
@@ -327,7 +345,7 @@ async function restoreExistingDevice(
     storeId: store.id,
     storeName: store.name,
     licenseKey,
-    activationToken,
+    activationToken: newActivationToken,
     restored: true,
     session: null,
     sessionCreated: false,
@@ -345,6 +363,7 @@ async function restoreUsedLicenseForOwner({
   password,
   installationIdHash,
   deviceName,
+  deviceSlotLimit,
 }: {
   admin: AdminClient;
   supabaseUrl: string;
@@ -358,6 +377,7 @@ async function restoreUsedLicenseForOwner({
   password: string;
   installationIdHash: string;
   deviceName: string;
+  deviceSlotLimit: number;
 }) {
   if (!invite.store_id) return null;
 
@@ -385,6 +405,15 @@ async function restoreUsedLicenseForOwner({
   });
 
   if (loginError) return null;
+
+  const activeDeviceCount = await countActiveDevices(
+    admin,
+    store.id,
+    installationIdHash,
+  );
+  if (activeDeviceCount >= deviceSlotLimit) {
+    throw new SlotLimitError(deviceSlotLimit, activeDeviceCount);
+  }
 
   const activationToken = crypto.randomUUID();
   const activationTokenHash = await sha256Hex(activationToken);
@@ -417,6 +446,21 @@ async function restoreUsedLicenseForOwner({
   };
 }
 
+async function countActiveDevices(
+  admin: AdminClient,
+  storeId: string,
+  excludedInstallationIdHash: string,
+) {
+  const { count, error } = await admin
+    .from("store_devices")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", storeId)
+    .is("revoked_at", null)
+    .neq("installation_id_hash", excludedInstallationIdHash);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 async function licenseOwnerEmailMatches(
   admin: AdminClient,
   storeId: string,
@@ -443,4 +487,13 @@ async function sha256Hex(value: string) {
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+class SlotLimitError extends Error {
+  constructor(
+    readonly slotLimit: number,
+    readonly activeDeviceCount: number,
+  ) {
+    super("All device slots are in use. Revoke an old device in Settings or contact support.");
+  }
 }

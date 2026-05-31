@@ -27,6 +27,38 @@ class LicenseActivation {
   final String? storeName;
 }
 
+class LicenseDevice {
+  const LicenseDevice({
+    required this.id,
+    required this.name,
+    required this.isCurrent,
+    required this.activatedAt,
+    required this.lastSeenAt,
+    this.revokedAt,
+  });
+
+  final String id;
+  final String name;
+  final bool isCurrent;
+  final DateTime? activatedAt;
+  final DateTime? lastSeenAt;
+  final DateTime? revokedAt;
+
+  bool get isRevoked => revokedAt != null;
+}
+
+class LicenseDeviceSummary {
+  const LicenseDeviceSummary({
+    required this.slotLimit,
+    required this.activeDeviceCount,
+    required this.devices,
+  });
+
+  final int slotLimit;
+  final int activeDeviceCount;
+  final List<LicenseDevice> devices;
+}
+
 class LicenseActivationService {
   LicenseActivationService._();
 
@@ -43,6 +75,7 @@ class LicenseActivationService {
   static const _cloudPasswordKey = 'cloud_sync_password';
   static const _localOwnerStoreIdKey = 'local_owner_store_id';
   static const _offlineGracePeriod = Duration(days: 14);
+  static const _manageDevicesFunction = 'manage-license-devices';
 
   Future<String> getOrCreateInstallationId() async {
     final stableDeviceId = await DeviceIdentityService.stableDeviceId();
@@ -134,9 +167,12 @@ class LicenseActivationService {
     }
 
     final installationId = await getOrCreateInstallationId();
+    final existingToken = await _secureStorage.read(key: _activationTokenKey);
     final response = await _postFunction('validate-license', {
       'installationId': installationId,
       'licenseKey': cleanedLicense,
+      if (existingToken != null && existingToken.trim().isNotEmpty)
+        'activationToken': existingToken.trim(),
     });
 
     if (response == null) {
@@ -177,6 +213,8 @@ class LicenseActivationService {
   }) async {
     _ensureConfigured();
     final installationId = await getOrCreateInstallationId();
+    final existingToken = await _secureStorage.read(key: _activationTokenKey);
+    final deviceName = await DeviceIdentityService.deviceName();
     final response = await _postFunction('register-store-v2', {
       'storeName': storeName,
       'ownerName': ownerName,
@@ -184,6 +222,9 @@ class LicenseActivationService {
       'password': password,
       'inviteCode': licenseKey,
       'installationId': installationId,
+      if (existingToken != null && existingToken.trim().isNotEmpty)
+        'activationToken': existingToken.trim(),
+      'deviceName': deviceName,
     });
 
     if (response == null) {
@@ -211,6 +252,64 @@ class LicenseActivationService {
     await saveCloudSyncCredentials(email: email, password: password);
     await ensureCloudSyncSignedIn();
     return activation;
+  }
+
+  Future<LicenseDeviceSummary> listLicenseDevices() async {
+    final activation = await readLocalActivation();
+    if (activation == null) {
+      throw Exception('Activate this device before managing license devices.');
+    }
+
+    final response = await _postAuthenticatedFunction(_manageDevicesFunction, {
+      'action': 'list',
+      'storeId': activation.storeId,
+      'installationId': activation.installationId,
+    });
+    final rows = response['devices'];
+    final devices = rows is List
+        ? rows
+              .whereType<Map>()
+              .map(
+                (row) => LicenseDevice(
+                  id: row['id']?.toString() ?? '',
+                  name: row['name']?.toString().trim().isNotEmpty == true
+                      ? row['name'].toString().trim()
+                      : 'POS Device',
+                  isCurrent: row['isCurrent'] == true,
+                  activatedAt: DateTime.tryParse(
+                    row['activatedAt']?.toString() ?? '',
+                  ),
+                  lastSeenAt: DateTime.tryParse(
+                    row['lastSeenAt']?.toString() ?? '',
+                  ),
+                  revokedAt: DateTime.tryParse(
+                    row['revokedAt']?.toString() ?? '',
+                  ),
+                ),
+              )
+              .where((device) => device.id.isNotEmpty)
+              .toList(growable: false)
+        : const <LicenseDevice>[];
+
+    return LicenseDeviceSummary(
+      slotLimit: (response['slotLimit'] as num?)?.toInt() ?? 1,
+      activeDeviceCount: (response['activeDeviceCount'] as num?)?.toInt() ?? 0,
+      devices: devices,
+    );
+  }
+
+  Future<void> revokeLicenseDevice(String deviceId) async {
+    final activation = await readLocalActivation();
+    if (activation == null) {
+      throw Exception('Activate this device before managing license devices.');
+    }
+
+    await _postAuthenticatedFunction(_manageDevicesFunction, {
+      'action': 'revoke',
+      'storeId': activation.storeId,
+      'installationId': activation.installationId,
+      'deviceId': deviceId,
+    });
   }
 
   Future<void> saveCloudSyncCredentials({
@@ -417,12 +516,58 @@ class LicenseActivationService {
         : null;
   }
 
+  Future<Map<String, dynamic>> _postAuthenticatedFunction(
+    String functionName,
+    Map<String, Object?> body,
+  ) async {
+    _ensureConfigured();
+    final signedIn = await ensureCloudSyncSignedIn();
+    final accessToken =
+        Supabase.instance.client.auth.currentSession?.accessToken;
+    if (!signedIn || accessToken == null || accessToken.isEmpty) {
+      throw Exception('Sign in with the owner account to manage devices.');
+    }
+
+    final http.Response response;
+    try {
+      response = await http.post(
+        Uri.parse('${EnvConfig.supabaseUrl}/functions/v1/$functionName'),
+        headers: {
+          'apikey': EnvConfig.supabaseAnonKey,
+          'Authorization': 'Bearer $accessToken',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+    } catch (_) {
+      throw Exception(
+        'Could not reach the license server. Check your internet connection and try again.',
+      );
+    }
+
+    final decoded = _decodeJson(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = decoded is Map && decoded['error'] != null
+          ? decoded['error'].toString()
+          : response.body;
+      throw Exception(message);
+    }
+    if (decoded is! Map) {
+      throw Exception('License server returned an invalid response.');
+    }
+    return decoded.map((key, value) => MapEntry(key.toString(), value));
+  }
+
   String _licenseActivationErrorMessage({
     required String functionName,
     int? statusCode,
     required String message,
   }) {
     final normalized = message.toLowerCase();
+
+    if (normalized.contains('device slots')) {
+      return 'All device slots are in use. Revoke an old device in Settings or contact support.';
+    }
 
     if (statusCode == 429 || _isRateLimitMessage(message)) {
       return 'Too many attempts. Please wait a minute before trying again.';

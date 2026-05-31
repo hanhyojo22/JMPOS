@@ -15,4 +15,15 @@ class DeviceIdentityService {
       return null;
     }
   }
+
+  static Future<String> deviceName() async {
+    try {
+      final value = await _channel.invokeMethod<String>('getDeviceName');
+      final name = value?.trim();
+      if (name != null && name.isNotEmpty) return name;
+    } catch (_) {
+      // Fall back to a friendly generic label on unsupported platforms.
+    }
+    return 'POS Device';
+  }
 }

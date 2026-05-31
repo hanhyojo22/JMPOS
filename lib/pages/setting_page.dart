@@ -70,6 +70,8 @@ class _SettingsPageState extends State<SettingsPage> {
   StreamSubscription<AuthState>? _authSubscription;
   String _storeName = 'My Sari-Sari Store';
   bool _pinEnabled = false;
+  LicenseDeviceSummary? _licenseDeviceSummary;
+  String? _licenseDevicesIssue;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
@@ -91,6 +93,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadLastSalesExportDate();
     _loadPendingSyncCount();
     _loadCloudAccount();
+    _loadLicenseDevices();
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((
       _,
     ) {
@@ -115,6 +118,34 @@ class _SettingsPageState extends State<SettingsPage> {
     final enabled = await DatabaseHelper.instance.ownerPinExists();
     if (!mounted) return;
     setState(() => _pinEnabled = enabled);
+  }
+
+  Future<void> _loadLicenseDevices() async {
+    try {
+      final summary = await LicenseActivationService.instance
+          .listLicenseDevices();
+      if (!mounted) return;
+      setState(() {
+        _licenseDeviceSummary = summary;
+        _licenseDevicesIssue = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _licenseDevicesIssue = e.toString().replaceFirst(
+          RegExp(r'^Exception:\s*'),
+          '',
+        );
+      });
+    }
+  }
+
+  Future<void> _showLicenseDevices() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const _LicenseDevicesDialog(),
+    );
+    await _loadLicenseDevices();
   }
 
   @override
@@ -174,6 +205,24 @@ class _SettingsPageState extends State<SettingsPage> {
                         label: 'Receipt footer',
                         subtitle: 'Thank you for shopping!',
                         onTap: () {},
+                        isLast: true,
+                      ),
+                    ],
+                  ),
+                  _buildSection(
+                    label: 'License',
+                    children: [
+                      _SettingsRow(
+                        icon: Icons.devices_outlined,
+                        iconBg: const Color(0xFFE6F1FB),
+                        iconColor: const Color(0xFF185FA5),
+                        label: 'License devices',
+                        subtitle:
+                            _licenseDevicesIssue ??
+                            (_licenseDeviceSummary == null
+                                ? 'Loading device slots'
+                                : '${_licenseDeviceSummary!.activeDeviceCount} of ${_licenseDeviceSummary!.slotLimit} devices active'),
+                        onTap: _showLicenseDevices,
                         isLast: true,
                       ),
                     ],
@@ -1385,6 +1434,171 @@ class _SyncUiError {
 
   final String message;
   final String? details;
+}
+
+class _LicenseDevicesDialog extends StatefulWidget {
+  const _LicenseDevicesDialog();
+
+  @override
+  State<_LicenseDevicesDialog> createState() => _LicenseDevicesDialogState();
+}
+
+class _LicenseDevicesDialogState extends State<_LicenseDevicesDialog> {
+  LicenseDeviceSummary? _summary;
+  String? _error;
+  bool _isLoading = true;
+  String? _revokingDeviceId;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final summary = await LicenseActivationService.instance
+          .listLicenseDevices();
+      if (!mounted) return;
+      setState(() {
+        _summary = summary;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+      });
+    }
+  }
+
+  Future<void> _confirmRevoke(LicenseDevice device) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Revoke device?'),
+        content: Text(
+          '${device.name} will lose access to this license. You can activate another device after this slot is freed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Revoke'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _revokingDeviceId = device.id);
+    try {
+      await LicenseActivationService.instance.revokeLicenseDevice(device.id);
+      if (!mounted) return;
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _revokingDeviceId = null;
+        _error = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+      });
+    }
+  }
+
+  String _deviceSubtitle(LicenseDevice device) {
+    final status = device.isRevoked
+        ? 'Revoked'
+        : device.isCurrent
+        ? 'Current device'
+        : 'Active';
+    final lastSeen = device.lastSeenAt?.toLocal();
+    if (lastSeen == null) return status;
+    final date =
+        '${lastSeen.year}-${lastSeen.month.toString().padLeft(2, '0')}-${lastSeen.day.toString().padLeft(2, '0')}';
+    return '$status - Last seen $date';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = _summary;
+    return AlertDialog(
+      title: const Text('License devices'),
+      content: SizedBox(
+        width: 440,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (summary != null)
+                    Text(
+                      '${summary.activeDeviceCount} of ${summary.slotLimit} devices active',
+                    ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _error!,
+                      style: const TextStyle(color: Color(0xFFDC2626)),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final device
+                            in summary?.devices ?? const <LicenseDevice>[])
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              device.isCurrent
+                                  ? Icons.smartphone_rounded
+                                  : Icons.devices_outlined,
+                            ),
+                            title: Text(device.name),
+                            subtitle: Text(_deviceSubtitle(device)),
+                            trailing: device.isRevoked || device.isCurrent
+                                ? null
+                                : _revokingDeviceId == device.id
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : IconButton(
+                                    tooltip: 'Revoke device',
+                                    icon: const Icon(
+                                      Icons.delete_outline_rounded,
+                                    ),
+                                    onPressed: () => _confirmRevoke(device),
+                                  ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+      ),
+      actions: [
+        TextButton(onPressed: _load, child: const Text('Refresh')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
 }
 
 class _SettingsRow extends StatelessWidget {

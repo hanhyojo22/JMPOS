@@ -25,6 +25,7 @@ create table if not exists public.store_invites (
   label text,
   store_id uuid references public.stores(id) on delete set null,
   max_uses integer not null default 1,
+  device_slot_limit integer not null default 1,
   used_count integer not null default 0,
   expires_at timestamptz,
   used_at timestamptz,
@@ -32,8 +33,19 @@ create table if not exists public.store_invites (
   status text not null default 'active',
   created_at timestamptz not null default now(),
   constraint store_invites_max_uses_positive check (max_uses > 0),
+  constraint store_invites_device_slot_limit_positive check (device_slot_limit > 0),
   constraint store_invites_used_count_valid check (used_count >= 0)
 );
+
+alter table public.store_invites
+add column if not exists device_slot_limit integer not null default 1;
+
+alter table public.store_invites
+drop constraint if exists store_invites_device_slot_limit_positive;
+
+alter table public.store_invites
+add constraint store_invites_device_slot_limit_positive
+check (device_slot_limit > 0);
 
 create table if not exists public.store_devices (
   id uuid primary key default gen_random_uuid(),
