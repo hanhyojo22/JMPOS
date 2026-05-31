@@ -88,6 +88,7 @@ class _LoginPageState extends State<LoginPage> {
             title: 'POS Dashboard',
             username: loggedInUser['username'] as String,
             role: loggedInUser['role'] as String,
+            initialSuccessMessage: 'Login successful',
           ),
         ),
       );

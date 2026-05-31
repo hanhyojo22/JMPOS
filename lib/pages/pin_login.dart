@@ -96,6 +96,7 @@ class _PinLoginPageState extends State<PinLoginPage> {
           title: 'POS Dashboard',
           username: user['username'] as String,
           role: user['role'] as String,
+          initialSuccessMessage: 'Login successful',
         ),
       ),
       (_) => false,

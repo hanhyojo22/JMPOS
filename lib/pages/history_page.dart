@@ -33,7 +33,8 @@ class _HistoryPageState extends State<HistoryPage>
 
   String _selectedTab = 'Completed'; // 'Completed' | 'Void'
   String _selectedSort = 'Newest';
-
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
 
@@ -58,6 +59,7 @@ class _HistoryPageState extends State<HistoryPage>
 
   @override
   void dispose() {
+    _searchController.dispose();
     _fadeCtrl.dispose();
     super.dispose();
   }
@@ -147,13 +149,29 @@ class _HistoryPageState extends State<HistoryPage>
       backgroundColor: Colors.transparent,
       builder: (_) => _SortSheet(
         current: _selectedSort,
-        onSelect: (s) => setState(() => _selectedSort = s),
+        onSelect: (sort) => setState(() => _selectedSort = sort),
       ),
     );
   }
 
   List<Map<String, dynamic>> _sorted(List<Map<String, dynamic>> items) {
-    final list = List<Map<String, dynamic>>.from(items);
+    final query = _searchQuery.trim().toLowerCase();
+    final list = items.where((sale) {
+      if (query.isEmpty) return true;
+      final total = (sale['total'] as num?)?.toDouble() ?? 0;
+      final isVoided = sale['isVoided'] == true;
+      return [
+        sale['receiptNumber'],
+        sale['product'],
+        sale['date'],
+        sale['time'],
+        sale['quantity'],
+        total,
+        CurrencyFormatter.format(total),
+        isVoided ? 'void voided' : 'complete completed',
+        sale['voidReason'],
+      ].any((value) => (value?.toString() ?? '').toLowerCase().contains(query));
+    }).toList();
     switch (_selectedSort) {
       case 'Oldest':
         list.sort((a, b) => _cmpDate(b, a));
@@ -164,7 +182,7 @@ class _HistoryPageState extends State<HistoryPage>
       case 'Lowest Amount':
         list.sort((a, b) => (a['total'] as num).compareTo(b['total'] as num));
         break;
-      default: // Newest
+      default:
         list.sort(_cmpDate);
     }
     return list;
@@ -189,7 +207,7 @@ class _HistoryPageState extends State<HistoryPage>
       body: SafeArea(
         child: Column(
           children: [
-            _buildAppBar(),
+            _buildSearchBar(),
             _buildTabs(),
             Expanded(child: _buildBody()),
           ],
@@ -199,83 +217,76 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   // ── App bar ────────────────────────────────────────────────────
-  Widget _buildAppBar() {
+  // ── Tabs ───────────────────────────────────────────────────────
+  Widget _buildSearchBar() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: _textDark, size: 22),
-            onPressed: () => Navigator.maybePop(context),
-          ),
-          const Expanded(
-            child: Text(
-              'History Sales',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: _textDark,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (query) => setState(() => _searchQuery = query),
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: 'Search sales',
+          prefixIcon: const Icon(Icons.search_rounded, color: _textGrey),
+          suffixIconConstraints: const BoxConstraints(minWidth: 48),
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_searchQuery.isNotEmpty)
+                IconButton(
+                  tooltip: 'Clear search',
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: _textGrey,
+                    size: 20,
+                  ),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = '');
+                  },
+                ),
+              IconButton(
+                tooltip: 'Sort sales',
+                icon: const Icon(
+                  Icons.filter_alt_outlined,
+                  color: _textGrey,
+                  size: 22,
+                ),
+                onPressed: _showSortSheet,
               ),
-            ),
+            ],
           ),
-          Container(
-            width: 42,
-            height: 42,
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: const Color(0xFFE0E0E0), width: 1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              icon: const Icon(
-                Icons.calendar_today_outlined,
-                color: _textGrey,
-                size: 20,
-              ),
-              onPressed: () {},
-            ),
+          filled: true,
+          fillColor: _bg,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide.none,
           ),
-
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: const Color(0xFFE0E0E0), width: 1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              icon: const Icon(
-                Icons.filter_alt_outlined,
-                color: _textGrey,
-                size: 22,
-              ),
-              onPressed: _showSortSheet,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  // ── Tabs ───────────────────────────────────────────────────────
   Widget _buildTabs() {
     return Container(
       color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
           _TabItem(
             label: 'Completed Sales',
             selected: _selectedTab == 'Completed',
             activeColor: _purple,
+            alignment: Alignment.centerLeft,
             onTap: () => setState(() => _selectedTab = 'Completed'),
           ),
           _TabItem(
             label: 'Void Sales',
             selected: _selectedTab == 'Void',
             activeColor: _red,
+            alignment: Alignment.centerRight,
             onTap: () => setState(() => _selectedTab = 'Void'),
           ),
         ],
@@ -302,7 +313,12 @@ class _HistoryPageState extends State<HistoryPage>
         child: CustomScrollView(
           slivers: [
             if (items.isEmpty)
-              SliverFillRemaining(child: _buildEmpty(isCompleted))
+              SliverFillRemaining(
+                child: _buildEmpty(
+                  isCompleted,
+                  hasSearchQuery: _searchQuery.trim().isNotEmpty,
+                ),
+              )
             else
               SliverList(
                 delegate: SliverChildBuilderDelegate((_, i) {
@@ -361,7 +377,7 @@ class _HistoryPageState extends State<HistoryPage>
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w700,
-                            color: accentColor,
+                            color: _textDark,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -377,31 +393,39 @@ class _HistoryPageState extends State<HistoryPage>
                   ),
                   const SizedBox(width: 8),
                   // Amount + badge
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        CurrencyFormatter.format(total),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: _textDark,
+                  SizedBox(
+                    width: 104,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          CurrencyFormatter.format(total),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: accentColor,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      if (!isVoided)
-                        _StatusBadge(
-                          label: 'Completed',
-                          color: _purple,
-                          bg: _purpleLight,
-                        )
-                      else
-                        _StatusBadge(
-                          label: 'Voided',
-                          color: _red,
-                          bg: _redLight,
+                        const SizedBox(height: 4),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: !isVoided
+                              ? _StatusBadge(
+                                  label: 'Completed',
+                                  color: _purple,
+                                  bg: _purpleLight,
+                                )
+                              : _StatusBadge(
+                                  label: 'Voided',
+                                  color: _red,
+                                  bg: _redLight,
+                                ),
                         ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 6),
                   const Icon(
@@ -427,7 +451,7 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   // ── Empty ─────────────────────────────────────────────────────
-  Widget _buildEmpty(bool isCompleted) {
+  Widget _buildEmpty(bool isCompleted, {bool hasSearchQuery = false}) {
     final color = isCompleted ? _purple : _red;
     final bg = isCompleted ? _purpleLight : _redLight;
     return Center(
@@ -446,7 +470,11 @@ class _HistoryPageState extends State<HistoryPage>
           ),
           const SizedBox(height: 14),
           Text(
-            isCompleted ? 'No completed sales' : 'No void sales',
+            hasSearchQuery
+                ? 'No matching sales'
+                : isCompleted
+                ? 'No completed sales'
+                : 'No void sales',
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
@@ -455,7 +483,9 @@ class _HistoryPageState extends State<HistoryPage>
           ),
           const SizedBox(height: 4),
           Text(
-            isCompleted
+            hasSearchQuery
+                ? 'Try a different receipt, product, date, or amount'
+                : isCompleted
                 ? 'Completed transactions will appear here'
                 : 'Voided transactions will appear here',
             style: const TextStyle(fontSize: 13, color: _textGrey),
@@ -474,12 +504,14 @@ class _TabItem extends StatelessWidget {
   final String label;
   final bool selected;
   final Color activeColor;
+  final Alignment alignment;
   final VoidCallback onTap;
 
   const _TabItem({
     required this.label,
     required this.selected,
     required this.activeColor,
+    required this.alignment,
     required this.onTap,
   });
 
@@ -499,13 +531,15 @@ class _TabItem extends StatelessWidget {
               ),
             ),
           ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-              color: selected ? activeColor : const Color(0xFF9E9E9E),
+          child: Align(
+            alignment: alignment,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: selected ? activeColor : const Color(0xFF9E9E9E),
+              ),
             ),
           ),
         ),

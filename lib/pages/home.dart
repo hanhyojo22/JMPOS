@@ -12,12 +12,12 @@ import 'staff_management.dart';
 import 'package:pos_app/utils/greetings.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import 'edit_product_page.dart';
 import 'setting_page.dart';
 import 'login.dart';
 import 'shop_cart_page.dart' as shop_cart;
 import 'package:pos_app/utils/message_banner.dart';
+import 'package:pos_app/widgets/barcode_scanner_viewport.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -25,11 +25,13 @@ class HomePage extends StatefulWidget {
     required this.title,
     required this.username,
     required this.role,
+    this.initialSuccessMessage,
   });
 
   final String username;
   final String title;
   final String role;
+  final String? initialSuccessMessage;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -93,6 +95,13 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     unawaited(_loadCurrentUserDisplayName());
     loadRecentTransactions();
+    final initialSuccessMessage = widget.initialSuccessMessage?.trim();
+    if (initialSuccessMessage?.isNotEmpty == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showTopMessage(initialSuccessMessage!, success: true);
+      });
+    }
   }
 
   Future<void> _loadCurrentUserDisplayName() async {
@@ -1598,8 +1607,6 @@ class _QuickScannerPage extends StatefulWidget {
 }
 
 class _QuickScannerPageState extends State<_QuickScannerPage> {
-  bool _scanned = false;
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1610,93 +1617,11 @@ class _QuickScannerPageState extends State<_QuickScannerPage> {
         title: const Text('Scan Product'),
         elevation: 0,
       ),
-      body: Stack(
-        children: [
-          // Live camera feed
-          MobileScanner(
-            onDetect: (capture) {
-              if (_scanned) return;
-              for (final barcode in capture.barcodes) {
-                final code = barcode.rawValue;
-                if (code != null) {
-                  _scanned = true;
-                  widget.onDetect(code);
-                  Navigator.pop(context);
-                  break;
-                }
-              }
-            },
-          ),
-
-          // Viewfinder frame
-          Center(
-            child: Container(
-              width: 240,
-              height: 240,
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFF667EEA), width: 2.5),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Stack(
-                children: [
-                  for (final al in [
-                    Alignment.topLeft,
-                    Alignment.topRight,
-                    Alignment.bottomLeft,
-                    Alignment.bottomRight,
-                  ])
-                    Align(
-                      alignment: al,
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          border: Border(
-                            top: al.y < 0
-                                ? const BorderSide(
-                                    color: Color(0xFF667EEA),
-                                    width: 4,
-                                  )
-                                : BorderSide.none,
-                            bottom: al.y > 0
-                                ? const BorderSide(
-                                    color: Color(0xFF667EEA),
-                                    width: 4,
-                                  )
-                                : BorderSide.none,
-                            left: al.x < 0
-                                ? const BorderSide(
-                                    color: Color(0xFF667EEA),
-                                    width: 4,
-                                  )
-                                : BorderSide.none,
-                            right: al.x > 0
-                                ? const BorderSide(
-                                    color: Color(0xFF667EEA),
-                                    width: 4,
-                                  )
-                                : BorderSide.none,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-
-          const Positioned(
-            bottom: 60,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Text(
-                'Align barcode within the frame',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-            ),
-          ),
-        ],
+      body: BarcodeScannerViewport(
+        onDetect: (code) {
+          widget.onDetect(code);
+          Navigator.pop(context);
+        },
       ),
     );
   }

@@ -18,6 +18,7 @@ class LicenseActivation {
     required this.lastVerifiedAt,
     this.storeName,
     this.licenseExpiresAt,
+    this.licenseStatus = 'active',
   });
 
   final String licenseKey;
@@ -27,9 +28,11 @@ class LicenseActivation {
   final DateTime lastVerifiedAt;
   final String? storeName;
   final DateTime? licenseExpiresAt;
+  final String licenseStatus;
 
   bool get isExpired =>
       licenseExpiresAt != null && !licenseExpiresAt!.isAfter(DateTime.now());
+  bool get isSuspended => licenseStatus == 'suspended';
 
   int? get daysRemaining {
     final expiry = licenseExpiresAt;
@@ -83,6 +86,7 @@ class LicenseActivationService {
   static const _lastVerifiedAtKey = 'last_verified_at';
   static const _storeNameKey = 'store_name';
   static const _licenseExpiresAtKey = 'license_expires_at';
+  static const _licenseStatusKey = 'license_status';
   static const _cloudEmailKey = 'cloud_sync_email';
   static const _cloudPasswordKey = 'cloud_sync_password';
   static const _localOwnerStoreIdKey = 'local_owner_store_id';
@@ -118,6 +122,7 @@ class LicenseActivationService {
       _secureStorage.read(key: _lastVerifiedAtKey),
       _secureStorage.read(key: _storeNameKey),
       _secureStorage.read(key: _licenseExpiresAtKey),
+      _secureStorage.read(key: _licenseStatusKey),
     ]);
 
     final licenseKey = values[0]?.trim() ?? '';
@@ -141,6 +146,7 @@ class LicenseActivationService {
       lastVerifiedAt: lastVerifiedAt,
       storeName: values[5]?.trim(),
       licenseExpiresAt: DateTime.tryParse(values[6]?.trim() ?? ''),
+      licenseStatus: values[7]?.trim().toLowerCase() ?? 'active',
     );
   }
 
@@ -173,6 +179,16 @@ class LicenseActivationService {
       licenseExpiresAt: _responseExpiry(response),
     );
     return readLocalActivation();
+  }
+
+  Future<LicenseActivation?> refreshLicenseStatus() async {
+    try {
+      return await recoverActivation();
+    } catch (e) {
+      if (!e.toString().toLowerCase().contains('suspended')) rethrow;
+      await _secureStorage.write(key: _licenseStatusKey, value: 'suspended');
+      return readLocalActivation();
+    }
   }
 
   Future<LicenseCheckResult> checkLicenseKey(String licenseKey) async {
@@ -439,6 +455,7 @@ class LicenseActivationService {
     required String activationToken,
     String? storeName,
     DateTime? licenseExpiresAt,
+    String licenseStatus = 'active',
   }) async {
     final now = DateTime.now().toUtc().toIso8601String();
     await Future.wait([
@@ -455,6 +472,7 @@ class LicenseActivationService {
           key: _licenseExpiresAtKey,
           value: licenseExpiresAt.toUtc().toIso8601String(),
         ),
+      _secureStorage.write(key: _licenseStatusKey, value: licenseStatus),
     ]);
 
     final prefs = await SharedPreferences.getInstance();
@@ -673,6 +691,10 @@ class LicenseActivationService {
 
     if (normalized.contains('expired')) {
       return 'This license has expired. Contact support to renew it.';
+    }
+
+    if (normalized.contains('suspended')) {
+      return 'This license is suspended. Contact support for assistance.';
     }
 
     if (normalized.contains('already') &&

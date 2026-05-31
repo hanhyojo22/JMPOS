@@ -4,11 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_saver/file_saver.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/main.dart';
-import 'package:pos_app/services/env_config.dart';
 import 'package:pos_app/services/license_activation_service.dart';
-import 'package:pos_app/services/supabase_backup_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -32,7 +31,6 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   static const _lastBackupKey = 'last_database_backup_at';
-  static const _lastOnlineBackupKey = 'last_online_database_backup_at';
   static const _lastSalesExportKey = 'last_sales_export_at';
   static const _storeNameKey = 'store_name';
 
@@ -53,12 +51,10 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _keepScreenOn = false;
   bool _loadedThemeValue = false;
   bool _isBackingUp = false;
-  bool _isOnlineBackingUp = false;
   bool _isSyncingCloud = false;
   bool _isRestoring = false;
   bool _isExportingSales = false;
   DateTime? _lastBackupAt;
-  DateTime? _lastOnlineBackupAt;
   DateTime? _lastSalesExportAt;
   int _pendingSyncCount = 0;
   int _cloudSyncDone = 0;
@@ -70,8 +66,7 @@ class _SettingsPageState extends State<SettingsPage> {
   StreamSubscription<AuthState>? _authSubscription;
   String _storeName = 'My Sari-Sari Store';
   bool _pinEnabled = false;
-  LicenseDeviceSummary? _licenseDeviceSummary;
-  String? _licenseDevicesIssue;
+  LicenseActivation? _licenseActivation;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _pageSurface => _isDark ? const Color(0xFF0F172A) : _surface;
@@ -89,11 +84,10 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadStoreName();
     _loadPinState();
     _loadLastBackupDate();
-    _loadLastOnlineBackupDate();
     _loadLastSalesExportDate();
     _loadPendingSyncCount();
     _loadCloudAccount();
-    _loadLicenseDevices();
+    _loadLicenseActivation();
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((
       _,
     ) {
@@ -120,32 +114,19 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _pinEnabled = enabled);
   }
 
-  Future<void> _loadLicenseDevices() async {
+  Future<void> _loadLicenseActivation() async {
+    final activation = await LicenseActivationService.instance
+        .readLocalActivation();
+    if (!mounted) return;
+    setState(() => _licenseActivation = activation);
     try {
-      final summary = await LicenseActivationService.instance
-          .listLicenseDevices();
-      if (!mounted) return;
-      setState(() {
-        _licenseDeviceSummary = summary;
-        _licenseDevicesIssue = null;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _licenseDevicesIssue = e.toString().replaceFirst(
-          RegExp(r'^Exception:\s*'),
-          '',
-        );
-      });
+      final refreshed = await LicenseActivationService.instance
+          .refreshLicenseStatus();
+      if (!mounted || refreshed == null) return;
+      setState(() => _licenseActivation = refreshed);
+    } catch (_) {
+      // Keep the last locally verified status when the server is unreachable.
     }
-  }
-
-  Future<void> _showLicenseDevices() async {
-    await showDialog<void>(
-      context: context,
-      builder: (_) => const _LicenseDevicesDialog(),
-    );
-    await _loadLicenseDevices();
   }
 
   @override
@@ -212,19 +193,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   _buildSection(
                     label: 'License',
                     children: [
-                      _SettingsRow(
-                        icon: Icons.devices_outlined,
-                        iconBg: const Color(0xFFE6F1FB),
-                        iconColor: const Color(0xFF185FA5),
-                        label: 'License devices',
-                        subtitle:
-                            _licenseDevicesIssue ??
-                            (_licenseDeviceSummary == null
-                                ? 'Loading device slots'
-                                : '${_licenseDeviceSummary!.activeDeviceCount} of ${_licenseDeviceSummary!.slotLimit} devices active'),
-                        onTap: _showLicenseDevices,
-                        isLast: true,
-                      ),
+                      _LicenseStatusCard(activation: _licenseActivation),
                     ],
                   ),
                   _buildSection(
@@ -362,25 +331,6 @@ class _SettingsPageState extends State<SettingsPage> {
                           total: _cloudSyncTotal,
                           step: _cloudSyncStep,
                         ),
-                      _SettingsRow(
-                        icon: Icons.cloud_upload_outlined,
-                        iconBg: const Color(0xFFE8F0FE),
-                        iconColor: const Color(0xFF315BB8),
-                        label: 'Online backup',
-                        subtitle: _lastOnlineBackupSubtitle,
-                        trailing: _isOnlineBackingUp
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : null,
-                        onTap: _isOnlineBackingUp
-                            ? null
-                            : _backupDatabaseOnline,
-                      ),
                       _SettingsRow(
                         icon: Icons.restore_outlined,
                         iconBg: const Color(0xFFFFF4DE),
@@ -547,12 +497,6 @@ class _SettingsPageState extends State<SettingsPage> {
     return 'Last backup: ${_formatBackupDate(lastBackupAt)}';
   }
 
-  String get _lastOnlineBackupSubtitle {
-    final lastBackupAt = _lastOnlineBackupAt;
-    if (lastBackupAt == null) return 'Upload to Supabase Storage';
-    return 'Last upload: ${_formatBackupDate(lastBackupAt)}';
-  }
-
   String get _cloudSyncSubtitle {
     if (_cloudAccountEmail == null) {
       return 'Activate or restore license to connect';
@@ -588,23 +532,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (!mounted) return;
     setState(() => _lastBackupAt = value);
-  }
-
-  Future<void> _loadLastOnlineBackupDate() async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getString(_lastOnlineBackupKey);
-    final parsed = value == null ? null : DateTime.tryParse(value);
-
-    if (!mounted) return;
-    setState(() => _lastOnlineBackupAt = parsed);
-  }
-
-  Future<void> _saveLastOnlineBackupDate(DateTime value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_lastOnlineBackupKey, value.toIso8601String());
-
-    if (!mounted) return;
-    setState(() => _lastOnlineBackupAt = value);
   }
 
   Future<void> _loadPendingSyncCount() async {
@@ -1054,91 +981,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  SupabaseBackupConfig get _supabaseBackupConfig => SupabaseBackupConfig(
-    projectUrl: EnvConfig.supabaseUrl,
-    anonKey: EnvConfig.supabaseAnonKey,
-    bucket: EnvConfig.supabaseBackupBucket,
-  );
-
-  Future<void> _backupDatabaseOnline() async {
-    HapticFeedback.lightImpact();
-
-    final config = _supabaseBackupConfig;
-    if (!config.isComplete) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Supabase is not configured. Add SUPABASE_URL and SUPABASE_ANON_KEY to .env.',
-          ),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: _danger,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isOnlineBackingUp = true);
-
-    try {
-      final backupPath = await DatabaseHelper.instance.createBackupArchive();
-      final result = await const SupabaseBackupService().uploadBackup(
-        config: config,
-        backupPath: backupPath,
-        storeName: _storeName,
-      );
-      await DatabaseHelper.instance.recordAuditLog(
-        user: widget.currentUsername,
-        action: 'backup_online',
-        details: jsonEncode({
-          'provider': 'supabase',
-          'bucket': config.bucket.trim(),
-          'object_path': result.objectPath,
-          'bytes': result.bytes,
-        }),
-      );
-
-      if (!mounted) return;
-      await _saveLastOnlineBackupDate(DateTime.now());
-      if (!mounted) return;
-
-      await showDialog<void>(
-        context: context,
-        builder: (_) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: const Text(
-            'Online backup uploaded',
-            style: TextStyle(fontWeight: FontWeight.w700),
-          ),
-          content: SelectableText(
-            '${config.bucket.trim()}/${result.objectPath}',
-            style: TextStyle(color: _secondaryText),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Done'),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Online backup failed: $e'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: _danger,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isOnlineBackingUp = false);
-      }
-    }
-  }
-
   Future<void> _restoreDatabase() async {
     HapticFeedback.lightImpact();
 
@@ -1436,165 +1278,163 @@ class _SyncUiError {
   final String? details;
 }
 
-class _LicenseDevicesDialog extends StatefulWidget {
-  const _LicenseDevicesDialog();
+class _LicenseStatusCard extends StatefulWidget {
+  const _LicenseStatusCard({required this.activation});
+
+  final LicenseActivation? activation;
 
   @override
-  State<_LicenseDevicesDialog> createState() => _LicenseDevicesDialogState();
+  State<_LicenseStatusCard> createState() => _LicenseStatusCardState();
 }
 
-class _LicenseDevicesDialogState extends State<_LicenseDevicesDialog> {
-  LicenseDeviceSummary? _summary;
-  String? _error;
-  bool _isLoading = true;
-  String? _revokingDeviceId;
+class _LicenseStatusCardState extends State<_LicenseStatusCard> {
+  bool _expanded = false;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activation = widget.activation;
+    final suspended = activation?.isSuspended == true;
+    final active = activation != null && !activation.isExpired && !suspended;
+    final statusColor = active
+        ? const Color(0xFF0F6E56)
+        : const Color(0xFFB42318);
+    final expiry = activation?.licenseExpiresAt?.toLocal();
+    final days = activation?.daysRemaining;
 
-  Future<void> _load() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-    try {
-      final summary = await LicenseActivationService.instance
-          .listLicenseDevices();
-      if (!mounted) return;
-      setState(() {
-        _summary = summary;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _error = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
-      });
-    }
-  }
-
-  Future<void> _confirmRevoke(LicenseDevice device) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Revoke device?'),
-        content: Text(
-          '${device.name} will lose access to this license. You can activate another device after this slot is freed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF111827) : Colors.white,
+        border: Border(
+          bottom: BorderSide(
+            color: isDark ? const Color(0xFF253047) : const Color(0xFFEEEEEE),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Revoke'),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'License Status',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              active
+                                  ? Icons.check_circle_rounded
+                                  : Icons.error_outline,
+                              color: statusColor,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              active
+                                  ? 'Active'
+                                  : suspended
+                                  ? 'Suspended'
+                                  : activation == null
+                                  ? 'Not available'
+                                  : 'Expired',
+                              style: TextStyle(
+                                color: statusColor,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: isDark
+                        ? const Color(0xFFCBD5E1)
+                        : const Color(0xFF6B7280),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 16),
+                _LicenseStatusValue(
+                  label: 'Expires On',
+                  value: expiry == null
+                      ? 'Not available'
+                      : DateFormat('MMMM d, y').format(expiry),
+                ),
+                const SizedBox(height: 12),
+                _LicenseStatusValue(
+                  label: 'Days Remaining',
+                  value: days == null
+                      ? 'Not available'
+                      : '$days day${days == 1 ? '' : 's'}',
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+            crossFadeState: _expanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 180),
           ),
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _revokingDeviceId = device.id);
-    try {
-      await LicenseActivationService.instance.revokeLicenseDevice(device.id);
-      if (!mounted) return;
-      await _load();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _revokingDeviceId = null;
-        _error = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
-      });
-    }
   }
+}
 
-  String _deviceSubtitle(LicenseDevice device) {
-    final status = device.isRevoked
-        ? 'Revoked'
-        : device.isCurrent
-        ? 'Current device'
-        : 'Active';
-    final lastSeen = device.lastSeenAt?.toLocal();
-    if (lastSeen == null) return status;
-    final date =
-        '${lastSeen.year}-${lastSeen.month.toString().padLeft(2, '0')}-${lastSeen.day.toString().padLeft(2, '0')}';
-    return '$status - Last seen $date';
-  }
+class _LicenseStatusValue extends StatelessWidget {
+  const _LicenseStatusValue({required this.label, required this.value});
+
+  final String label;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
-    final summary = _summary;
-    return AlertDialog(
-      title: const Text('License devices'),
-      content: SizedBox(
-        width: 440,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (summary != null)
-                    Text(
-                      '${summary.activeDeviceCount} of ${summary.slotLimit} devices active',
-                    ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      style: const TextStyle(color: Color(0xFFDC2626)),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  Flexible(
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        for (final device
-                            in summary?.devices ?? const <LicenseDevice>[])
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(
-                              device.isCurrent
-                                  ? Icons.smartphone_rounded
-                                  : Icons.devices_outlined,
-                            ),
-                            title: Text(device.name),
-                            subtitle: Text(_deviceSubtitle(device)),
-                            trailing: device.isRevoked || device.isCurrent
-                                ? null
-                                : _revokingDeviceId == device.id
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : IconButton(
-                                    tooltip: 'Revoke device',
-                                    icon: const Icon(
-                                      Icons.delete_outline_rounded,
-                                    ),
-                                    onPressed: () => _confirmRevoke(device),
-                                  ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-      ),
-      actions: [
-        TextButton(onPressed: _load, child: const Text('Refresh')),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close'),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF6B7280),
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: TextStyle(
+            color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF1A1F36),
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ],
     );
