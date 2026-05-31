@@ -13,6 +13,7 @@ type Body = {
   inviteId?: string;
   label?: string;
   durationMonths?: number;
+  licenseExpiresAt?: string;
   slotLimit?: number;
   search?: string;
   status?: string;
@@ -64,6 +65,8 @@ Deno.serve(async (req: Request) => {
         return json(await createLicense(admin, adminUserId, body));
       case "renew":
         return json(await renewLicense(admin, adminUserId, body));
+      case "set-expiry-date":
+        return json(await setExpiryDate(admin, adminUserId, body));
       case "set-slot-limit":
         return json(await setSlotLimit(admin, adminUserId, body));
       case "suspend":
@@ -212,6 +215,21 @@ async function renewLicense(admin: AdminClient, adminUserId: string, body: Body)
   return { licenseExpiresAt: expiry };
 }
 
+async function setExpiryDate(admin: AdminClient, adminUserId: string, body: Body) {
+  const inviteId = requiredUuid(body.inviteId);
+  const expiry = requiredIsoDate(body.licenseExpiresAt);
+  const before = await inviteById(admin, inviteId);
+  const { data, error } = await admin
+    .from("store_invites")
+    .update({ license_expires_at: expiry, status: "active" })
+    .eq("id", inviteId)
+    .select()
+    .single();
+  if (error) throw error;
+  await audit(admin, adminUserId, inviteId, "set-expiry-date", before, data);
+  return { licenseExpiresAt: expiry };
+}
+
 async function setSlotLimit(admin: AdminClient, adminUserId: string, body: Body) {
   const inviteId = requiredUuid(body.inviteId);
   const slotLimit = positiveInt(body.slotLimit, 1, 100);
@@ -354,6 +372,7 @@ function sanitizeText(value: unknown, max: number) { return replaceAsciiControlC
 function replaceAsciiControlCharacters(value: string) { return Array.from(value, (character) => { const code = character.charCodeAt(0); return code <= 31 || code === 127 ? " " : character; }).join(""); }
 function positiveInt(value: unknown, fallback: number, max: number) { const n = Number(value ?? fallback); if (!Number.isInteger(n) || n < 1 || n > max) throw new HttpError("Invalid numeric value", 400); return n; }
 function requiredUuid(value: unknown) { const id = String(value ?? "").trim(); if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError("Valid id is required", 400); return id; }
+function requiredIsoDate(value: unknown) { const date = new Date(String(value ?? "")); if (!Number.isFinite(date.getTime())) throw new HttpError("Valid expiry date is required", 400); return date.toISOString(); }
 function licenseCode() { const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const part = () => Array.from(crypto.getRandomValues(new Uint8Array(5))).map((n) => alphabet[n % alphabet.length]).join(""); return `${part()}-${part()}-${part()}`; }
 async function sha256Hex(value: string) { const bytes = new TextEncoder().encode(value); const digest = await crypto.subtle.digest("SHA-256", bytes); return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join(""); }
 async function inviteById(admin: AdminClient, id: string) { const { data, error } = await admin.from("store_invites").select().eq("id", id).single(); if (error) throw error; return data; }
