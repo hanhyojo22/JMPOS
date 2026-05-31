@@ -63,6 +63,11 @@ export function App() {
     return () => subscription.unsubscribe();
   }, []);
   useEffect(() => { if (signedIn) void refresh(); }, [signedIn]);
+  useEffect(() => {
+    if (!signedIn) return;
+    const timer = window.setTimeout(() => void refresh(), 300);
+    return () => window.clearTimeout(timer);
+  }, [query, status]);
 
   async function refresh() {
     setBusy(true); setError("");
@@ -121,7 +126,7 @@ function DashboardView({ data, open }: { data: Dashboard; open: (id: string) => 
 }
 function Metric({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) { return <div className="metric"><div className="metric-icon">{icon}</div><span>{label}</span><strong>{value}</strong></div>; }
 function LicenseList(p: { licenses: LicenseSummary[]; query: string; setQuery: (v: string) => void; status: string; setStatus: (v: string) => void; refresh: () => void; busy: boolean; open: (id: string) => void }) {
-  return <section className="panel"><div className="toolbar"><div className="search"><Search size={17}/><input value={p.query} onChange={e=>p.setQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&p.refresh()} placeholder="Search license, store, or account"/></div><select value={p.status} onChange={e=>p.setStatus(e.target.value)}><option value="">All statuses</option><option value="active">Active</option><option value="unused">Unused</option><option value="expired">Expired</option><option value="suspended">Suspended</option></select><button className="icon-button" title="Refresh" onClick={p.refresh}><RefreshCw size={17}/></button><button className="secondary" onClick={()=>exportCsv(p.licenses)}><Download/>CSV</button></div><LicenseTable licenses={p.licenses} open={p.open}/></section>;
+  return <section className="panel"><div className="toolbar"><div className="search"><Search size={17}/><input value={p.query} onChange={e=>p.setQuery(e.target.value)} placeholder="Search license, store, or account"/></div><select value={p.status} onChange={e=>p.setStatus(e.target.value)}><option value="">All statuses</option><option value="active">Active</option><option value="unused">Unused</option><option value="expired">Expired</option><option value="suspended">Suspended</option></select><button className="icon-button" title="Refresh" onClick={p.refresh}><RefreshCw size={17}/></button><button className="secondary" onClick={()=>exportCsv(p.licenses)}><Download/>CSV</button></div><LicenseTable licenses={p.licenses} open={p.open}/></section>;
 }
 function LicenseTable({ licenses, open }: { licenses: LicenseSummary[]; open: (id: string) => void }) { return <div className="table-wrap"><table><thead><tr><th>License</th><th>Account</th><th>Store</th><th>Status</th><th>Devices</th><th>Expires</th><th>Last activity</th><th/></tr></thead><tbody>{licenses.map(l=><tr key={l.id} onClick={()=>open(l.id)}><td><strong>{l.label}</strong></td><td>{l.ownerEmail||"Not activated"}</td><td>{l.storeName}</td><td><Badge state={l.state}/></td><td>{l.activeDeviceCount} / {l.slotLimit}</td><td>{date(l.licenseExpiresAt)}</td><td>{date(l.lastActivityAt)}</td><td><ChevronRight size={16}/></td></tr>)}</tbody></table><div className="mobile-license-list">{licenses.map(l=><button className="mobile-license" key={l.id} onClick={()=>open(l.id)}><div className="mobile-license-head"><strong>{l.label}</strong><Badge state={l.state}/></div><span className="mobile-license-account">{l.ownerEmail||"Not activated"}</span><span>{l.storeName}</span><div className="mobile-license-meta"><span><Laptop size={14}/>{l.activeDeviceCount} / {l.slotLimit}</span><span><CalendarClock size={14}/>{date(l.licenseExpiresAt)}</span><ChevronRight size={17}/></div></button>)}</div>{licenses.length===0&&<div className="empty">No licenses found.</div>}</div>; }
 function Badge({ state }: { state: string }) { return <span className={`badge ${state}`}>{state}</span>; }
