@@ -330,11 +330,17 @@ function expiredLicenseBody(value: unknown) {
 }
 
 function sanitizeText(value: unknown, maxLength: number) {
-  return String(value ?? "")
-    .replace(/[\u0000-\u001F\u007F]/g, " ")
+  return replaceAsciiControlCharacters(String(value ?? ""))
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxLength);
+}
+
+function replaceAsciiControlCharacters(value: string) {
+  return Array.from(value, (character) => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127 ? " " : character;
+  }).join("");
 }
 
 function sanitizeEmail(value: unknown) {

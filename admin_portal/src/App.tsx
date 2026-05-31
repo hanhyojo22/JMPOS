@@ -98,7 +98,7 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><div className="brand-mark"><KeyRound size={18}/></div><div><strong>TindaPOS</strong><span>License Admin</span></div></div>
+        <div className="brand"><div className="brand-mark"><img src="/app-icon.png" alt=""/></div><div><strong>TindaPOS</strong><span>License Admin</span></div></div>
         <nav>
           <button className={page === "dashboard" ? "active" : ""} onClick={() => setPage("dashboard")}><Activity/>Dashboard</button>
           <button className={page === "licenses" ? "active" : ""} onClick={() => setPage("licenses")}><KeyRound/>Licenses</button>
@@ -119,7 +119,7 @@ export function App() {
 function Login() {
   const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   async function submit(e: React.FormEvent) { e.preventDefault(); setBusy(true); setError(""); const { error } = await supabase.auth.signInWithPassword({ email, password }); if (error) setError(error.message); setBusy(false); }
-  return <div className="login-page"><form className="login-panel" onSubmit={submit}><div className="brand-mark large"><KeyRound/></div><h1>TindaPOS License Admin</h1><p>Internal access only</p>{error && <div className="error">{error}</div>}<label>Email<input value={email} onChange={e => setEmail(e.target.value)} type="email" required/></label><label>Password<input value={password} onChange={e => setPassword(e.target.value)} type="password" required/></label><button className="primary wide" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</button></form></div>;
+  return <div className="login-page"><form className="login-panel" onSubmit={submit}><div className="brand-mark large"><img src="/app-icon.png" alt="TindaPOS"/></div><h1>TindaPOS License Admin</h1><p>Internal access only</p>{error && <div className="error">{error}</div>}<label>Email<input value={email} onChange={e => setEmail(e.target.value)} type="email" required/></label><label>Password<input value={password} onChange={e => setPassword(e.target.value)} type="password" required/></label><button className="primary wide" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</button></form></div>;
 }
 function DashboardView({ data, open }: { data: Dashboard; open: (id: string) => void }) {
   return <><section className="metrics"><Metric label="Active licenses" value={data.active} icon={<CheckCircle2/>}/><Metric label="Expiring soon" value={data.expiring} icon={<CalendarClock/>}/><Metric label="Expired" value={data.expired} icon={<ShieldAlert/>}/><Metric label="Active devices" value={data.activeDevices} icon={<Laptop/>}/></section><section className="panel"><div className="panel-title"><h2>Recent activity</h2><span>{data.total} total licenses</span></div><LicenseTable licenses={data.recent} open={open}/></section></>;

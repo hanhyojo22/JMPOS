@@ -322,7 +322,8 @@ function latestDeviceSeen(row: LicenseRow) {
 function lastActivity(row: LicenseRow) { return dateMs(latestDeviceSeen(row)) ?? dateMs(row.created_at) ?? 0; }
 function dateMs(value: unknown) { const ms = Date.parse(String(value ?? "")); return Number.isFinite(ms) ? ms : null; }
 function addMonths(date: Date, months: number) { const copy = new Date(date); copy.setUTCMonth(copy.getUTCMonth() + months); return copy; }
-function sanitizeText(value: unknown, max: number) { return String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim().slice(0, max); }
+function sanitizeText(value: unknown, max: number) { return replaceAsciiControlCharacters(String(value ?? "")).replace(/\s+/g, " ").trim().slice(0, max); }
+function replaceAsciiControlCharacters(value: string) { return Array.from(value, (character) => { const code = character.charCodeAt(0); return code <= 31 || code === 127 ? " " : character; }).join(""); }
 function positiveInt(value: unknown, fallback: number, max: number) { const n = Number(value ?? fallback); if (!Number.isInteger(n) || n < 1 || n > max) throw new HttpError("Invalid numeric value", 400); return n; }
 function requiredUuid(value: unknown) { const id = String(value ?? "").trim(); if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError("Valid id is required", 400); return id; }
 function licenseCode() { const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const part = () => Array.from(crypto.getRandomValues(new Uint8Array(5))).map((n) => alphabet[n % alphabet.length]).join(""); return `POS-${part()}-${part()}-${part()}`; }
