@@ -184,6 +184,7 @@ class StartupGate extends StatelessWidget {
 
         return switch (snapshot.data) {
           _StartupState.ready => const LoginPage(),
+          _StartupState.expired => const LicenseExpiredPage(),
           _ => const LicenseCheckPage(),
         };
       },
@@ -195,6 +196,7 @@ class StartupGate extends StatelessWidget {
     final licenseService = LicenseActivationService.instance;
 
     final localActivation = await licenseService.readLocalActivation();
+    if (localActivation?.isExpired == true) return _StartupState.expired;
     if (localActivation != null &&
         DateTime.now().difference(localActivation.lastVerifiedAt) <=
             const Duration(days: 14)) {
@@ -206,7 +208,10 @@ class StartupGate extends StatelessWidget {
       if (activation != null) {
         return _stateForActivation(hasOwner, activation);
       }
-    } catch (_) {
+    } catch (error) {
+      if (error.toString().toLowerCase().contains('expired')) {
+        return _StartupState.expired;
+      }
       // No valid cloud activation: require license activation again.
     }
     return _StartupState.needsSetup;
@@ -226,7 +231,51 @@ class StartupGate extends StatelessWidget {
   }
 }
 
-enum _StartupState { ready, needsSetup }
+enum _StartupState { ready, needsSetup, expired }
+
+class LicenseExpiredPage extends StatelessWidget {
+  const LicenseExpiredPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.event_busy_outlined,
+                    size: 64,
+                    color: Color(0xFFDC2626),
+                  ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'License expired',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'This license has expired. Please contact the admin to renew your subscription.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class StartupBlankScreen extends StatelessWidget {
   const StartupBlankScreen({super.key});

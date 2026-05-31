@@ -68,7 +68,7 @@ Deno.serve(async (req: Request) => {
     const installationIdHash = await sha256Hex(installationId);
     const { data: invite, error: inviteError } = await admin
       .from("store_invites")
-      .select("id, store_id, max_uses, device_slot_limit, used_count, expires_at, status")
+      .select("id, store_id, max_uses, device_slot_limit, license_duration_months, used_count, expires_at, license_expires_at, status")
       .eq("code_hash", codeHash)
       .maybeSingle();
 
@@ -79,6 +79,20 @@ Deno.serve(async (req: Request) => {
     if (invite.expires_at && new Date(invite.expires_at) <= new Date()) {
       return jsonResponse({ error: "Invite/license code has expired" }, 400);
     }
+    if (invite.status === "suspended") {
+      return jsonResponse(
+        { code: "LICENSE_SUSPENDED", error: "This license is suspended. Please contact the admin." },
+        403,
+      );
+    }
+    if (isSubscriptionExpired(invite.license_expires_at)) {
+      return jsonResponse(expiredLicenseBody(invite.license_expires_at), 403);
+    }
+    await assertDeviceAvailableForInvite(
+      admin,
+      installationIdHash,
+      invite.id,
+    );
 
     const licenseAlreadyUsed =
       invite.store_id !== null ||
@@ -93,6 +107,7 @@ Deno.serve(async (req: Request) => {
         invite.id,
         inviteCode,
         presentedActivationToken,
+        invite.license_expires_at,
       );
       if (restored) return jsonResponse(restored);
 
@@ -113,6 +128,7 @@ Deno.serve(async (req: Request) => {
         installationIdHash,
         deviceName,
         deviceSlotLimit: invite.device_slot_limit ?? 1,
+        licenseExpiresAt: invite.license_expires_at,
       });
       if (restoredByOwner) return jsonResponse(restoredByOwner);
 
@@ -209,6 +225,8 @@ Deno.serve(async (req: Request) => {
         invite_id: invite.id,
         installation_id_hash: installationIdHash,
         activation_token_hash: activationTokenHash,
+        cloud_session_id: null,
+        cloud_session_user_id: null,
         device_name: deviceName || null,
         last_seen_at: new Date().toISOString(),
         revoked_at: null,
@@ -219,6 +237,9 @@ Deno.serve(async (req: Request) => {
     if (deviceError) throw deviceError;
 
     const nextUsedCount = (invite.used_count ?? 0) + 1;
+    const licenseExpiresAt =
+      invite.license_expires_at ??
+      addMonths(new Date(), invite.license_duration_months ?? 12).toISOString();
     const { error: inviteUpdateError } = await admin
       .from("store_invites")
       .update({
@@ -226,6 +247,7 @@ Deno.serve(async (req: Request) => {
         used_count: nextUsedCount,
         used_at: new Date().toISOString(),
         used_by_user_id: userId,
+        license_expires_at: licenseExpiresAt,
         status: nextUsedCount >= invite.max_uses ? "used" : "active",
       })
       .eq("id", invite.id)
@@ -241,6 +263,8 @@ Deno.serve(async (req: Request) => {
       storeName,
       licenseKey: inviteCode,
       activationToken,
+      licenseExpiresAt,
+      daysRemaining: daysRemaining(licenseExpiresAt),
       restored: false,
       session: null,
       sessionCreated: false,
@@ -248,6 +272,12 @@ Deno.serve(async (req: Request) => {
         "Cloud account and store were registered. Sign in to Cloud Sync with the owner email and password.",
     });
   } catch (error) {
+    if (error instanceof DeviceLicenseConflictError) {
+      return jsonResponse(
+        { code: "DEVICE_LICENSE_CONFLICT", error: error.message },
+        409,
+      );
+    }
     if (error instanceof SlotLimitError) {
       return jsonResponse(
         {
@@ -273,6 +303,30 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
       "Content-Type": "application/json",
     },
   });
+}
+
+function addMonths(value: Date, months: number) {
+  const date = new Date(value);
+  date.setUTCMonth(date.getUTCMonth() + months);
+  return date;
+}
+
+function isSubscriptionExpired(value: unknown) {
+  return value != null && new Date(String(value)) <= new Date();
+}
+
+function daysRemaining(value: unknown) {
+  if (!value) return null;
+  return Math.max(0, Math.ceil((new Date(String(value)).getTime() - Date.now()) / 86400000));
+}
+
+function expiredLicenseBody(value: unknown) {
+  return {
+    code: "LICENSE_EXPIRED",
+    error: "This license has expired. Please contact the admin to renew your subscription.",
+    licenseExpiresAt: value,
+    daysRemaining: 0,
+  };
 }
 
 function sanitizeText(value: unknown, maxLength: number) {
@@ -305,6 +359,7 @@ async function restoreExistingDevice(
   inviteId: string,
   licenseKey: string,
   presentedActivationToken: string,
+  licenseExpiresAt: string | null,
 ) {
   const { data: device, error: deviceError } = await admin
     .from("store_devices")
@@ -346,6 +401,8 @@ async function restoreExistingDevice(
     storeName: store.name,
     licenseKey,
     activationToken: newActivationToken,
+    licenseExpiresAt,
+    daysRemaining: daysRemaining(licenseExpiresAt),
     restored: true,
     session: null,
     sessionCreated: false,
@@ -364,6 +421,7 @@ async function restoreUsedLicenseForOwner({
   installationIdHash,
   deviceName,
   deviceSlotLimit,
+  licenseExpiresAt,
 }: {
   admin: AdminClient;
   supabaseUrl: string;
@@ -378,6 +436,7 @@ async function restoreUsedLicenseForOwner({
   installationIdHash: string;
   deviceName: string;
   deviceSlotLimit: number;
+  licenseExpiresAt: string | null;
 }) {
   if (!invite.store_id) return null;
 
@@ -423,6 +482,8 @@ async function restoreUsedLicenseForOwner({
       invite_id: invite.id,
       installation_id_hash: installationIdHash,
       activation_token_hash: activationTokenHash,
+      cloud_session_id: null,
+      cloud_session_user_id: null,
       device_name: deviceName || null,
       last_seen_at: new Date().toISOString(),
       revoked_at: null,
@@ -439,6 +500,8 @@ async function restoreUsedLicenseForOwner({
     storeName: store.name,
     licenseKey,
     activationToken,
+    licenseExpiresAt,
+    daysRemaining: daysRemaining(licenseExpiresAt),
     restored: true,
     session: null,
     sessionCreated: false,
@@ -459,6 +522,22 @@ async function countActiveDevices(
     .neq("installation_id_hash", excludedInstallationIdHash);
   if (error) throw error;
   return count ?? 0;
+}
+
+async function assertDeviceAvailableForInvite(
+  admin: AdminClient,
+  installationIdHash: string,
+  inviteId: string,
+) {
+  const { data: device, error } = await admin
+    .from("store_devices")
+    .select("invite_id, revoked_at")
+    .eq("installation_id_hash", installationIdHash)
+    .maybeSingle();
+  if (error) throw error;
+  if (device && !device.revoked_at && device.invite_id !== inviteId) {
+    throw new DeviceLicenseConflictError();
+  }
 }
 
 async function licenseOwnerEmailMatches(
@@ -495,5 +574,13 @@ class SlotLimitError extends Error {
     readonly activeDeviceCount: number,
   ) {
     super("All device slots are in use. Revoke an old device in Settings or contact support.");
+  }
+}
+
+class DeviceLicenseConflictError extends Error {
+  constructor() {
+    super(
+      "This device is already activated for another license. Ask the admin to revoke its previous activation before using a different license.",
+    );
   }
 }

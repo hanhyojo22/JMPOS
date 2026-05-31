@@ -422,3 +422,54 @@ using (
       and store_members.user_id = auth.uid()
   )
 );
+
+-- Final production override: sync access requires a cloud session that was
+-- authorized by an active, non-revoked POS device.
+drop policy if exists "Allow POS sync event inserts" on public.pos_sync_events;
+drop policy if exists "Allow POS sync event updates" on public.pos_sync_events;
+drop policy if exists "Allow POS sync event reads" on public.pos_sync_events;
+drop policy if exists "Allow active POS device sync events" on public.pos_sync_events;
+create policy "Allow active POS device sync events"
+on public.pos_sync_events for all to authenticated
+using (public.has_active_pos_device(store_id))
+with check (public.has_active_pos_device(store_id));
+
+drop policy if exists "Allow POS product sync writes" on public.products;
+drop policy if exists "Allow POS product sync reads" on public.products;
+drop policy if exists "Allow active POS device products" on public.products;
+create policy "Allow active POS device products"
+on public.products for all to authenticated
+using (public.has_active_pos_device(store_id))
+with check (public.has_active_pos_device(store_id));
+
+drop policy if exists "Allow POS product image deletion reads" on public.product_image_deletions;
+drop policy if exists "Allow POS product image deletion inserts" on public.product_image_deletions;
+drop policy if exists "Allow active POS device image deletions" on public.product_image_deletions;
+create policy "Allow active POS device image deletions"
+on public.product_image_deletions for all to authenticated
+using (public.has_active_pos_device(store_id))
+with check (public.has_active_pos_device(store_id));
+
+drop policy if exists "Allow POS sale sync writes" on public.sales;
+drop policy if exists "Allow POS sale sync reads" on public.sales;
+drop policy if exists "Allow active POS device sales" on public.sales;
+create policy "Allow active POS device sales"
+on public.sales for all to authenticated
+using (public.has_active_pos_device(store_id))
+with check (public.has_active_pos_device(store_id));
+
+drop policy if exists "Allow POS user sync writes" on public.users;
+drop policy if exists "Allow POS user sync reads" on public.users;
+drop policy if exists "Allow active POS device users" on public.users;
+create policy "Allow active POS device users"
+on public.users for all to authenticated
+using (public.has_active_pos_device(store_id))
+with check (public.has_active_pos_device(store_id));
+
+drop policy if exists "Allow POS audit sync writes" on public.audit_logs;
+drop policy if exists "Allow POS audit sync reads" on public.audit_logs;
+drop policy if exists "Allow active POS device audit logs" on public.audit_logs;
+create policy "Allow active POS device audit logs"
+on public.audit_logs for all to authenticated
+using (public.has_active_pos_device(store_id))
+with check (public.has_active_pos_device(store_id));

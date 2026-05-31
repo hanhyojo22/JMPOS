@@ -28,12 +28,15 @@ create table if not exists public.store_invites (
   device_slot_limit integer not null default 1,
   used_count integer not null default 0,
   expires_at timestamptz,
+  license_expires_at timestamptz,
+  license_duration_months integer not null default 12,
   used_at timestamptz,
   used_by_user_id uuid references auth.users(id) on delete set null,
   status text not null default 'active',
   created_at timestamptz not null default now(),
   constraint store_invites_max_uses_positive check (max_uses > 0),
   constraint store_invites_device_slot_limit_positive check (device_slot_limit > 0),
+  constraint store_invites_license_duration_months_positive check (license_duration_months > 0),
   constraint store_invites_used_count_valid check (used_count >= 0)
 );
 
@@ -53,6 +56,8 @@ create table if not exists public.store_devices (
   invite_id uuid references public.store_invites(id) on delete set null,
   installation_id_hash text not null unique,
   activation_token_hash text not null,
+  cloud_session_id text,
+  cloud_session_user_id uuid references auth.users(id) on delete set null,
   device_name text,
   activated_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now(),
@@ -66,6 +71,49 @@ on public.store_invites (status, expires_at);
 
 create index if not exists store_devices_store_id_idx
 on public.store_devices (store_id);
+
+create or replace function public.has_active_pos_device(target_store_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.store_devices device
+    join public.store_invites invite on invite.id = device.invite_id
+    join public.store_members member on member.store_id = device.store_id
+    where device.store_id = target_store_id
+      and member.user_id = auth.uid()
+      and device.cloud_session_user_id = auth.uid()
+      and device.cloud_session_id = auth.jwt() ->> 'session_id'
+      and device.revoked_at is null
+      and invite.status in ('active', 'used')
+      and (invite.license_expires_at is null or invite.license_expires_at > now())
+  );
+$$;
+
+revoke all on function public.has_active_pos_device(uuid) from public;
+grant execute on function public.has_active_pos_device(uuid) to authenticated;
+
+create or replace function public.has_active_pos_device_storage_path(object_name text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case
+    when split_part(object_name, '/', 1)
+      ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    then public.has_active_pos_device(split_part(object_name, '/', 1)::uuid)
+    else false
+  end;
+$$;
+
+revoke all on function public.has_active_pos_device_storage_path(text) from public;
+grant execute on function public.has_active_pos_device_storage_path(text) to authenticated;
 
 alter table public.stores enable row level security;
 alter table public.store_members enable row level security;
@@ -81,31 +129,21 @@ on public.stores
 for select
 to authenticated
 using (
-  exists (
-    select 1
-    from public.store_members
-    where store_members.store_id = stores.id
-      and store_members.user_id = auth.uid()
-  )
+  public.has_active_pos_device(stores.id)
 );
 
 create policy "Allow members to read memberships"
 on public.store_members
 for select
 to authenticated
-using (user_id = auth.uid());
+using (public.has_active_pos_device(store_id));
 
 create policy "Allow members to read their store devices"
 on public.store_devices
 for select
 to authenticated
 using (
-  exists (
-    select 1
-    from public.store_members
-    where store_members.store_id = store_devices.store_id
-      and store_members.user_id = auth.uid()
-  )
+  public.has_active_pos_device(store_devices.store_id)
 );
 
 -- Store invites are intentionally not readable by client apps.

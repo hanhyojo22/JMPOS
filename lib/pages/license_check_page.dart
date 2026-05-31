@@ -52,25 +52,22 @@ class _LicenseCheckPageState extends State<LicenseCheckPage> {
             .localOwnerMatchesStore(existingStoreId);
         if (!mounted) return;
 
-        if (hasOwner && matchesStore) {
+        if (result.activated && hasOwner && matchesStore) {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (_) => const LoginPage()),
           );
           return;
         }
 
-        if (!hasOwner || !matchesStore) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (_) => OwnerSetupPage(
-                verifiedLicenseKey: result.licenseKey,
-                restoreExistingLicense: true,
-                restoredStoreName: result.storeName,
-              ),
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => LoginPage(
+              cloudRestoreLicenseKey: result.licenseKey,
+              cloudRestoreStoreName: result.storeName,
             ),
-          );
-          return;
-        }
+          ),
+        );
+        return;
       }
 
       Navigator.of(context).pushReplacement(

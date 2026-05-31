@@ -8,9 +8,10 @@ const corsHeaders = {
 };
 
 type ManageDevicesBody = {
-  action?: "list" | "revoke";
+  action?: "list" | "revoke" | "authorize-sync";
   storeId?: string;
   installationId?: string;
+  activationToken?: string;
   deviceId?: string;
 };
 
@@ -39,7 +40,7 @@ Deno.serve(async (req: Request) => {
     const storeId = sanitizeUuid(body.storeId);
     const installationId = sanitizeToken(body.installationId, 120);
 
-    if (action !== "list" && action !== "revoke") {
+    if (action !== "list" && action !== "revoke" && action !== "authorize-sync") {
       return jsonResponse({ error: "Unsupported action" }, 400);
     }
     if (!storeId) return jsonResponse({ error: "Valid store id is required" }, 400);
@@ -56,10 +57,27 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const userId = await authenticatedUserId(admin, req);
-    await assertStoreOwner(admin, storeId, userId);
+    const { token, userId } = await authenticatedUser(admin, req);
 
     const installationIdHash = await sha256Hex(installationId);
+    if (action === "authorize-sync") {
+      const activationToken = sanitizeToken(body.activationToken, 120);
+      if (!activationToken) {
+        return jsonResponse({ error: "Activation token is required" }, 400);
+      }
+      return jsonResponse(
+        await authorizeCloudSync(
+          admin,
+          storeId,
+          userId,
+          token,
+          installationIdHash,
+          activationToken,
+        ),
+      );
+    }
+
+    await assertStoreOwner(admin, storeId, userId);
     if (action === "list") {
       return jsonResponse(await listDevices(admin, storeId, installationIdHash));
     }
@@ -137,6 +155,8 @@ async function revokeDevice(
     .from("store_devices")
     .update({
       revoked_at: new Date().toISOString(),
+      cloud_session_id: null,
+      cloud_session_user_id: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", deviceId)
@@ -146,14 +166,78 @@ async function revokeDevice(
   return { revoked: true };
 }
 
-async function authenticatedUserId(admin: AdminClient, req: Request) {
+async function authorizeCloudSync(
+  admin: AdminClient,
+  storeId: string,
+  userId: string,
+  token: string,
+  installationIdHash: string,
+  activationToken: string,
+) {
+  await assertStoreMember(admin, storeId, userId);
+  const { data: device, error } = await admin
+    .from("store_devices")
+    .select("id, activation_token_hash, revoked_at, store_invites(status, license_expires_at)")
+    .eq("store_id", storeId)
+    .eq("installation_id_hash", installationIdHash)
+    .maybeSingle();
+  if (error) throw error;
+  if (!device || device.revoked_at) {
+    throw new AuthError("This device activation has been revoked", 403);
+  }
+  if (await sha256Hex(activationToken) !== device.activation_token_hash) {
+    throw new AuthError("Device activation token is invalid", 403);
+  }
+  const invite = Array.isArray(device.store_invites)
+    ? device.store_invites[0]
+    : device.store_invites;
+  if (!invite || (invite.status !== "active" && invite.status !== "used")) {
+    throw new AuthError("This license is not active", 403);
+  }
+  if (
+    invite.license_expires_at &&
+    new Date(invite.license_expires_at) <= new Date()
+  ) {
+    throw new AuthError("This license has expired", 403);
+  }
+  const sessionId = jwtSessionId(token);
+  if (!sessionId) throw new AuthError("Cloud session id is missing", 401);
+  const { error: updateError } = await admin
+    .from("store_devices")
+    .update({
+      cloud_session_id: sessionId,
+      cloud_session_user_id: userId,
+      last_seen_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", device.id);
+  if (updateError) throw updateError;
+  return { authorized: true };
+}
+
+async function authenticatedUser(admin: AdminClient, req: Request) {
   const authorization = req.headers.get("authorization") ?? "";
   const token = authorization.replace(/^Bearer\s+/i, "").trim();
   if (!token) throw new AuthError("Missing authorization token", 401);
 
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) throw new AuthError("Invalid authorization token", 401);
-  return data.user.id;
+  return { token, userId: data.user.id };
+}
+
+async function assertStoreMember(
+  admin: AdminClient,
+  storeId: string,
+  userId: string,
+) {
+  const { data, error } = await admin
+    .from("store_members")
+    .select("store_id")
+    .eq("store_id", storeId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new AuthError("Store access denied", 403);
 }
 
 async function assertStoreOwner(
@@ -192,6 +276,20 @@ async function sha256Hex(value: string) {
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function jwtSessionId(token: string) {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return "";
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = JSON.parse(
+      atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")),
+    ) as Record<string, unknown>;
+    return sanitizeUuid(decoded.session_id);
+  } catch (_) {
+    return "";
+  }
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {

@@ -41,6 +41,7 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _invalidCredentials = false;
+  String? _cloudRestoreStatus;
 
   @override
   void dispose() {
@@ -142,10 +143,29 @@ class _LoginPageState extends State<LoginPage> {
         email: email,
         password: password,
       );
-      await DatabaseHelper.instance.pullCloudSnapshotToLocal();
+      if (mounted) {
+        setState(() => _cloudRestoreStatus = 'Downloading cloud data');
+      }
+      final imported = await DatabaseHelper.instance.pullCloudSnapshotToLocal(
+        onProgress: (imported, total, status) {
+          if (!mounted) return;
+          setState(() {
+            _cloudRestoreStatus = total > 0
+                ? '$status ($imported of $total)'
+                : status;
+          });
+        },
+      );
       await LicenseActivationService.instance.saveLocalOwnerStoreId(
         activation.storeId,
       );
+      if (mounted) {
+        setState(() {
+          _cloudRestoreStatus =
+              'Cloud data restored. $imported record${imported == 1 ? '' : 's'} retrieved.';
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 1100));
+      }
 
       return DatabaseHelper.instance.upsertOwnerFromCloud(
         email: email,
@@ -154,6 +174,7 @@ class _LoginPageState extends State<LoginPage> {
         fullName: email,
       );
     } catch (_) {
+      if (mounted) setState(() => _cloudRestoreStatus = null);
       return null;
     }
   }
@@ -223,194 +244,279 @@ class _LoginPageState extends State<LoginPage> {
         backgroundColor: Colors.transparent,
         extendBody: true,
         extendBodyBehindAppBar: true,
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF667eea), Color(0xFF764ba2)],
-            ),
-          ),
-          child: Center(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(
-                24,
-                MediaQuery.of(context).padding.top + 24,
-                24,
-                MediaQuery.of(context).padding.bottom + 24,
-              ),
-              child: Card(
-                color: cardColor,
-                elevation: 12,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+        body: Stack(
+          children: [
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF667eea), Color(0xFF764ba2)],
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(height: 16),
-                        Image.asset(
-                          'lib/assets/appiconnobg.png',
-                          height: 150,
-                          width: 250,
-                          fit: BoxFit.cover,
-                        ),
-                        Text(
-                          'Welcome Back!',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: primaryText,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Sign in to continue.',
-                          style: TextStyle(fontSize: 15, color: secondaryText),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 28),
-                        TextFormField(
-                          controller: _usernameController,
-                          onChanged: (_) => _clearLoginError(),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.deny(
-                              LoginInputValidator.usernameDeniedCharacters,
+              ),
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    24,
+                    MediaQuery.of(context).padding.top + 24,
+                    24,
+                    MediaQuery.of(context).padding.bottom + 24,
+                  ),
+                  child: Card(
+                    color: cardColor,
+                    elevation: 12,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(height: 16),
+                            Image.asset(
+                              'lib/assets/appiconnobg.png',
+                              height: 150,
+                              width: 250,
+                              fit: BoxFit.cover,
                             ),
-                            LengthLimitingTextInputFormatter(
-                              LoginInputValidator.maxUsernameLength,
-                            ),
-                          ],
-                          decoration: InputDecoration(
-                            labelText: 'Username or email',
-                            hintText: 'Enter your username or email',
-                            prefixIcon: const Icon(Icons.person_outline),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: fieldColor,
-                          ),
-                          validator: _validateUsername,
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _passwordController,
-                          onChanged: (_) => _clearLoginError(),
-                          obscureText: _obscurePassword,
-                          keyboardType: TextInputType.visiblePassword,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.deny(
-                              LoginInputValidator.controlCharacters,
-                            ),
-                            LengthLimitingTextInputFormatter(
-                              LoginInputValidator.maxPasswordLength,
-                            ),
-                          ],
-                          decoration: InputDecoration(
-                            labelText: 'Password',
-                            hintText: 'Enter your password',
-                            prefixIcon: const Icon(Icons.lock_outline),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                              ),
-                              onPressed: () => setState(
-                                () => _obscurePassword = !_obscurePassword,
+                            Text(
+                              'Welcome Back!',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: primaryText,
                               ),
                             ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Sign in to continue.',
+                              style: TextStyle(
+                                fontSize: 15,
+                                color: secondaryText,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                            filled: true,
-                            fillColor: fieldColor,
-                          ),
-                          validator: _validatePassword,
-                        ),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          child: !_invalidCredentials
-                              ? const SizedBox.shrink()
-                              : const Padding(
-                                  padding: EdgeInsets.only(top: 12),
+                            FutureBuilder<LicenseActivation?>(
+                              future: LicenseActivationService.instance
+                                  .readLocalActivation(),
+                              builder: (context, snapshot) {
+                                final days = snapshot.data?.daysRemaining;
+                                if (days == null || days > 30) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 14),
                                   child: MessageBanner(
                                     message:
-                                        'Username or password is incorrect. Please check your credentials and try again.',
+                                        'License renewal reminder: $days day${days == 1 ? '' : 's'} remaining. Please contact the admin to renew.',
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 28),
+                            TextFormField(
+                              controller: _usernameController,
+                              onChanged: (_) => _clearLoginError(),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.deny(
+                                  LoginInputValidator.usernameDeniedCharacters,
+                                ),
+                                LengthLimitingTextInputFormatter(
+                                  LoginInputValidator.maxUsernameLength,
+                                ),
+                              ],
+                              decoration: InputDecoration(
+                                labelText: 'Username or email',
+                                hintText: 'Enter your username or email',
+                                prefixIcon: const Icon(Icons.person_outline),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                filled: true,
+                                fillColor: fieldColor,
+                              ),
+                              validator: _validateUsername,
+                            ),
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: _passwordController,
+                              onChanged: (_) => _clearLoginError(),
+                              obscureText: _obscurePassword,
+                              keyboardType: TextInputType.visiblePassword,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.deny(
+                                  LoginInputValidator.controlCharacters,
+                                ),
+                                LengthLimitingTextInputFormatter(
+                                  LoginInputValidator.maxPasswordLength,
+                                ),
+                              ],
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                hintText: 'Enter your password',
+                                prefixIcon: const Icon(Icons.lock_outline),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _obscurePassword = !_obscurePassword,
                                   ),
                                 ),
-                        ),
-
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: _showMagicLinkDialog,
-                            child: const Text('Email Magic Link'),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _login,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF667eea),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                filled: true,
+                                fillColor: fieldColor,
                               ),
-                              elevation: 3,
+                              validator: _validatePassword,
                             ),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              child: !_invalidCredentials
+                                  ? const SizedBox.shrink()
+                                  : const Padding(
+                                      padding: EdgeInsets.only(top: 12),
+                                      child: MessageBanner(
+                                        message:
+                                            'Username or password is incorrect. Please check your credentials and try again.',
                                       ),
                                     ),
-                                  )
-                                : const Text(
-                                    'Sign In',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: OutlinedButton.icon(
-                            onPressed: _openPinLogin,
-                            icon: const Icon(Icons.pin_outlined),
-                            label: const Text('PIN Login'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF667eea),
-                              side: const BorderSide(color: Color(0xFF667eea)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                            ),
+
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _showMagicLinkDialog,
+                                child: const Text('Email Magic Link'),
                               ),
                             ),
-                          ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 50,
+                              child: ElevatedButton(
+                                onPressed: _isLoading ? null : _login,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF667eea),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 3,
+                                ),
+                                child: _isLoading
+                                    ? const SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
+                                        ),
+                                      )
+                                    : const Text(
+                                        'Sign In',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 48,
+                              child: OutlinedButton.icon(
+                                onPressed: _openPinLogin,
+                                icon: const Icon(Icons.pin_outlined),
+                                label: const Text('PIN Login'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF667eea),
+                                  side: const BorderSide(
+                                    color: Color(0xFF667eea),
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
+            if (_cloudRestoreStatus != null)
+              _CloudRestoreOverlay(status: _cloudRestoreStatus!),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CloudRestoreOverlay extends StatelessWidget {
+  const _CloudRestoreOverlay({required this.status});
+
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final completed = status.startsWith('Cloud data restored.');
+    return ColoredBox(
+      color: const Color(0x990F172A),
+      child: Center(
+        child: Container(
+          width: 300,
+          margin: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (completed)
+                const Icon(
+                  Icons.cloud_done_rounded,
+                  color: Color(0xFF16A34A),
+                  size: 42,
+                )
+              else
+                const CircularProgressIndicator(),
+              const SizedBox(height: 18),
+              Text(
+                completed ? 'Cloud restore complete' : 'Retrieving cloud data',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                status,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodySmall?.color,
+                  fontSize: 13,
+                  height: 1.35,
+                ),
+              ),
+            ],
           ),
         ),
       ),

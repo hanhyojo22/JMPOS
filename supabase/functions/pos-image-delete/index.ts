@@ -48,8 +48,9 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const userId = await authenticatedUserId(admin, req);
+    const { token, userId } = await authenticatedUser(admin, req);
     await assertStoreMember(admin, storeId, userId);
+    await assertActiveStoreDevice(admin, storeId, userId, token);
 
     if (operation === "delete_product_image") {
       const localId = sanitizeLocalId(body.localId);
@@ -321,7 +322,7 @@ function belongsToStore(storeId: string, objectPath: string) {
   return objectPath.startsWith(`${storeId}/${productImagePrefix}/`);
 }
 
-async function authenticatedUserId(
+async function authenticatedUser(
   admin: AdminClient,
   req: Request,
 ) {
@@ -331,7 +332,7 @@ async function authenticatedUserId(
 
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) throw new AuthError("Invalid authorization token", 401);
-  return data.user.id;
+  return { token, userId: data.user.id };
 }
 
 async function assertStoreMember(
@@ -347,6 +348,37 @@ async function assertStoreMember(
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new AuthError("Store access denied", 403);
+}
+
+async function assertActiveStoreDevice(
+  admin: AdminClient,
+  storeId: string,
+  userId: string,
+  token: string,
+) {
+  const sessionId = jwtSessionId(token);
+  if (!sessionId) throw new AuthError("Cloud session id is missing", 401);
+  const { data, error } = await admin
+    .from("store_devices")
+    .select("id, store_invites(status, license_expires_at)")
+    .eq("store_id", storeId)
+    .eq("cloud_session_user_id", userId)
+    .eq("cloud_session_id", sessionId)
+    .is("revoked_at", null)
+    .maybeSingle();
+  if (error) throw error;
+  const invite = Array.isArray(data?.store_invites)
+    ? data.store_invites[0]
+    : data?.store_invites;
+  if (!data || !invite || (invite.status !== "active" && invite.status !== "used")) {
+    throw new AuthError("An active POS device is required", 403);
+  }
+  if (
+    invite.license_expires_at &&
+    new Date(invite.license_expires_at) <= new Date()
+  ) {
+    throw new AuthError("This license has expired", 403);
+  }
 }
 
 function sanitizeUuid(value: unknown) {
@@ -370,6 +402,18 @@ function sanitizeLocalId(value: unknown) {
 function sanitizeText(value: unknown, maxLength: number) {
   const text = String(value ?? "").trim();
   return text.length <= maxLength ? text : "";
+}
+
+function jwtSessionId(token: string) {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return "";
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="))) as Record<string, unknown>;
+    return sanitizeUuid(decoded.session_id);
+  } catch (_) {
+    return "";
+  }
 }
 
 function imageExtension(path: string) {

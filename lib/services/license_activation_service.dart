@@ -17,6 +17,7 @@ class LicenseActivation {
     required this.activationToken,
     required this.lastVerifiedAt,
     this.storeName,
+    this.licenseExpiresAt,
   });
 
   final String licenseKey;
@@ -25,6 +26,16 @@ class LicenseActivation {
   final String activationToken;
   final DateTime lastVerifiedAt;
   final String? storeName;
+  final DateTime? licenseExpiresAt;
+
+  bool get isExpired =>
+      licenseExpiresAt != null && !licenseExpiresAt!.isAfter(DateTime.now());
+
+  int? get daysRemaining {
+    final expiry = licenseExpiresAt;
+    if (expiry == null) return null;
+    return expiry.difference(DateTime.now()).inDays.clamp(0, 999999);
+  }
 }
 
 class LicenseDevice {
@@ -71,6 +82,7 @@ class LicenseActivationService {
   static const _activationTokenKey = 'activation_token';
   static const _lastVerifiedAtKey = 'last_verified_at';
   static const _storeNameKey = 'store_name';
+  static const _licenseExpiresAtKey = 'license_expires_at';
   static const _cloudEmailKey = 'cloud_sync_email';
   static const _cloudPasswordKey = 'cloud_sync_password';
   static const _localOwnerStoreIdKey = 'local_owner_store_id';
@@ -105,6 +117,7 @@ class LicenseActivationService {
       _secureStorage.read(key: _activationTokenKey),
       _secureStorage.read(key: _lastVerifiedAtKey),
       _secureStorage.read(key: _storeNameKey),
+      _secureStorage.read(key: _licenseExpiresAtKey),
     ]);
 
     final licenseKey = values[0]?.trim() ?? '';
@@ -127,14 +140,16 @@ class LicenseActivationService {
       activationToken: activationToken,
       lastVerifiedAt: lastVerifiedAt,
       storeName: values[5]?.trim(),
+      licenseExpiresAt: DateTime.tryParse(values[6]?.trim() ?? ''),
     );
   }
 
   Future<bool> hasValidLocalActivation() async {
     final activation = await readLocalActivation();
     if (activation == null) return false;
-    return DateTime.now().difference(activation.lastVerifiedAt) <=
-        _offlineGracePeriod;
+    return !activation.isExpired &&
+        DateTime.now().difference(activation.lastVerifiedAt) <=
+            _offlineGracePeriod;
   }
 
   Future<LicenseActivation?> recoverActivation() async {
@@ -155,6 +170,7 @@ class LicenseActivationService {
       storeId: response['storeId']?.toString() ?? '',
       activationToken: response['activationToken']?.toString() ?? '',
       storeName: response['storeName']?.toString(),
+      licenseExpiresAt: _responseExpiry(response),
     );
     return readLocalActivation();
   }
@@ -189,6 +205,7 @@ class LicenseActivationService {
         storeId: response['storeId']?.toString() ?? '',
         activationToken: response['activationToken']?.toString() ?? '',
         storeName: response['storeName']?.toString(),
+        licenseExpiresAt: _responseExpiry(response),
       );
     }
 
@@ -243,6 +260,7 @@ class LicenseActivationService {
       storeId: storeId,
       activationToken: activationToken,
       storeName: response['storeName']?.toString() ?? storeName,
+      licenseExpiresAt: _responseExpiry(response),
     );
 
     final activation = await readLocalActivation();
@@ -354,17 +372,64 @@ class LicenseActivationService {
       final client = Supabase.instance.client;
       final currentEmail = client.auth.currentUser?.email?.trim().toLowerCase();
       if (client.auth.currentSession != null) {
-        if (email.isEmpty || currentEmail == email) return true;
+        if (email.isEmpty || currentEmail == email) {
+          return _authorizeCloudSyncSession(client);
+        }
         await client.auth.signOut();
       }
 
       if (email.isEmpty || password.isEmpty) return false;
 
       await client.auth.signInWithPassword(email: email, password: password);
-      return client.auth.currentSession != null;
+      return client.auth.currentSession != null &&
+          await _authorizeCloudSyncSession(client);
     } catch (_) {
       return false;
     }
+  }
+
+  Future<bool> _authorizeCloudSyncSession(SupabaseClient client) async {
+    final activation = await readLocalActivation();
+    final accessToken = client.auth.currentSession?.accessToken;
+    if (activation == null || accessToken == null || accessToken.isEmpty) {
+      return false;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+          '${EnvConfig.supabaseUrl}/functions/v1/$_manageDevicesFunction',
+        ),
+        headers: {
+          'apikey': EnvConfig.supabaseAnonKey,
+          'Authorization': 'Bearer $accessToken',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'action': 'authorize-sync',
+          'storeId': activation.storeId,
+          'installationId': activation.installationId,
+          'activationToken': activation.activationToken,
+        }),
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) return true;
+      if (response.statusCode == 401 ||
+          response.statusCode == 403 ||
+          response.statusCode == 409) {
+        await _clearCloudSyncCredentials(client);
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _clearCloudSyncCredentials(SupabaseClient client) async {
+    await client.auth.signOut();
+    await Future.wait([
+      _secureStorage.delete(key: _cloudEmailKey),
+      _secureStorage.delete(key: _cloudPasswordKey),
+    ]);
   }
 
   Future<void> saveActivation({
@@ -373,6 +438,7 @@ class LicenseActivationService {
     required String storeId,
     required String activationToken,
     String? storeName,
+    DateTime? licenseExpiresAt,
   }) async {
     final now = DateTime.now().toUtc().toIso8601String();
     await Future.wait([
@@ -384,6 +450,11 @@ class LicenseActivationService {
       _secureStorage.write(key: _lastVerifiedAtKey, value: now),
       if (storeName != null && storeName.trim().isNotEmpty)
         _secureStorage.write(key: _storeNameKey, value: storeName.trim()),
+      if (licenseExpiresAt != null)
+        _secureStorage.write(
+          key: _licenseExpiresAtKey,
+          value: licenseExpiresAt.toUtc().toIso8601String(),
+        ),
     ]);
 
     final prefs = await SharedPreferences.getInstance();
@@ -569,6 +640,10 @@ class LicenseActivationService {
       return 'All device slots are in use. Revoke an old device in Settings or contact support.';
     }
 
+    if (normalized.contains('already activated for another license')) {
+      return 'This device is already activated for another license. Ask the admin to revoke its previous activation before using a different license.';
+    }
+
     if (statusCode == 429 || _isRateLimitMessage(message)) {
       return 'Too many attempts. Please wait a minute before trying again.';
     }
@@ -648,6 +723,10 @@ class LicenseActivationService {
     final cleaned = value.trim().toUpperCase();
     if (!RegExp(r'^[A-Z0-9_-]{4,40}$').hasMatch(cleaned)) return '';
     return cleaned;
+  }
+
+  DateTime? _responseExpiry(Map<String, dynamic> response) {
+    return DateTime.tryParse(response['licenseExpiresAt']?.toString() ?? '');
   }
 
   String _createUuidV4() {

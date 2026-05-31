@@ -85,11 +85,17 @@ serve(async (req: Request) => {
 
     const { data: invite, error: inviteError } = await admin
       .from("store_invites")
-      .select("code_hash, status")
+      .select("code_hash, status, license_expires_at")
       .eq("id", device.invite_id)
       .single();
     if (inviteError) throw inviteError;
 
+    if (invite.status === "suspended") {
+      return jsonResponse({ code: "LICENSE_SUSPENDED", error: "This license is suspended. Please contact the admin." }, 403);
+    }
+    if (isSubscriptionExpired(invite.license_expires_at)) {
+      return jsonResponse(expiredLicenseBody(invite.license_expires_at), 403);
+    }
     if (invite.status !== "used" && invite.status !== "active") {
       return jsonResponse({ error: "License is not active" }, 403);
     }
@@ -112,6 +118,8 @@ serve(async (req: Request) => {
       storeName: store.name,
       licenseKey: "",
       activationToken: newActivationToken,
+      licenseExpiresAt: invite.license_expires_at,
+      daysRemaining: daysRemaining(invite.license_expires_at),
       restored: true,
       message: "Device activation is valid.",
     });
@@ -153,7 +161,7 @@ async function validateLicenseKeyForDevice(
   const codeHash = await sha256Hex(licenseKey);
   const { data: invite, error: inviteError } = await admin
     .from("store_invites")
-    .select("id, store_id, max_uses, device_slot_limit, used_count, expires_at, status")
+    .select("id, store_id, max_uses, device_slot_limit, used_count, expires_at, license_expires_at, status")
     .eq("code_hash", codeHash)
     .maybeSingle();
 
@@ -168,6 +176,31 @@ async function validateLicenseKeyForDevice(
     return {
       status: 400,
       body: { error: "License code has expired" },
+    };
+  }
+  if (invite.status === "suspended") {
+    return {
+      status: 403,
+      body: { code: "LICENSE_SUSPENDED", error: "This license is suspended. Please contact the admin." },
+    };
+  }
+  if (isSubscriptionExpired(invite.license_expires_at)) {
+    return { status: 403, body: expiredLicenseBody(invite.license_expires_at) };
+  }
+
+  const conflict = await activeDeviceConflict(
+    admin,
+    installationIdHash,
+    invite.id,
+  );
+  if (conflict) {
+    return {
+      status: 409,
+      body: {
+        code: "DEVICE_LICENSE_CONFLICT",
+        error:
+          "This device is already activated for another license. Ask the admin to revoke its previous activation before using a different license.",
+      },
     };
   }
 
@@ -216,6 +249,8 @@ async function validateLicenseKeyForDevice(
         storeName: store.name,
         licenseKey,
         activationToken,
+        licenseExpiresAt: invite.license_expires_at,
+        daysRemaining: daysRemaining(invite.license_expires_at),
         message: "This license was restored for this device.",
       },
     };
@@ -260,6 +295,8 @@ async function validateLicenseKeyForDevice(
           licenseKey,
           slotLimit: invite.device_slot_limit ?? 1,
           activeDeviceCount,
+          licenseExpiresAt: invite.license_expires_at,
+          daysRemaining: daysRemaining(invite.license_expires_at),
           ownerEmailMasked,
           message:
             ownerEmailMasked
@@ -289,8 +326,28 @@ async function validateLicenseKeyForDevice(
       licenseKey,
       slotLimit: invite.device_slot_limit ?? 1,
       activeDeviceCount: 0,
+      licenseExpiresAt: invite.license_expires_at,
+      daysRemaining: daysRemaining(invite.license_expires_at),
       message: "License is valid and ready for owner setup.",
     },
+  };
+}
+
+function isSubscriptionExpired(value: unknown) {
+  return value != null && new Date(String(value)) <= new Date();
+}
+
+function daysRemaining(value: unknown) {
+  if (!value) return null;
+  return Math.max(0, Math.ceil((new Date(String(value)).getTime() - Date.now()) / 86400000));
+}
+
+function expiredLicenseBody(value: unknown) {
+  return {
+    code: "LICENSE_EXPIRED",
+    error: "This license has expired. Please contact the admin to renew your subscription.",
+    licenseExpiresAt: value,
+    daysRemaining: 0,
   };
 }
 
@@ -305,6 +362,20 @@ async function countActiveDevices(
     .is("revoked_at", null);
   if (error) throw error;
   return count ?? 0;
+}
+
+async function activeDeviceConflict(
+  admin: AdminClient,
+  installationIdHash: string,
+  inviteId: string,
+) {
+  const { data: device, error } = await admin
+    .from("store_devices")
+    .select("invite_id, revoked_at")
+    .eq("installation_id_hash", installationIdHash)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(device && !device.revoked_at && device.invite_id !== inviteId);
 }
 
 function maskEmail(email: string) {

@@ -17,7 +17,7 @@ for insert
 to authenticated
 with check (
   bucket_id = 'backupfiles'
-  and storage.objects.name not like '%/sync_images/%'
+  and public.has_active_pos_device_storage_path(storage.objects.name)
 );
 
 create policy "Allow POS store object reads"
@@ -26,12 +26,7 @@ for select
 to authenticated
 using (
   bucket_id = 'backupfiles'
-  and exists (
-    select 1
-    from public.store_members
-    where store_members.store_id::text = split_part(storage.objects.name, '/', 1)
-      and store_members.user_id = auth.uid()
-  )
+  and public.has_active_pos_device_storage_path(storage.objects.name)
 );
 
 create policy "Allow POS store object inserts"
@@ -40,12 +35,7 @@ for insert
 to authenticated
 with check (
   bucket_id = 'backupfiles'
-  and exists (
-    select 1
-    from public.store_members
-    where store_members.store_id::text = split_part(storage.objects.name, '/', 1)
-      and store_members.user_id = auth.uid()
-  )
+  and public.has_active_pos_device_storage_path(storage.objects.name)
 );
 
 create policy "Allow POS store object updates"
@@ -54,21 +44,11 @@ for update
 to authenticated
 using (
   bucket_id = 'backupfiles'
-  and exists (
-    select 1
-    from public.store_members
-    where store_members.store_id::text = split_part(storage.objects.name, '/', 1)
-      and store_members.user_id = auth.uid()
-  )
+  and public.has_active_pos_device_storage_path(storage.objects.name)
 )
 with check (
   bucket_id = 'backupfiles'
-  and exists (
-    select 1
-    from public.store_members
-    where store_members.store_id::text = split_part(storage.objects.name, '/', 1)
-      and store_members.user_id = auth.uid()
-  )
+  and public.has_active_pos_device_storage_path(storage.objects.name)
 );
 
 create policy "Allow POS store object deletes"
@@ -77,10 +57,5 @@ for delete
 to authenticated
 using (
   bucket_id = 'backupfiles'
-  and exists (
-    select 1
-    from public.store_members
-    where store_members.store_id::text = split_part(storage.objects.name, '/', 1)
-      and store_members.user_id = auth.uid()
-  )
+  and public.has_active_pos_device_storage_path(storage.objects.name)
 );

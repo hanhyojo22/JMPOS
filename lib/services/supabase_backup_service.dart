@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:pos_app/services/license_activation_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseBackupConfig {
@@ -55,11 +56,12 @@ class SupabaseBackupService {
     final extension = p.extension(backupPath).isEmpty
         ? '.posbackup'
         : p.extension(backupPath);
-    final objectPath = '$store/pos_backup_$timestamp$extension';
+    final authorized = await _clientForUpload();
+    final objectPath =
+        '${authorized.storeId}/backups/${store}_pos_backup_$timestamp$extension';
 
-    final client = _clientForUpload();
     try {
-      await client.storage
+      await authorized.client.storage
           .from(bucket)
           .uploadBinary(
             objectPath,
@@ -75,10 +77,19 @@ class SupabaseBackupService {
     }
   }
 
-  SupabaseClient _clientForUpload() {
+  Future<({SupabaseClient client, String storeId})> _clientForUpload() async {
     try {
       final client = Supabase.instance.client;
-      if (client.auth.currentSession != null) return client;
+      final signedIn = await LicenseActivationService.instance
+          .ensureCloudSyncSignedIn();
+      final activation = await LicenseActivationService.instance
+          .readLocalActivation();
+      final storeId = activation?.storeId.trim() ?? '';
+      if (signedIn &&
+          client.auth.currentSession != null &&
+          storeId.isNotEmpty) {
+        return (client: client, storeId: storeId);
+      }
     } catch (_) {
       throw Exception('Supabase is not configured.');
     }
