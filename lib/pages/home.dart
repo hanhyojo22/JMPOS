@@ -770,7 +770,9 @@ class _HomePageState extends State<HomePage> {
 
       case 4:
         if (widget.role == 'admin') {
-          return const ReportsPage();
+          return ReportsPage(
+            onOpenMenu: () => _scaffoldKey.currentState?.openDrawer(),
+          );
         }
         return SalesPage(
           cart: sharedCart,
@@ -1242,7 +1244,7 @@ class _HomePageState extends State<HomePage> {
 
     return Scaffold(
       key: _scaffoldKey,
-      appBar: _selectedIndex == 2 || _selectedIndex == 9
+      appBar: {2, 4, 9}.contains(_selectedIndex)
           ? null
           : AppBar(
               leadingWidth: 44,

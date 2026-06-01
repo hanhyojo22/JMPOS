@@ -8,9 +8,9 @@ import 'package:intl/intl.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/main.dart';
 import 'package:pos_app/services/license_activation_service.dart';
+import 'package:pos_app/services/screen_awake_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 
 // ─── Settings Page ────────────────────────────────────────────────────────────
 class SettingsPage extends StatefulWidget {
@@ -81,6 +81,7 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _barcodeScanner = widget.barcodeScannerEnabled;
+    _keepScreenOn = ScreenAwakeService.instance.keepScreenOn;
     _loadStoreName();
     _loadPinState();
     _loadLastBackupDate();
@@ -247,9 +248,13 @@ class _SettingsPageState extends State<SettingsPage> {
                         iconBg: const Color(0xFFFAEEDA),
                         iconColor: const Color(0xFF854F0B),
                         label: 'Keep screen on',
+                        subtitle: 'Warning: may drain the battery faster',
                         trailing: _buildToggle(_keepScreenOn, (v) {
                           HapticFeedback.lightImpact();
                           setState(() => _keepScreenOn = v);
+                          unawaited(
+                            ScreenAwakeService.instance.setKeepScreenOn(v),
+                          );
                         }),
                         isLast: true,
                       ),
@@ -565,7 +570,7 @@ class _SettingsPageState extends State<SettingsPage> {
       _cloudSyncStatus = 'Connecting to Supabase';
       _cloudSyncIssue = null;
     });
-    await WakelockPlus.enable();
+    await ScreenAwakeService.instance.acquireTemporaryHold();
 
     try {
       final cloudSignedIn = await LicenseActivationService.instance
@@ -655,7 +660,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
       );
     } finally {
-      await WakelockPlus.disable();
+      await ScreenAwakeService.instance.releaseTemporaryHold();
       if (mounted) {
         setState(() {
           _isSyncingCloud = false;

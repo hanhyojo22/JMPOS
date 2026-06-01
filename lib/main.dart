@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/services/env_config.dart';
 import 'package:pos_app/services/license_activation_service.dart';
+import 'package:pos_app/services/screen_awake_service.dart';
 import 'package:pos_app/theme/app_typography.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'pages/license_check_page.dart';
@@ -14,6 +15,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EnvConfig.load();
   await _initializeSupabase();
+  await ScreenAwakeService.instance.initialize();
 
   // Modern safe area behavior
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
