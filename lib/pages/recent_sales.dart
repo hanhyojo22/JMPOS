@@ -532,7 +532,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
             'Items',
             style: TextStyle(
               color: _primaryText,
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -601,7 +601,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
                   category,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 10, color: _secondaryText),
+                  style: TextStyle(fontSize: 11, color: _secondaryText),
                 ),
               ],
             ),
@@ -719,7 +719,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
                 isVoided ? 'Void Reason' : 'Note',
                 style: TextStyle(
                   color: _primaryText,
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -850,7 +850,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: TextStyle(color: _secondaryText, fontSize: 15),
+              style: TextStyle(color: _secondaryText, fontSize: 14),
             ),
           ],
         ),

@@ -375,7 +375,7 @@ class _HistoryPageState extends State<HistoryPage>
                         Text(
                           receipt,
                           style: TextStyle(
-                            fontSize: 12.5,
+                            fontSize: 13,
                             fontWeight: FontWeight.w700,
                             color: _textDark,
                           ),
@@ -476,7 +476,7 @@ class _HistoryPageState extends State<HistoryPage>
                 ? 'No completed sales'
                 : 'No void sales',
             style: const TextStyle(
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: FontWeight.w700,
               color: _textDark,
             ),
@@ -536,7 +536,7 @@ class _TabItem extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                fontSize: 13.5,
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: selected ? activeColor : const Color(0xFF9E9E9E),
               ),
@@ -570,7 +570,7 @@ class _StatusBadge extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 10.5,
+          fontSize: 11,
           fontWeight: FontWeight.w600,
           color: color,
         ),
@@ -647,7 +647,7 @@ class _SortSheetState extends State<_SortSheet> {
               child: Text(
                 'Sort By',
                 style: TextStyle(
-                  fontSize: 17,
+                  fontSize: 16,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF212121),
                 ),
@@ -729,7 +729,7 @@ class _SortSheetState extends State<_SortSheet> {
                     'Apply',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 15,
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),

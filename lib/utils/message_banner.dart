@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pos_app/theme/app_typography.dart';
 
 class MessageBanner extends StatelessWidget {
   final String message;
@@ -33,9 +34,8 @@ class MessageBanner extends StatelessWidget {
             Expanded(
               child: Text(
                 message,
-                style: const TextStyle(
+                style: AppTypography.label.copyWith(
                   color: Colors.white,
-                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
               ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:pos_app/theme/app_typography.dart';
 
 class BarcodeScannerViewport extends StatefulWidget {
   const BarcodeScannerViewport({super.key, required this.onDetect});
@@ -93,14 +94,14 @@ class _BarcodeScannerViewportState extends State<BarcodeScannerViewport> {
                 ),
               ),
             ),
-            const Positioned(
+            Positioned(
               bottom: 60,
               left: 0,
               right: 0,
               child: Center(
                 child: Text(
                   'Align barcode within the frame',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                  style: AppTypography.label.copyWith(color: Colors.white70),
                 ),
               ),
             ),

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pos_app/theme/app_typography.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'package:pos_app/utils/message_banner.dart';
 import 'recent_sales.dart';
@@ -548,31 +549,29 @@ class _CartPageState extends State<CartPage> {
                   const SizedBox(height: 14),
                   Text(
                     'Sale Completed!',
-                    style: TextStyle(
+                    style: AppTypography.pageTitle.copyWith(
                       color: primaryText,
-                      fontSize: 22,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     'The transaction was successful.',
-                    style: TextStyle(color: secondaryText, fontSize: 13),
+                    style: AppTypography.label.copyWith(color: secondaryText),
                   ),
                   const SizedBox(height: 18),
                   _DashedDivider(color: line),
                   const SizedBox(height: 18),
                   Text(
                     'Total Amount',
-                    style: TextStyle(color: secondaryText, fontSize: 12),
+                    style: AppTypography.label.copyWith(color: secondaryText),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     CurrencyFormatter.format(total),
-                    style: TextStyle(
+                    style: AppTypography.primaryAmount.copyWith(
                       color: success,
-                      fontSize: 30,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 18),
@@ -580,17 +579,13 @@ class _CartPageState extends State<CartPage> {
                   const SizedBox(height: 16),
                   Text(
                     'Receipt Number',
-                    style: TextStyle(color: secondaryText, fontSize: 12),
+                    style: AppTypography.label.copyWith(color: secondaryText),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     completion.receiptNumber,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: primaryText,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: AppTypography.cardTitle.copyWith(color: primaryText),
                   ),
                   const SizedBox(height: 18),
                   _DashedDivider(color: line),
@@ -621,10 +616,7 @@ class _CartPageState extends State<CartPage> {
                       icon: const Icon(Icons.receipt_long_outlined, size: 18),
                       label: const Text(
                         'View Receipt',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: AppTypography.button,
                       ),
                     ),
                   ),
@@ -651,10 +643,7 @@ class _CartPageState extends State<CartPage> {
                       ),
                       label: const Text(
                         'New Sale',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: AppTypography.button,
                       ),
                     ),
                   ),
@@ -764,7 +753,7 @@ class _CartPageState extends State<CartPage> {
                             Text(
                               'Cash payment',
                               style: TextStyle(
-                                fontSize: 15,
+                                fontSize: 14,
                                 fontWeight: FontWeight.w800,
                                 color: _primaryText,
                               ),
@@ -841,7 +830,7 @@ class _CartPageState extends State<CartPage> {
                               Text(
                                 '₱ ',
                                 style: TextStyle(
-                                  fontSize: 19,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.w800,
                                   color: _primary,
                                 ),
@@ -859,7 +848,7 @@ class _CartPageState extends State<CartPage> {
                                     ),
                                   ],
                                   style: TextStyle(
-                                    fontSize: 19,
+                                    fontSize: 18,
                                     fontWeight: FontWeight.w700,
                                     color: _primaryText,
                                   ),
@@ -867,7 +856,7 @@ class _CartPageState extends State<CartPage> {
                                     hintText: '0.00',
                                     hintStyle: TextStyle(
                                       color: _tertiaryText,
-                                      fontSize: 19,
+                                      fontSize: 18,
                                     ),
                                     border: InputBorder.none,
                                     isDense: true,
@@ -1125,7 +1114,7 @@ class _CartPageState extends State<CartPage> {
           Text(
             'Shopping cart',
             style: TextStyle(
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: FontWeight.w700,
               color: _primaryText,
               letterSpacing: -0.3,
@@ -1193,7 +1182,7 @@ class _CartPageState extends State<CartPage> {
                           _isSelectingCartItems ? 'Selected' : 'Checkout',
                           style: TextStyle(
                             color: _primaryText,
-                            fontSize: 15,
+                            fontSize: 14,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
@@ -1334,7 +1323,7 @@ class _CartPageState extends State<CartPage> {
                         : 'No discount',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: _tertiaryText, fontSize: 10),
+                    style: TextStyle(color: _tertiaryText, fontSize: 11),
                   ),
                 ],
               ),
@@ -1468,7 +1457,7 @@ class _CartPageState extends State<CartPage> {
                               'Enter quantity',
                               style: TextStyle(
                                 color: _primaryText,
-                                fontSize: 17,
+                                fontSize: 16,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -1800,7 +1789,7 @@ class _CartPageState extends State<CartPage> {
                             'Done',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 15,
+                              fontSize: 14,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -2011,7 +2000,7 @@ class _BottomMetric extends StatelessWidget {
           textAlign: alignCenter ? TextAlign.center : TextAlign.start,
           style: TextStyle(
             color: labelColor,
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
           ),
         ),

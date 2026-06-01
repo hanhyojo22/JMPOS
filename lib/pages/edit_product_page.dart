@@ -717,7 +717,7 @@ class _EditProductPageState extends State<EditProductPage> {
                       'Save changes',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -803,7 +803,7 @@ class _StatCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(fontSize: 10, color: labelColor)),
+          Text(label, style: TextStyle(fontSize: 11, color: labelColor)),
           const SizedBox(height: 3),
           Text(
             value,
@@ -1209,7 +1209,7 @@ class _ImageSheet extends StatelessWidget {
             Text(
               'Product photo',
               style: TextStyle(
-                fontSize: 17,
+                fontSize: 16,
                 fontWeight: FontWeight.w700,
                 color: primaryText,
                 letterSpacing: -0.3,

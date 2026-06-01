@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/services/env_config.dart';
 import 'package:pos_app/services/license_activation_service.dart';
+import 'package:pos_app/theme/app_typography.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'pages/license_check_page.dart';
 import 'pages/login.dart';
@@ -134,6 +135,10 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
           brightness: Brightness.light,
           primarySwatch: Colors.indigo,
           scaffoldBackgroundColor: const Color(0xFFF4F5FF),
+          textTheme: AppTypography.textTheme(
+            primaryColor: const Color(0xFF1A1F36),
+            secondaryColor: const Color(0xFF6B7280),
+          ),
           appBarTheme: const AppBarTheme(
             backgroundColor: Colors.transparent,
             elevation: 0,
@@ -148,6 +153,10 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         darkTheme: ThemeData(
           brightness: Brightness.dark,
           scaffoldBackgroundColor: const Color(0xFF0F172A),
+          textTheme: AppTypography.textTheme(
+            primaryColor: const Color(0xFFF8FAFC),
+            secondaryColor: const Color(0xFFCBD5E1),
+          ),
           appBarTheme: const AppBarTheme(
             backgroundColor: Colors.transparent,
             elevation: 0,
@@ -256,7 +265,7 @@ class LicenseExpiredPage extends StatelessWidget {
                   const SizedBox(height: 18),
                   const Text(
                     'License expired',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 10),
                   Text(

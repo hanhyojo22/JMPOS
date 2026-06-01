@@ -286,7 +286,7 @@ class _LoginPageState extends State<LoginPage> {
                             Text(
                               'Welcome Back!',
                               style: TextStyle(
-                                fontSize: 20,
+                                fontSize: 22,
                                 fontWeight: FontWeight.bold,
                                 color: primaryText,
                               ),
@@ -295,7 +295,7 @@ class _LoginPageState extends State<LoginPage> {
                             Text(
                               'Sign in to continue.',
                               style: TextStyle(
-                                fontSize: 15,
+                                fontSize: 14,
                                 color: secondaryText,
                               ),
                               textAlign: TextAlign.center,
@@ -503,7 +503,7 @@ class _CloudRestoreOverlay extends StatelessWidget {
               Text(
                 completed ? 'Cloud restore complete' : 'Retrieving cloud data',
                 style: const TextStyle(
-                  fontSize: 17,
+                  fontSize: 16,
                   fontWeight: FontWeight.w700,
                 ),
               ),

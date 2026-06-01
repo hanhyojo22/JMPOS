@@ -88,7 +88,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           'Sign up to manage your POS dashboard and track sales seamlessly.',
                           style: TextStyle(
                             color: Colors.grey[600],
-                            fontSize: 15,
+                            fontSize: 14,
                           ),
                           textAlign: TextAlign.center,
                         ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pos_app/theme/app_typography.dart';
 
 /// A reusable label widget for consistent text styling across the app.
 class LabelText extends StatelessWidget {
@@ -22,10 +23,10 @@ class LabelText extends StatelessWidget {
     return Text(
       text,
       textAlign: align ?? TextAlign.start,
-      style: TextStyle(
-        color: color ?? Colors.grey[800],
-        fontSize: fontSize ?? 14,
-        fontWeight: fontWeight ?? FontWeight.w500,
+      style: AppTypography.label.copyWith(
+        color: color ?? Theme.of(context).textTheme.labelMedium?.color,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
       ),
     );
   }

@@ -414,7 +414,7 @@ class _SettingsPageState extends State<SettingsPage> {
           Text(
             'Settings',
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 22,
               fontWeight: FontWeight.w500,
               color: _primaryText,
               letterSpacing: -0.4,

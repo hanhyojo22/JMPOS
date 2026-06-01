@@ -591,7 +591,7 @@ class _SalesPageState extends State<SalesPage> {
               controller: _searchController,
               onChanged: (v) => setState(() => _searchQuery = v),
               style: TextStyle(
-                fontSize: 15,
+                fontSize: 14,
                 color: _primaryText,
                 fontWeight: FontWeight.w500,
               ),
@@ -825,19 +825,27 @@ class _SalesPageState extends State<SalesPage> {
             children: [
               AspectRatio(
                 aspectRatio: 1.02,
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: _primary.withValues(alpha: _isDark ? 0.12 : 0.04),
-                    border: Border(
-                      bottom: BorderSide(color: _lineColor, width: 0.5),
+                child: GestureDetector(
+                  onTap: stock > 0
+                      ? () {
+                          HapticFeedback.lightImpact();
+                          _addToCart(product);
+                        }
+                      : null,
+                  child: Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: _primary.withValues(alpha: _isDark ? 0.12 : 0.04),
+                      border: Border(
+                        bottom: BorderSide(color: _lineColor, width: 0.5),
+                      ),
                     ),
-                  ),
-                  child: SizedBox.expand(
-                    child: _buildProductImage(
-                      product['imagePath'] as String?,
-                      borderRadius: 0,
-                      size: double.infinity,
+                    child: SizedBox.expand(
+                      child: _buildProductImage(
+                        product['imagePath'] as String?,
+                        borderRadius: 0,
+                        size: double.infinity,
+                      ),
                     ),
                   ),
                 ),
@@ -873,7 +881,7 @@ class _SalesPageState extends State<SalesPage> {
                       Text(
                         _badgeLabel(stock),
                         style: TextStyle(
-                          fontSize: 8,
+                          fontSize: 11,
                           fontWeight: FontWeight.w800,
                           color: _badgeFg(ss),
                         ),
@@ -912,7 +920,7 @@ class _SalesPageState extends State<SalesPage> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 9,
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: _secondaryText,
                     height: 1,
@@ -1093,7 +1101,7 @@ class _CardAction extends StatelessWidget {
               'Out of stock',
               style: TextStyle(
                 color: Color(0xFF8A8A8A),
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -1278,7 +1286,7 @@ class _SortSheetState extends State<_SortSheet> {
                 child: Text(
                   'Sort Products',
                   style: TextStyle(
-                    fontSize: 20,
+                    fontSize: 22,
                     fontWeight: FontWeight.w800,
                     color: primaryText,
                     letterSpacing: -0.4,

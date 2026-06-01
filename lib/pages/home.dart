@@ -973,7 +973,7 @@ class _HomePageState extends State<HomePage> {
                             CurrencyFormatter.format(totalSales),
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 36,
+                              fontSize: 32,
                               fontWeight: FontWeight.w800,
                               letterSpacing: -0.5,
                             ),
@@ -1046,7 +1046,7 @@ class _HomePageState extends State<HomePage> {
                         const SizedBox(height: 12),
                         Text(
                           'No transactions today',
-                          style: TextStyle(fontSize: 15, color: _secondaryText),
+                          style: TextStyle(fontSize: 14, color: _secondaryText),
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -1692,7 +1692,7 @@ class _StatPill extends StatelessWidget {
                 softWrap: false,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 17,
+                  fontSize: 16,
                   fontWeight: FontWeight.w700,
                 ),
               ),

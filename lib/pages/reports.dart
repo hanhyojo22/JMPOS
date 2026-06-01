@@ -276,7 +276,7 @@ class _ReportView extends StatelessWidget {
             Text(
               'No sales data for $period',
               style: TextStyle(
-                fontSize: 17,
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: primaryText,
               ),
@@ -348,7 +348,7 @@ class _ReportView extends StatelessWidget {
                     CurrencyFormatter.format(data.revenue),
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 34,
+                      fontSize: 32,
                       fontWeight: FontWeight.bold,
                       letterSpacing: -0.5,
                     ),
@@ -749,7 +749,7 @@ class _VoidSummaryCard extends StatelessWidget {
               textAlign: TextAlign.right,
               style: const TextStyle(
                 color: Color(0xFFF59E0B),
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -817,7 +817,7 @@ class _SectionHeader extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           title,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
         ),
       ],
     );
@@ -844,7 +844,7 @@ class _DonutChart extends StatelessWidget {
             ),
             Text(
               'Total',
-              style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+              style: TextStyle(fontSize: 11, color: Colors.grey[500]),
             ),
           ],
         ),

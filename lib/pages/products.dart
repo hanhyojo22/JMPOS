@@ -634,7 +634,7 @@ class _ProductsPageState extends State<ProductsPage>
           controller: _searchController,
           onChanged: (v) => setState(() => _searchQuery = v),
           style: TextStyle(
-            fontSize: 15,
+            fontSize: 14,
             color: _primaryText,
             fontWeight: FontWeight.w500,
           ),
@@ -938,7 +938,7 @@ class _ProductsPageState extends State<ProductsPage>
                             Text(
                               _stockLabel(stock),
                               style: TextStyle(
-                                fontSize: 8,
+                                fontSize: 11,
                                 fontWeight: FontWeight.w800,
                                 color: stockBadgeFg,
                               ),
@@ -994,7 +994,7 @@ class _ProductsPageState extends State<ProductsPage>
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: _secondaryText,
-                          fontSize: 9,
+                          fontSize: 11,
                           fontWeight: FontWeight.w600,
                           height: 1,
                         ),
@@ -1295,7 +1295,7 @@ class _SortSheetState extends State<_SortSheet> {
                 child: Text(
                   'Sort Products',
                   style: TextStyle(
-                    fontSize: 20,
+                    fontSize: 22,
                     fontWeight: FontWeight.w800,
                     color: primaryText,
                   ),

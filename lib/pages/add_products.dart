@@ -1052,7 +1052,7 @@ class _SectionCard extends StatelessWidget {
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: primaryText,
                   ),
@@ -1231,7 +1231,7 @@ class _TF extends StatelessWidget {
         prefixIcon: Icon(icon, color: iconColor ?? iconFallback, size: 20),
         prefixText: prefix != null ? '$prefix ' : null,
         prefixStyle: const TextStyle(
-          fontSize: 15,
+          fontSize: 14,
           fontWeight: FontWeight.w600,
           color: Color(0xFF667EEA),
         ),
