@@ -587,7 +587,6 @@ class LicenseActivationService {
         Uri.parse('${EnvConfig.supabaseUrl}/functions/v1/$functionName'),
         headers: {
           'apikey': EnvConfig.supabaseAnonKey,
-          'Authorization': 'Bearer ${EnvConfig.supabaseAnonKey}',
           'Content-Type': 'application/json',
         },
         body: jsonEncode(body),
