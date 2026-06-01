@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
@@ -44,6 +45,8 @@ class SalesPage extends StatefulWidget {
   final List<Map<String, dynamic>> cart;
   final VoidCallback? onBarcodeHandled;
   final VoidCallback? onCartChanged;
+  final Offset? Function()? cartTargetGlobalPosition;
+  final VoidCallback? onCartAnimationArrived;
   const SalesPage({
     super.key,
     required this.cart,
@@ -51,6 +54,8 @@ class SalesPage extends StatefulWidget {
     this.initialBarcode,
     this.onBarcodeHandled,
     this.onCartChanged,
+    this.cartTargetGlobalPosition,
+    this.onCartAnimationArrived,
     this.openCartDirectly = false,
   });
 
@@ -94,6 +99,7 @@ class _SalesPageState extends State<SalesPage> {
   bool _barcodeHandled = false;
   String? _topMessage;
   bool _topMessageSuccess = true;
+  final Map<int, GlobalKey> _productCardKeys = {};
 
   final List<String> _categories = [
     'All',
@@ -201,6 +207,59 @@ class _SalesPageState extends State<SalesPage> {
     });
     _notifyCartChanged();
     _showSnack('${product['title']} added to cart', top: true);
+  }
+
+  GlobalKey _productCardKey(Map<String, dynamic> product) {
+    final id = (product['id'] as num?)?.toInt();
+    if (id == null) return GlobalKey();
+    return _productCardKeys.putIfAbsent(id, GlobalKey.new);
+  }
+
+  void _addFromProductCard(Map<String, dynamic> product) {
+    if ((product['stock'] as int) <= 0) return;
+    HapticFeedback.lightImpact();
+    _launchCartFlight(product);
+    _addToCart(product);
+  }
+
+  void _launchCartFlight(Map<String, dynamic> product) {
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return;
+    final targetGlobal = widget.cartTargetGlobalPosition?.call();
+    final id = (product['id'] as num?)?.toInt();
+    final sourceContext = id == null
+        ? null
+        : _productCardKeys[id]?.currentContext;
+    final sourceRenderObject = sourceContext?.findRenderObject();
+    if (targetGlobal == null ||
+        sourceRenderObject is! RenderBox ||
+        !sourceRenderObject.hasSize) {
+      return;
+    }
+
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final overlayRenderObject = overlay.context.findRenderObject();
+    if (overlayRenderObject is! RenderBox || !overlayRenderObject.hasSize) {
+      return;
+    }
+
+    final sourceGlobal = sourceRenderObject.localToGlobal(
+      sourceRenderObject.size.center(Offset.zero),
+    );
+    final start = overlayRenderObject.globalToLocal(sourceGlobal);
+    final end = overlayRenderObject.globalToLocal(targetGlobal);
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (context) => _FlyingCartThumbnail(
+        start: start,
+        end: end,
+        imagePath: product['imagePath']?.toString(),
+        onCompleted: () {
+          entry.remove();
+          widget.onCartAnimationArrived?.call();
+        },
+      ),
+    );
+    overlay.insert(entry);
   }
 
   void _removeFromCart(int index) {
@@ -800,6 +859,7 @@ class _SalesPageState extends State<SalesPage> {
     final int qty = cartItem.isNotEmpty ? cartItem['quantity'] as int : 0;
 
     return AnimatedContainer(
+      key: _productCardKey(product),
       duration: const Duration(milliseconds: 180),
       alignment: Alignment.center,
       decoration: BoxDecoration(
@@ -826,12 +886,7 @@ class _SalesPageState extends State<SalesPage> {
               AspectRatio(
                 aspectRatio: 1.02,
                 child: GestureDetector(
-                  onTap: stock > 0
-                      ? () {
-                          HapticFeedback.lightImpact();
-                          _addToCart(product);
-                        }
-                      : null,
+                  onTap: stock > 0 ? () => _addFromProductCard(product) : null,
                   child: Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
@@ -949,10 +1004,7 @@ class _SalesPageState extends State<SalesPage> {
                     primary: _primary,
                     surface: _mutedSurface,
                     lineColor: _lineColor,
-                    onAdd: () {
-                      HapticFeedback.lightImpact();
-                      _addToCart(product);
-                    },
+                    onAdd: () => _addFromProductCard(product),
                     onRemove: () {
                       HapticFeedback.lightImpact();
                       final idx = _cart.indexWhere(
@@ -1190,6 +1242,146 @@ class _QuantityButton extends StatelessWidget {
 }
 
 // ─── Sort Sheet ───────────────────────────────────────────────────────────────
+class _FlyingCartThumbnail extends StatefulWidget {
+  const _FlyingCartThumbnail({
+    required this.start,
+    required this.end,
+    required this.imagePath,
+    required this.onCompleted,
+  });
+
+  final Offset start;
+  final Offset end;
+  final String? imagePath;
+  final VoidCallback onCompleted;
+
+  @override
+  State<_FlyingCartThumbnail> createState() => _FlyingCartThumbnailState();
+}
+
+class _FlyingCartThumbnailState extends State<_FlyingCartThumbnail>
+    with SingleTickerProviderStateMixin {
+  static const _size = 48.0;
+  late final AnimationController _controller;
+  late final Animation<double> _progress;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1050),
+    );
+    _progress = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.24, 1, curve: Curves.easeInOutCubic),
+    );
+    _controller.forward().whenComplete(widget.onCompleted);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _progress,
+      builder: (context, child) {
+        final progress = _progress.value;
+        final control = Offset(
+          (widget.start.dx + widget.end.dx) / 2,
+          min(widget.start.dy, widget.end.dy) - 90,
+        );
+        final inverse = 1 - progress;
+        final position =
+            (widget.start * (inverse * inverse)) +
+            (control * (2 * inverse * progress)) +
+            (widget.end * (progress * progress));
+        final fade = progress < 0.72 ? 1.0 : (1 - progress) / 0.28;
+        final timeline = _controller.value;
+        final popScale = timeline < 0.12
+            ? 0.72 + ((timeline / 0.12) * 0.42)
+            : timeline < 0.24
+            ? 1.14 - (((timeline - 0.12) / 0.12) * 0.14)
+            : 1.0;
+        final scale = popScale * (1 - (progress * 0.52));
+
+        return Positioned(
+          left: position.dx - (_size / 2),
+          top: position.dy - (_size / 2),
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: fade.clamp(0, 1),
+              child: Transform.rotate(
+                angle: -0.08 * progress,
+                child: Transform.scale(scale: scale, child: child),
+              ),
+            ),
+          ),
+        );
+      },
+      child: _FlightThumbnail(imagePath: widget.imagePath),
+    );
+  }
+}
+
+class _FlightThumbnail extends StatelessWidget {
+  const _FlightThumbnail({required this.imagePath});
+
+  final String? imagePath;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = imagePath?.trim() ?? '';
+    return Container(
+      width: _FlyingCartThumbnailState._size,
+      height: _FlyingCartThumbnailState._size,
+      decoration: BoxDecoration(
+        color: const Color(0xFF5C6BC0),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: _image(path),
+    );
+  }
+
+  Widget _image(String path) {
+    if (path.isEmpty) return _fallback();
+    final file = File(path);
+    if (file.existsSync()) {
+      return Image.file(file, fit: BoxFit.cover, errorBuilder: _onImageError);
+    }
+    if (path.startsWith('http')) {
+      return Image.network(
+        path,
+        fit: BoxFit.cover,
+        errorBuilder: _onImageError,
+      );
+    }
+    return _fallback();
+  }
+
+  Widget _onImageError(BuildContext context, Object error, StackTrace? stack) =>
+      _fallback();
+
+  Widget _fallback() => const Icon(
+    Icons.add_shopping_cart_rounded,
+    color: Colors.white,
+    size: 25,
+  );
+}
+
 class _SortSheet extends StatefulWidget {
   final String current;
   final void Function(String) onSelect;

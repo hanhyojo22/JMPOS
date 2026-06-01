@@ -10,10 +10,12 @@ class RecentSalesPage extends StatefulWidget {
     super.key,
     required this.saleId,
     required this.currentUsername,
+    this.readOnly = false,
   });
 
   final int saleId;
   final String currentUsername;
+  final bool readOnly;
 
   @override
   State<RecentSalesPage> createState() => _RecentSalesPageState();
@@ -61,7 +63,9 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
     try {
       final db = await DatabaseHelper.instance.database;
       await DatabaseHelper.instance.ensureSalesSchema();
-      await DatabaseHelper.instance.completeDueSales();
+      if (!widget.readOnly) {
+        await DatabaseHelper.instance.completeDueSales();
+      }
 
       final rows = await db.rawQuery(
         '''
@@ -238,6 +242,7 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
 
   void _scheduleCompletionRefresh() {
     _completionTimer?.cancel();
+    if (widget.readOnly) return;
     if (_sale == null || _isVoided || _isCompleted) return;
 
     final dueAt = _completionDueAt();
@@ -738,6 +743,9 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
   }
 
   Widget _receiptActions() {
+    if (widget.readOnly) {
+      return _printReceiptButton();
+    }
     return Row(
       children: [
         Expanded(child: _printReceiptButton()),

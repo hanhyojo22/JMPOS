@@ -22,9 +22,10 @@ enum _ReportPeriod { today, custom }
 enum _ReportSection { overview, topProducts, inventory, voids }
 
 class ReportsPage extends StatefulWidget {
-  const ReportsPage({super.key, this.onOpenMenu});
+  const ReportsPage({super.key, this.onOpenMenu, this.readOnly = false});
 
   final VoidCallback? onOpenMenu;
+  final bool readOnly;
 
   @override
   State<ReportsPage> createState() => _ReportsPageState();
@@ -69,7 +70,9 @@ class _ReportsPageState extends State<ReportsPage> {
   Future<_ReportData> _fetchReportData() async {
     final db = await DatabaseHelper.instance.database;
     await DatabaseHelper.instance.ensureSalesSchema();
-    await DatabaseHelper.instance.completeDueSales();
+    if (!widget.readOnly) {
+      await DatabaseHelper.instance.completeDueSales();
+    }
     final range = _activeRange();
     final salesRows = await _querySalesForRange(db, range);
     final products = await db.query(
@@ -555,45 +558,29 @@ class _ReportsPageState extends State<ReportsPage> {
                           children: [
                             Text('Reports', style: AppTypography.pageTitle),
                             const SizedBox(height: 2),
-                            Text(
-                              'Track sales, products, and inventory performance.',
-                              style: AppTypography.caption,
-                            ),
                           ],
                         ),
                       ),
                       const SizedBox(width: 8),
-                      OutlinedButton(
+                      IconButton.outlined(
                         onPressed: _exporting ? null : _showExportSheet,
-                        style: OutlinedButton.styleFrom(
+                        tooltip: 'Export report',
+                        style: IconButton.styleFrom(
                           foregroundColor: const Color(0xFF2563EB),
                           side: const BorderSide(color: Color(0xFF93C5FD)),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 10,
-                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(9),
                           ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_exporting) ...[
-                              const SizedBox(
-                                width: 14,
-                                height: 14,
+                        icon: _exporting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                 ),
-                              ),
-                              const SizedBox(width: 6),
-                            ],
-                            const Text('Export'),
-                            const SizedBox(width: 3),
-                            const Icon(Icons.keyboard_arrow_down, size: 17),
-                          ],
-                        ),
+                              )
+                            : const Icon(Icons.download_rounded, size: 20),
                       ),
                     ],
                   ),

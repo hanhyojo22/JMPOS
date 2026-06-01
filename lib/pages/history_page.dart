@@ -5,8 +5,13 @@ import 'recent_sales.dart';
 
 class HistoryPage extends StatefulWidget {
   final String currentUsername;
+  final bool readOnly;
 
-  const HistoryPage({super.key, required this.currentUsername});
+  const HistoryPage({
+    super.key,
+    required this.currentUsername,
+    this.readOnly = false,
+  });
 
   @override
   State<HistoryPage> createState() => _HistoryPageState();
@@ -71,7 +76,9 @@ class _HistoryPageState extends State<HistoryPage>
 
     final db = await DatabaseHelper.instance.database;
     await DatabaseHelper.instance.ensureSalesSchema();
-    await DatabaseHelper.instance.completeDueSales();
+    if (!widget.readOnly) {
+      await DatabaseHelper.instance.completeDueSales();
+    }
 
     final history = await db.rawQuery('''
       SELECT
@@ -353,6 +360,7 @@ class _HistoryPageState extends State<HistoryPage>
             builder: (_) => RecentSalesPage(
               saleId: saleId,
               currentUsername: widget.currentUsername,
+              readOnly: widget.readOnly,
             ),
           ),
         );

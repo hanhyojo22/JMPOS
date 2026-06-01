@@ -8,6 +8,7 @@ import 'package:pos_app/services/license_activation_service.dart';
 import 'package:pos_app/services/screen_awake_service.dart';
 import 'package:pos_app/theme/app_typography.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'pages/license_check_page.dart';
 import 'pages/login.dart';
 
@@ -87,6 +88,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (EnvConfig.supabaseUrl.isEmpty || EnvConfig.supabaseAnonKey.isEmpty) {
       return;
     }
+    final activation = await LicenseActivationService.instance
+        .readLocalActivation();
+    if (activation?.isExpired == true) return;
     final cloudSignedIn = await LicenseActivationService.instance
         .ensureCloudSyncSignedIn();
     if (!cloudSignedIn) {
@@ -244,11 +248,59 @@ class StartupGate extends StatelessWidget {
 
 enum _StartupState { ready, needsSetup, expired }
 
-class LicenseExpiredPage extends StatelessWidget {
+class LicenseExpiredPage extends StatefulWidget {
   const LicenseExpiredPage({super.key});
 
   @override
+  State<LicenseExpiredPage> createState() => _LicenseExpiredPageState();
+}
+
+class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
+  bool _checking = false;
+  String? _error;
+
+  Future<void> _checkAgain() async {
+    setState(() {
+      _checking = true;
+      _error = null;
+    });
+    try {
+      final activation = await LicenseActivationService.instance
+          .recoverActivation();
+      if (!mounted) return;
+      if (activation == null || activation.isExpired) {
+        setState(
+          () => _error = 'License is still expired. Please renew it first.',
+        );
+        return;
+      }
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (_) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error =
+            'Could not verify the renewal. Check your internet connection and try again.';
+      });
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  Future<void> _contactAdmin() async {
+    final phone = EnvConfig.supportPhone.trim();
+    if (phone.isEmpty) return;
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (!await launchUrl(uri) && mounted) {
+      setState(() => _error = 'Could not open the phone dialer.');
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final phone = EnvConfig.supportPhone.trim();
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -271,11 +323,78 @@ class LicenseExpiredPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'This license has expired. Please contact the admin to renew your subscription.',
+                    phone.isEmpty
+                        ? 'This license has expired. Please contact the admin to renew your subscription.'
+                        : 'This license has expired. Contact the admin to renew your subscription, then check again.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                       height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FutureBuilder<LicenseActivation?>(
+                    future: LicenseActivationService.instance
+                        .readLocalActivation(),
+                    builder: (context, snapshot) {
+                      final expiry = snapshot.data?.licenseExpiresAt;
+                      if (expiry == null) return const SizedBox.shrink();
+                      return Text(
+                        'Expired on ${expiry.toLocal().toString().split(' ').first}',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      );
+                    },
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Color(0xFFDC2626)),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  if (phone.isNotEmpty) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _contactAdmin,
+                        icon: const Icon(Icons.call_outlined),
+                        label: const Text('Contact Admin'),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _checking ? null : _checkAgain,
+                      icon: _checking
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh_rounded),
+                      label: const Text('Check Again'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const LoginPage(readOnly: true),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.visibility_outlined),
+                      label: const Text('View Records'),
                     ),
                   ),
                 ],

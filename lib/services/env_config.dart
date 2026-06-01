@@ -17,6 +17,7 @@ class EnvConfig {
   static const _supabasePasswordResetRedirectDefine = String.fromEnvironment(
     'SUPABASE_PASSWORD_RESET_REDIRECT_URL',
   );
+  static const _supportPhoneDefine = String.fromEnvironment('SUPPORT_PHONE');
 
   static final Map<String, String> _values = {};
 
@@ -38,6 +39,9 @@ class EnvConfig {
 
   static String get supabaseBackupBucket =>
       _value('SUPABASE_BACKUP_BUCKET', _supabaseBackupBucketDefine);
+
+  static String get supportPhone =>
+      _value('SUPPORT_PHONE', _supportPhoneDefine);
 
   static String get supabaseMagicLinkRedirectUrl {
     final magicLinkUrl = _value(

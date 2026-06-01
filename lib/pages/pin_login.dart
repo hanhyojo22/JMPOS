@@ -5,7 +5,9 @@ import 'package:pos_app/database/database_helper.dart';
 import 'home.dart';
 
 class PinLoginPage extends StatefulWidget {
-  const PinLoginPage({super.key});
+  const PinLoginPage({super.key, this.readOnly = false});
+
+  final bool readOnly;
 
   @override
   State<PinLoginPage> createState() => _PinLoginPageState();
@@ -89,6 +91,14 @@ class _PinLoginPageState extends State<PinLoginPage> {
       });
       return;
     }
+    if (widget.readOnly && user['role']?.toString() != 'admin') {
+      HapticFeedback.mediumImpact();
+      setState(() {
+        _pin = '';
+        _invalidPin = true;
+      });
+      return;
+    }
 
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
@@ -96,6 +106,7 @@ class _PinLoginPageState extends State<PinLoginPage> {
           title: 'POS Dashboard',
           username: user['username'] as String,
           role: user['role'] as String,
+          readOnly: widget.readOnly,
           initialSuccessMessage: 'Login successful',
         ),
       ),

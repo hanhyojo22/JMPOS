@@ -14,10 +14,12 @@ class LoginPage extends StatefulWidget {
     super.key,
     this.cloudRestoreLicenseKey,
     this.cloudRestoreStoreName,
+    this.readOnly = false,
   });
 
   final String? cloudRestoreLicenseKey;
   final String? cloudRestoreStoreName;
+  final bool readOnly;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -79,15 +81,25 @@ class _LoginPageState extends State<LoginPage> {
 
     final loggedInUser = user;
     if (loggedInUser != null) {
-      await _bindLocalOwnerStoreIfNeeded(loggedInUser);
+      if (widget.readOnly && loggedInUser['role']?.toString() != 'admin') {
+        setState(() => _invalidCredentials = true);
+        _formKey.currentState!.validate();
+        return;
+      }
+      if (!widget.readOnly) {
+        await _bindLocalOwnerStoreIfNeeded(loggedInUser);
+      }
       if (!mounted) return;
-      unawaited(_rememberCloudSyncLogin(username, password));
+      if (!widget.readOnly) {
+        unawaited(_rememberCloudSyncLogin(username, password));
+      }
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => HomePage(
             title: 'POS Dashboard',
             username: loggedInUser['username'] as String,
             role: loggedInUser['role'] as String,
+            readOnly: widget.readOnly,
             initialSuccessMessage: 'Login successful',
           ),
         ),
@@ -224,9 +236,11 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _openPinLogin() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const PinLoginPage()));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PinLoginPage(readOnly: widget.readOnly),
+      ),
+    );
   }
 
   @override
@@ -391,13 +405,14 @@ class _LoginPageState extends State<LoginPage> {
                             ),
 
                             const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: _showMagicLinkDialog,
-                                child: const Text('Email Magic Link'),
+                            if (!widget.readOnly)
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: _showMagicLinkDialog,
+                                  child: const Text('Email Magic Link'),
+                                ),
                               ),
-                            ),
                             const SizedBox(height: 16),
                             SizedBox(
                               width: double.infinity,

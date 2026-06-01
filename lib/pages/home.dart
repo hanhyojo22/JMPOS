@@ -24,12 +24,14 @@ class HomePage extends StatefulWidget {
     required this.title,
     required this.username,
     required this.role,
+    this.readOnly = false,
     this.initialSuccessMessage,
   });
 
   final String username;
   final String title;
   final String role;
+  final bool readOnly;
   final String? initialSuccessMessage;
 
   @override
@@ -38,6 +40,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final GlobalKey _cartIconKey = GlobalKey();
   final List<Map<String, dynamic>> sharedCart = [];
   String? addProductScannedBarcode;
   int _selectedIndex = 0;
@@ -56,6 +59,7 @@ class _HomePageState extends State<HomePage> {
   String? _topMessage;
   bool _topMessageSuccess = false;
   String? _currentUserDisplayName;
+  int _cartPulseVersion = 0;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   bool get _isStaff => widget.role.toLowerCase() == 'staff';
@@ -88,6 +92,17 @@ class _HomePageState extends State<HomePage> {
     0,
     (total, item) => total + ((item['quantity'] as num?)?.toInt() ?? 0),
   );
+
+  Offset? _cartIconCenter() {
+    final renderObject = _cartIconKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
+    return renderObject.localToGlobal(renderObject.size.center(Offset.zero));
+  }
+
+  void _pulseCartIcon() {
+    if (!mounted) return;
+    setState(() => _cartPulseVersion++);
+  }
 
   @override
   void initState() {
@@ -137,7 +152,9 @@ class _HomePageState extends State<HomePage> {
     try {
       final db = await DatabaseHelper.instance.database;
       await DatabaseHelper.instance.ensureSalesSchema();
-      await DatabaseHelper.instance.completeDueSales();
+      if (!widget.readOnly) {
+        await DatabaseHelper.instance.completeDueSales();
+      }
 
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
@@ -703,12 +720,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildPageContent() {
+    if (widget.readOnly && !{0, 4, 6}.contains(_selectedIndex)) {
+      return _buildAccessDeniedPage();
+    }
     switch (_selectedIndex) {
       case 1:
         if (_isStaff) {
           return SalesPage(
             cart: sharedCart,
             currentUsername: widget.username,
+            cartTargetGlobalPosition: _cartIconCenter,
+            onCartAnimationArrived: _pulseCartIcon,
             onCartChanged: () {
               if (mounted) setState(() {});
             },
@@ -757,6 +779,8 @@ class _HomePageState extends State<HomePage> {
 
           cart: sharedCart,
           currentUsername: widget.username,
+          cartTargetGlobalPosition: _cartIconCenter,
+          onCartAnimationArrived: _pulseCartIcon,
           onBarcodeHandled: () {
             salesScannedBarcode = null;
           },
@@ -772,11 +796,14 @@ class _HomePageState extends State<HomePage> {
         if (widget.role == 'admin') {
           return ReportsPage(
             onOpenMenu: () => _scaffoldKey.currentState?.openDrawer(),
+            readOnly: widget.readOnly,
           );
         }
         return SalesPage(
           cart: sharedCart,
           currentUsername: widget.username,
+          cartTargetGlobalPosition: _cartIconCenter,
+          onCartAnimationArrived: _pulseCartIcon,
           onCartChanged: () {
             if (mounted) setState(() {});
           },
@@ -789,7 +816,10 @@ class _HomePageState extends State<HomePage> {
         break;
 
       case 6:
-        return HistoryPage(currentUsername: widget.username);
+        return HistoryPage(
+          currentUsername: widget.username,
+          readOnly: widget.readOnly,
+        );
 
       case 7:
         return SettingsPage(
@@ -806,6 +836,8 @@ class _HomePageState extends State<HomePage> {
           return SalesPage(
             cart: sharedCart,
             currentUsername: widget.username,
+            cartTargetGlobalPosition: _cartIconCenter,
+            onCartAnimationArrived: _pulseCartIcon,
             onCartChanged: () {
               if (mounted) setState(() {});
             },
@@ -1139,6 +1171,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _onNavBarTapped(int index) async {
+    if (widget.readOnly && !{0, 4, 6}.contains(index)) return;
     if (_isStaff && index == 1) return;
 
     setState(() => _selectedIndex = index);
@@ -1179,6 +1212,7 @@ class _HomePageState extends State<HomePage> {
       selectedTileColor: const Color(0xFF667EEA).withValues(alpha: 0.12),
 
       onTap: () {
+        if (widget.readOnly && !{0, 4, 6}.contains(index)) return;
         Navigator.pop(context);
 
         setState(() {
@@ -1287,56 +1321,66 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
               actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      IconButton(
-                        icon: const Icon(
-                          Icons.shopping_cart_outlined,
-                          size: 28,
+                if (!widget.readOnly)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        TweenAnimationBuilder<double>(
+                          key: ValueKey(_cartPulseVersion),
+                          tween: Tween(begin: 0.82, end: 1),
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.elasticOut,
+                          builder: (context, scale, child) =>
+                              Transform.scale(scale: scale, child: child),
+                          child: IconButton(
+                            key: _cartIconKey,
+                            icon: const Icon(
+                              Icons.shopping_cart_outlined,
+                              size: 28,
+                            ),
+                            onPressed: _openCartPage,
+                          ),
                         ),
-                        onPressed: _openCartPage,
-                      ),
 
-                      // Improved Badge
-                      if (_sharedCartItemCount > 0)
-                        Positioned(
-                          right: -2,
-                          top: -2,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 1.5,
-                              ),
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 20,
-                              minHeight: 20,
-                            ),
-                            child: Center(
-                              child: Text(
-                                _sharedCartItemCount > 99
-                                    ? '99+'
-                                    : '$_sharedCartItemCount',
-                                style: const TextStyle(
+                        // Improved Badge
+                        if (_sharedCartItemCount > 0)
+                          Positioned(
+                            right: -2,
+                            top: -2,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                                border: Border.all(
                                   color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
+                                  width: 1.5,
                                 ),
-                                textAlign: TextAlign.center,
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 20,
+                                minHeight: 20,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _sharedCartItemCount > 99
+                                      ? '99+'
+                                      : '$_sharedCartItemCount',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
       drawer: Drawer(
@@ -1413,7 +1457,7 @@ class _HomePageState extends State<HomePage> {
                     title: 'Home',
                     index: 0,
                   ),
-                  if (widget.role == 'admin')
+                  if (widget.role == 'admin' && !widget.readOnly)
                     _drawerItem(
                       icon: Icons.add_box_rounded,
                       title: 'Add Product',
@@ -1425,13 +1469,14 @@ class _HomePageState extends State<HomePage> {
                     index: 6,
                   ),
 
-                  _drawerItem(
-                    icon: Icons.settings_rounded,
-                    title: 'Settings',
-                    index: 7,
-                  ),
+                  if (!widget.readOnly)
+                    _drawerItem(
+                      icon: Icons.settings_rounded,
+                      title: 'Settings',
+                      index: 7,
+                    ),
 
-                  if (widget.role == 'admin')
+                  if (widget.role == 'admin' && !widget.readOnly)
                     _drawerItem(
                       icon: Icons.group_rounded,
                       title: 'Staff',
@@ -1440,7 +1485,7 @@ class _HomePageState extends State<HomePage> {
 
                   Divider(color: drawerDivider),
 
-                  if (!_isStaff)
+                  if (!_isStaff && !widget.readOnly)
                     ListTile(
                       leading: Icon(Icons.person, color: drawerIcon),
                       title: Text(
@@ -1514,7 +1559,10 @@ class _HomePageState extends State<HomePage> {
 
                       if (confirm == true) {
                         Navigator.of(context).pushAndRemoveUntil(
-                          MaterialPageRoute(builder: (_) => const LoginPage()),
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                LoginPage(readOnly: widget.readOnly),
+                          ),
                           (route) => false,
                         );
                       }
@@ -1529,6 +1577,29 @@ class _HomePageState extends State<HomePage> {
       body: Stack(
         children: [
           _buildPageContent(),
+          if (widget.readOnly)
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Material(
+                  color: Color(0xFFB91C1C),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Text(
+                      'License expired: read-only mode',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (_topMessage != null)
             Positioned(
               top: 12,
@@ -1575,7 +1646,7 @@ class _HomePageState extends State<HomePage> {
                 onTap: () => _onNavBarTapped(0),
               ),
 
-              if (!_isStaff)
+              if (!widget.readOnly && !_isStaff)
                 _NavItem(
                   icon: Icons.inventory_2_rounded,
                   label: 'Products',
@@ -1583,14 +1654,23 @@ class _HomePageState extends State<HomePage> {
                   onTap: () => _onNavBarTapped(1),
                 ),
 
-              _scannerFab(offset: const Offset(0, -18)),
+              if (!widget.readOnly) _scannerFab(offset: const Offset(0, -18)),
 
-              _NavItem(
-                icon: Icons.point_of_sale_rounded,
-                label: 'Sales',
-                selected: _selectedIndex == 3,
-                onTap: () => _onNavBarTapped(3),
-              ),
+              if (!widget.readOnly)
+                _NavItem(
+                  icon: Icons.point_of_sale_rounded,
+                  label: 'Sales',
+                  selected: _selectedIndex == 3,
+                  onTap: () => _onNavBarTapped(3),
+                ),
+
+              if (widget.readOnly)
+                _NavItem(
+                  icon: Icons.receipt_long_rounded,
+                  label: 'History',
+                  selected: _selectedIndex == 6,
+                  onTap: () => _onNavBarTapped(6),
+                ),
 
               if (widget.role == 'admin')
                 _NavItem(
