@@ -156,6 +156,7 @@ class LicenseActivationService {
     final activation = await readLocalActivation();
     if (activation == null) return false;
     return !activation.isExpired &&
+        !activation.isSuspended &&
         DateTime.now().difference(activation.lastVerifiedAt) <=
             _offlineGracePeriod;
   }

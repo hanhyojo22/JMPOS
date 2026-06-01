@@ -60,7 +60,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Timer? _licenseExpiryTimer;
   bool _backgroundCloudSyncRunning = false;
   bool _licenseRefreshRunning = false;
-  bool _showingExpiredLicense = false;
+  bool _showingBlockedLicense = false;
   bool _localSnapshotQueuedForCloudSync = false;
   bool isDarkMode = false;
 
@@ -104,25 +104,34 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       final service = LicenseActivationService.instance;
       final localActivation = await service.readLocalActivation();
       if (localActivation == null) return;
-      if (localActivation.isExpired) {
-        _showExpiredLicense();
+      if (localActivation.isSuspended) {
+        _showBlockedLicense(LicenseBlockReason.suspended);
+      } else if (localActivation.isExpired) {
+        _showBlockedLicense(LicenseBlockReason.expired);
       } else {
         _scheduleLicenseExpiry(localActivation);
       }
       try {
         final refreshed = await service.refreshLicenseStatus();
         if (refreshed == null) return;
+        if (refreshed.isSuspended) {
+          _showBlockedLicense(LicenseBlockReason.suspended);
+          return;
+        }
         if (refreshed.isExpired) {
-          _showExpiredLicense();
+          _showBlockedLicense(LicenseBlockReason.expired);
           return;
         }
         _scheduleLicenseExpiry(refreshed);
-        if (_showingExpiredLicense) {
+        if (_showingBlockedLicense) {
           _showRenewedLogin();
         }
       } catch (e) {
-        if (e.toString().toLowerCase().contains('expired')) {
-          _showExpiredLicense();
+        final message = e.toString().toLowerCase();
+        if (message.contains('suspended')) {
+          _showBlockedLicense(LicenseBlockReason.suspended);
+        } else if (message.contains('expired')) {
+          _showBlockedLicense(LicenseBlockReason.expired);
         }
       }
     } finally {
@@ -136,20 +145,23 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (expiry == null) return;
     final delay = expiry.difference(DateTime.now());
     if (delay <= Duration.zero) {
-      _showExpiredLicense();
+      _showBlockedLicense(LicenseBlockReason.expired);
       return;
     }
-    _licenseExpiryTimer = Timer(delay, _showExpiredLicense);
+    _licenseExpiryTimer = Timer(
+      delay,
+      () => _showBlockedLicense(LicenseBlockReason.expired),
+    );
   }
 
-  void _showExpiredLicense() {
-    if (_showingExpiredLicense) return;
+  void _showBlockedLicense(LicenseBlockReason reason) {
+    if (_showingBlockedLicense) return;
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
-    _showingExpiredLicense = true;
+    _showingBlockedLicense = true;
     _licenseExpiryTimer?.cancel();
     navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LicenseExpiredPage()),
+      MaterialPageRoute(builder: (_) => LicenseExpiredPage(reason: reason)),
       (_) => false,
     );
   }
@@ -157,7 +169,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void _showRenewedLogin() {
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
-    _showingExpiredLicense = false;
+    _showingBlockedLicense = false;
     navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginPage()),
       (_) => false,
@@ -171,7 +183,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
     final activation = await LicenseActivationService.instance
         .readLocalActivation();
-    if (activation?.isExpired == true) return;
+    if (activation?.isExpired == true || activation?.isSuspended == true) {
+      return;
+    }
     final cloudSignedIn = await LicenseActivationService.instance
         .ensureCloudSyncSignedIn();
     if (!cloudSignedIn) {
@@ -282,6 +296,9 @@ class StartupGate extends StatelessWidget {
         return switch (snapshot.data) {
           _StartupState.ready => const LoginPage(),
           _StartupState.expired => const LicenseExpiredPage(),
+          _StartupState.suspended => const LicenseExpiredPage(
+            reason: LicenseBlockReason.suspended,
+          ),
           _ => const LicenseCheckPage(),
         };
       },
@@ -293,6 +310,7 @@ class StartupGate extends StatelessWidget {
     final licenseService = LicenseActivationService.instance;
 
     final localActivation = await licenseService.readLocalActivation();
+    if (localActivation?.isSuspended == true) return _StartupState.suspended;
     if (localActivation?.isExpired == true) return _StartupState.expired;
     if (localActivation != null &&
         DateTime.now().difference(localActivation.lastVerifiedAt) <=
@@ -306,7 +324,11 @@ class StartupGate extends StatelessWidget {
         return _stateForActivation(hasOwner, activation);
       }
     } catch (error) {
-      if (error.toString().toLowerCase().contains('expired')) {
+      final message = error.toString().toLowerCase();
+      if (message.contains('suspended')) {
+        return _StartupState.suspended;
+      }
+      if (message.contains('expired')) {
         return _StartupState.expired;
       }
       // No valid cloud activation: require license activation again.
@@ -319,6 +341,8 @@ class StartupGate extends StatelessWidget {
     LicenseActivation activation,
   ) async {
     if (!hasOwner) return _StartupState.needsSetup;
+    if (activation.isSuspended) return _StartupState.suspended;
+    if (activation.isExpired) return _StartupState.expired;
 
     final licenseService = LicenseActivationService.instance;
     final localOwnerStoreId = await licenseService.readLocalOwnerStoreId();
@@ -328,10 +352,17 @@ class StartupGate extends StatelessWidget {
   }
 }
 
-enum _StartupState { ready, needsSetup, expired }
+enum _StartupState { ready, needsSetup, expired, suspended }
+
+enum LicenseBlockReason { expired, suspended }
 
 class LicenseExpiredPage extends StatefulWidget {
-  const LicenseExpiredPage({super.key});
+  const LicenseExpiredPage({
+    super.key,
+    this.reason = LicenseBlockReason.expired,
+  });
+
+  final LicenseBlockReason reason;
 
   @override
   State<LicenseExpiredPage> createState() => _LicenseExpiredPageState();
@@ -397,11 +428,15 @@ class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
       final activation = await LicenseActivationService.instance
           .recoverActivation();
       if (!mounted) return;
-      if (activation == null || activation.isExpired) {
+      if (activation == null ||
+          activation.isExpired ||
+          activation.isSuspended) {
         if (!background) {
-          setState(
-            () => _error = 'License is still expired. Please renew it first.',
-          );
+          setState(() {
+            _error = activation?.isSuspended == true
+                ? 'License is still suspended. Ask the admin to reactivate it first.'
+                : 'License is still expired. Please renew it first.';
+          });
         }
         return;
       }
@@ -413,11 +448,13 @@ class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
     } catch (e) {
       if (!mounted) return;
       if (!background) {
-        final stillExpired = e.toString().toLowerCase().contains('expired');
+        final message = e.toString().toLowerCase();
         setState(() {
-          _error = stillExpired
+          _error = message.contains('suspended')
+              ? 'License is still suspended. Ask the admin to reactivate it first.'
+              : message.contains('expired')
               ? 'License is still expired. Please renew it first.'
-              : 'Could not verify the renewal. Check your internet connection and try again.';
+              : 'Could not verify the license. Check your internet connection and try again.';
         });
       }
     } finally {
@@ -441,6 +478,7 @@ class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
   @override
   Widget build(BuildContext context) {
     final phone = EnvConfig.supportPhone.trim();
+    final suspended = widget.reason == LicenseBlockReason.suspended;
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
@@ -508,7 +546,9 @@ class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  'LICENSE EXPIRED',
+                                  suspended
+                                      ? 'LICENSE SUSPENDED'
+                                      : 'LICENSE EXPIRED',
                                   style: AppTypography.smallCaption.copyWith(
                                     color: dangerText,
                                     letterSpacing: 0.5,
@@ -528,14 +568,18 @@ class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
-                              Icons.lock_clock_outlined,
+                              suspended
+                                  ? Icons.pause_circle_outline_rounded
+                                  : Icons.lock_clock_outlined,
                               size: 38,
                               color: dangerText,
                             ),
                           ),
                           const SizedBox(height: 18),
                           Text(
-                            'Your license has expired',
+                            suspended
+                                ? 'Your license is suspended'
+                                : 'Your license has expired',
                             textAlign: TextAlign.center,
                             style: AppTypography.pageTitle.copyWith(
                               color: colors.onSurface,
@@ -543,7 +587,9 @@ class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Renew your subscription to restore selling and editing. Your records remain safe.',
+                            suspended
+                                ? 'Selling and editing are paused for this device. Your records remain safe.'
+                                : 'Renew your subscription to restore selling and editing. Your records remain safe.',
                             textAlign: TextAlign.center,
                             style: AppTypography.body.copyWith(
                               color: colors.onSurfaceVariant,
@@ -580,7 +626,9 @@ class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            'Expired on',
+                                            suspended
+                                                ? 'Subscription expires on'
+                                                : 'Expired on',
                                             style: AppTypography.caption
                                                 .copyWith(
                                                   color:
@@ -624,7 +672,9 @@ class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
-                                    phone.isEmpty
+                                    suspended
+                                        ? 'Ask your administrator to reactivate this license. Renewing the expiry date alone will not remove the suspension.'
+                                        : phone.isEmpty
                                         ? 'Ask your administrator to renew the license, then tap Check Again.'
                                         : 'Contact your administrator for renewal, then tap Check Again to unlock the POS.',
                                     style: AppTypography.caption.copyWith(
@@ -637,7 +687,9 @@ class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            'This screen checks for renewal automatically every 15 seconds.',
+                            suspended
+                                ? 'This screen checks for reactivation automatically every 15 seconds.'
+                                : 'This screen checks for renewal automatically every 15 seconds.',
                             textAlign: TextAlign.center,
                             style: AppTypography.smallCaption.copyWith(
                               color: colors.onSurfaceVariant,
