@@ -51,7 +51,6 @@ serve(async (req: Request) => {
         admin,
         licenseKey,
         installationIdHash,
-        activationToken,
       );
       return jsonResponse(response.body, response.status);
     }
@@ -156,7 +155,6 @@ async function validateLicenseKeyForDevice(
   admin: AdminClient,
   licenseKey: string,
   installationIdHash: string,
-  activationToken: string,
 ) {
   const codeHash = await sha256Hex(licenseKey);
   const { data: invite, error: inviteError } = await admin
@@ -212,12 +210,7 @@ async function validateLicenseKeyForDevice(
     .maybeSingle();
 
   if (deviceError) throw deviceError;
-  const hasValidDeviceToken =
-    device &&
-    !device.revoked_at &&
-    activationToken &&
-    (await sha256Hex(activationToken)) === device.activation_token_hash;
-  if (hasValidDeviceToken) {
+  if (device && !device.revoked_at) {
     const { data: store, error: storeError } = await admin
       .from("stores")
       .select("id, name")

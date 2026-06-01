@@ -106,9 +106,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       if (localActivation == null) return;
       if (localActivation.isExpired) {
         _showExpiredLicense();
-        return;
+      } else {
+        _scheduleLicenseExpiry(localActivation);
       }
-      _scheduleLicenseExpiry(localActivation);
       try {
         final refreshed = await service.refreshLicenseStatus();
         if (refreshed == null) return;
@@ -116,8 +116,10 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
           _showExpiredLicense();
           return;
         }
-        _showingExpiredLicense = false;
         _scheduleLicenseExpiry(refreshed);
+        if (_showingExpiredLicense) {
+          _showRenewedLogin();
+        }
       } catch (e) {
         if (e.toString().toLowerCase().contains('expired')) {
           _showExpiredLicense();
@@ -148,6 +150,16 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _licenseExpiryTimer?.cancel();
     navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LicenseExpiredPage()),
+      (_) => false,
+    );
+  }
+
+  void _showRenewedLogin() {
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+    _showingExpiredLicense = false;
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginPage()),
       (_) => false,
     );
   }
@@ -326,36 +338,94 @@ class LicenseExpiredPage extends StatefulWidget {
 }
 
 class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
+  Timer? _renewalCheckTimer;
   bool _checking = false;
+  bool _backgroundCheckRunning = false;
   String? _error;
 
-  Future<void> _checkAgain() async {
-    setState(() {
-      _checking = true;
-      _error = null;
+  @override
+  void initState() {
+    super.initState();
+    _renewalCheckTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      unawaited(_checkAgain(background: true));
     });
+  }
+
+  @override
+  void dispose() {
+    _renewalCheckTimer?.cancel();
+    super.dispose();
+  }
+
+  String _formatExpiry(DateTime expiry) {
+    final local = expiry.toLocal();
+    final hour = local.hour == 0
+        ? 12
+        : local.hour > 12
+        ? local.hour - 12
+        : local.hour;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+    final month = const [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ][local.month - 1];
+    return '$month ${local.day}, ${local.year} at $hour:$minute $period';
+  }
+
+  Future<void> _checkAgain({bool background = false}) async {
+    if (_checking || _backgroundCheckRunning) return;
+    if (background) {
+      _backgroundCheckRunning = true;
+    } else {
+      setState(() {
+        _checking = true;
+        _error = null;
+      });
+    }
     try {
       final activation = await LicenseActivationService.instance
           .recoverActivation();
       if (!mounted) return;
       if (activation == null || activation.isExpired) {
-        setState(
-          () => _error = 'License is still expired. Please renew it first.',
-        );
+        if (!background) {
+          setState(
+            () => _error = 'License is still expired. Please renew it first.',
+          );
+        }
         return;
       }
+      _renewalCheckTimer?.cancel();
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LoginPage()),
         (_) => false,
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error =
-            'Could not verify the renewal. Check your internet connection and try again.';
-      });
+      if (!background) {
+        final stillExpired = e.toString().toLowerCase().contains('expired');
+        setState(() {
+          _error = stillExpired
+              ? 'License is still expired. Please renew it first.'
+              : 'Could not verify the renewal. Check your internet connection and try again.';
+        });
+      }
     } finally {
-      if (mounted) setState(() => _checking = false);
+      if (background) {
+        _backgroundCheckRunning = false;
+      } else if (mounted) {
+        setState(() => _checking = false);
+      }
     }
   }
 
@@ -371,106 +441,295 @@ class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
   @override
   Widget build(BuildContext context) {
     final phone = EnvConfig.supportPhone.trim();
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    const danger = Color(0xFFDC2626);
+    const dangerDark = Color(0xFFFCA5A5);
+    final dangerText = isDark ? dangerDark : danger;
+    final cardColor = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final surfaceMuted = isDark
+        ? const Color(0xFF111827)
+        : const Color(0xFFF8FAFC);
+    final borderColor = isDark
+        ? const Color(0xFF334155)
+        : const Color(0xFFE5E7EB);
+
     return Scaffold(
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.event_busy_outlined,
-                    size: 64,
-                    color: Color(0xFFDC2626),
-                  ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    'License expired',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    phone.isEmpty
-                        ? 'This license has expired. Please contact the admin to renew your subscription.'
-                        : 'This license has expired. Contact the admin to renew your subscription, then check again.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  FutureBuilder<LicenseActivation?>(
-                    future: LicenseActivationService.instance
-                        .readLocalActivation(),
-                    builder: (context, snapshot) {
-                      final expiry = snapshot.data?.licenseExpiresAt;
-                      if (expiry == null) return const SizedBox.shrink();
-                      return Text(
-                        'Expired on ${expiry.toLocal().toString().split(' ').first}',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      );
-                    },
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Color(0xFFDC2626)),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  if (phone.isNotEmpty) ...[
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _contactAdmin,
-                        icon: const Icon(Icons.call_outlined),
-                        label: const Text('Contact Admin'),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 40,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 440),
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: borderColor),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(
+                              alpha: isDark ? 0.18 : 0.08,
+                            ),
+                            blurRadius: 28,
+                            offset: const Offset(0, 12),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: danger.withValues(
+                                alpha: isDark ? 0.18 : 0.08,
+                              ),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.error_outline_rounded,
+                                  size: 16,
+                                  color: dangerText,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'LICENSE EXPIRED',
+                                  style: AppTypography.smallCaption.copyWith(
+                                    color: dangerText,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Container(
+                            width: 76,
+                            height: 76,
+                            decoration: BoxDecoration(
+                              color: danger.withValues(
+                                alpha: isDark ? 0.18 : 0.08,
+                              ),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.lock_clock_outlined,
+                              size: 38,
+                              color: dangerText,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            'Your license has expired',
+                            textAlign: TextAlign.center,
+                            style: AppTypography.pageTitle.copyWith(
+                              color: colors.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Renew your subscription to restore selling and editing. Your records remain safe.',
+                            textAlign: TextAlign.center,
+                            style: AppTypography.body.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          FutureBuilder<LicenseActivation?>(
+                            future: LicenseActivationService.instance
+                                .readLocalActivation(),
+                            builder: (context, snapshot) {
+                              final expiry = snapshot.data?.licenseExpiresAt;
+                              if (expiry == null) {
+                                return const SizedBox.shrink();
+                              }
+                              return Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: surfaceMuted,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: borderColor),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.calendar_today_outlined,
+                                      size: 19,
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Expired on',
+                                            style: AppTypography.caption
+                                                .copyWith(
+                                                  color:
+                                                      colors.onSurfaceVariant,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            _formatExpiry(expiry),
+                                            style: AppTypography.emphasizedBody
+                                                .copyWith(
+                                                  color: colors.onSurface,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 14),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: colors.primary.withValues(
+                                alpha: isDark ? 0.16 : 0.06,
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(
+                                  Icons.info_outline_rounded,
+                                  size: 20,
+                                  color: colors.primary,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    phone.isEmpty
+                                        ? 'Ask your administrator to renew the license, then tap Check Again.'
+                                        : 'Contact your administrator for renewal, then tap Check Again to unlock the POS.',
+                                    style: AppTypography.caption.copyWith(
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'This screen checks for renewal automatically every 15 seconds.',
+                            textAlign: TextAlign.center,
+                            style: AppTypography.smallCaption.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                          if (_error != null) ...[
+                            const SizedBox(height: 14),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: danger.withValues(
+                                  alpha: isDark ? 0.18 : 0.07,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.error_outline_rounded,
+                                    size: 18,
+                                    color: dangerText,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _error!,
+                                      style: AppTypography.caption.copyWith(
+                                        color: dangerText,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: FilledButton.icon(
+                              onPressed: _checking ? null : () => _checkAgain(),
+                              icon: _checking
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.refresh_rounded),
+                              label: Text(
+                                _checking
+                                    ? 'Checking license...'
+                                    : 'Check Again',
+                              ),
+                            ),
+                          ),
+                          if (phone.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 48,
+                              child: OutlinedButton.icon(
+                                onPressed: _contactAdmin,
+                                icon: const Icon(Icons.call_outlined),
+                                label: const Text('Contact Admin'),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          TextButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const LoginPage(readOnly: true),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.visibility_outlined),
+                            label: const Text('View records in read-only mode'),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 10),
-                  ],
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _checking ? null : _checkAgain,
-                      icon: _checking
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.refresh_rounded),
-                      label: const Text('Check Again'),
-                    ),
                   ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const LoginPage(readOnly: true),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.visibility_outlined),
-                      label: const Text('View Records'),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );

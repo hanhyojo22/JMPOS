@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/services/license_activation_service.dart';
+import 'package:pos_app/theme/app_typography.dart';
 import 'package:pos_app/utils/login_input_validator.dart';
 
 import 'home.dart';
@@ -314,23 +315,7 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                               textAlign: TextAlign.center,
                             ),
-                            FutureBuilder<LicenseActivation?>(
-                              future: LicenseActivationService.instance
-                                  .readLocalActivation(),
-                              builder: (context, snapshot) {
-                                final days = snapshot.data?.daysRemaining;
-                                if (days == null || days > 30) {
-                                  return const SizedBox.shrink();
-                                }
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 14),
-                                  child: MessageBanner(
-                                    message:
-                                        'License renewal reminder: $days day${days == 1 ? '' : 's'} remaining. Please contact the admin to renew.',
-                                  ),
-                                );
-                              },
-                            ),
+                            const _LicenseRenewalReminder(),
                             const SizedBox(height: 28),
                             TextFormField(
                               controller: _usernameController,
@@ -479,6 +464,237 @@ class _LoginPageState extends State<LoginPage> {
               _CloudRestoreOverlay(status: _cloudRestoreStatus!),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _LicenseRenewalReminder extends StatefulWidget {
+  const _LicenseRenewalReminder();
+
+  @override
+  State<_LicenseRenewalReminder> createState() =>
+      _LicenseRenewalReminderState();
+}
+
+class _LicenseRenewalReminderState extends State<_LicenseRenewalReminder> {
+  Timer? _timer;
+  LicenseActivation? _activation;
+  int _ticks = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadActivation();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      _ticks++;
+      if (_ticks % 15 == 0) {
+        _loadActivation();
+      } else {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadActivation() async {
+    final activation = await LicenseActivationService.instance
+        .readLocalActivation();
+    if (!mounted) return;
+    setState(() => _activation = activation);
+  }
+
+  String _formatExpiry(DateTime expiry) {
+    final local = expiry.toLocal();
+    final hour = local.hour == 0
+        ? 12
+        : local.hour > 12
+        ? local.hour - 12
+        : local.hour;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+    final month = const [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ][local.month - 1];
+    return '$month ${local.day}, ${local.year} at $hour:$minute $period';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final expiry = _activation?.licenseExpiresAt;
+    if (expiry == null) return const SizedBox.shrink();
+
+    final remaining = expiry.difference(DateTime.now());
+    if (remaining <= Duration.zero || remaining > const Duration(days: 30)) {
+      return const SizedBox.shrink();
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final urgent = remaining <= const Duration(days: 1);
+    final accent = urgent ? const Color(0xFFDC2626) : const Color(0xFFD97706);
+    final accentText = isDark
+        ? urgent
+              ? const Color(0xFFFCA5A5)
+              : const Color(0xFFFCD34D)
+        : accent;
+    final background = isDark
+        ? accent.withValues(alpha: 0.14)
+        : accent.withValues(alpha: 0.07);
+    final border = isDark
+        ? accent.withValues(alpha: 0.38)
+        : accent.withValues(alpha: 0.2);
+    final days = remaining.inDays;
+    final hours = remaining.inHours % 24;
+    final minutes = remaining.inMinutes % 60;
+    final seconds = remaining.inSeconds % 60;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: isDark ? 0.22 : 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.notifications_active_outlined,
+                    size: 19,
+                    color: accentText,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        urgent ? 'License expires soon' : 'Renewal reminder',
+                        style: AppTypography.emphasizedBody.copyWith(
+                          color: accentText,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        urgent
+                            ? 'Renew now to avoid interruptions at checkout.'
+                            : 'Contact your administrator before the expiry date.',
+                        style: AppTypography.caption.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'TIME REMAINING',
+              style: AppTypography.smallCaption.copyWith(
+                color: accentText,
+                letterSpacing: 0.45,
+              ),
+            ),
+            const SizedBox(height: 7),
+            Row(
+              children: [
+                Expanded(
+                  child: _CountdownUnit(value: days, label: 'Days'),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _CountdownUnit(value: hours, label: 'Hrs'),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _CountdownUnit(value: minutes, label: 'Min'),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _CountdownUnit(value: seconds, label: 'Sec'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Expires ${_formatExpiry(expiry)}',
+              style: AppTypography.smallCaption.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CountdownUnit extends StatelessWidget {
+  const _CountdownUnit({required this.value, required this.label});
+
+  final int value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF111827) : Colors.white,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value.toString().padLeft(2, '0'),
+            style: AppTypography.cardTitle.copyWith(
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.fade,
+            softWrap: false,
+            style: AppTypography.smallCaption.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -78,6 +78,8 @@ class LicenseActivationService {
 
   static final LicenseActivationService instance = LicenseActivationService._();
 
+  Future<LicenseActivation?>? _recoveryInFlight;
+
   static const _secureStorage = FlutterSecureStorage();
   static const _licenseKey = 'license_key';
   static const _installationIdKey = 'installation_id';
@@ -159,15 +161,43 @@ class LicenseActivationService {
   }
 
   Future<LicenseActivation?> recoverActivation() async {
+    final existingRecovery = _recoveryInFlight;
+    if (existingRecovery != null) return existingRecovery;
+
+    final recovery = _recoverActivation();
+    _recoveryInFlight = recovery;
+    try {
+      return await recovery;
+    } finally {
+      if (identical(_recoveryInFlight, recovery)) {
+        _recoveryInFlight = null;
+      }
+    }
+  }
+
+  Future<LicenseActivation?> _recoverActivation() async {
     _ensureConfigured();
     final installationId = await getOrCreateInstallationId();
     final existingToken = await _secureStorage.read(key: _activationTokenKey);
+    final existingLicenseKey = await _secureStorage.read(key: _licenseKey);
 
-    final response = await _postFunction('validate-license', {
-      'installationId': installationId,
-      if (existingToken != null && existingToken.trim().isNotEmpty)
-        'activationToken': existingToken.trim(),
-    });
+    Map<String, dynamic>? response;
+    try {
+      response = await _postFunction('validate-license', {
+        'installationId': installationId,
+        if (existingToken != null && existingToken.trim().isNotEmpty)
+          'activationToken': existingToken.trim(),
+      });
+    } catch (error) {
+      final licenseKey = existingLicenseKey?.trim() ?? '';
+      if (licenseKey.isEmpty || !_shouldRetryRecoveryWithLicenseKey(error)) {
+        rethrow;
+      }
+      response = await _postFunction('validate-license', {
+        'installationId': installationId,
+        'licenseKey': licenseKey,
+      });
+    }
 
     if (response == null) return null;
     await saveActivation(
@@ -179,6 +209,15 @@ class LicenseActivationService {
       licenseExpiresAt: _responseExpiry(response),
     );
     return readLocalActivation();
+  }
+
+  bool _shouldRetryRecoveryWithLicenseKey(Object error) {
+    final message = error.toString().toLowerCase();
+    return !message.contains('expired') &&
+        !message.contains('suspended') &&
+        !message.contains('could not reach') &&
+        !message.contains('temporarily unavailable') &&
+        !message.contains('too many attempts');
   }
 
   Future<LicenseActivation?> refreshLicenseStatus() async {
