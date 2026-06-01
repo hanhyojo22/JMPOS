@@ -54,8 +54,13 @@ class MyApp extends StatefulWidget {
 }
 
 class MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   Timer? _cloudSyncTimer;
+  Timer? _licenseRefreshTimer;
+  Timer? _licenseExpiryTimer;
   bool _backgroundCloudSyncRunning = false;
+  bool _licenseRefreshRunning = false;
+  bool _showingExpiredLicense = false;
   bool _localSnapshotQueuedForCloudSync = false;
   bool isDarkMode = false;
 
@@ -67,12 +72,20 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _cloudSyncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       unawaited(_syncCloudInBackground());
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_refreshLicenseEnforcement());
+    });
+    _licenseRefreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      unawaited(_refreshLicenseEnforcement());
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _cloudSyncTimer?.cancel();
+    _licenseRefreshTimer?.cancel();
+    _licenseExpiryTimer?.cancel();
     super.dispose();
   }
 
@@ -80,7 +93,63 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_syncCloudInBackground());
+      unawaited(_refreshLicenseEnforcement());
     }
+  }
+
+  Future<void> _refreshLicenseEnforcement() async {
+    if (_licenseRefreshRunning) return;
+    _licenseRefreshRunning = true;
+    try {
+      final service = LicenseActivationService.instance;
+      final localActivation = await service.readLocalActivation();
+      if (localActivation == null) return;
+      if (localActivation.isExpired) {
+        _showExpiredLicense();
+        return;
+      }
+      _scheduleLicenseExpiry(localActivation);
+      try {
+        final refreshed = await service.refreshLicenseStatus();
+        if (refreshed == null) return;
+        if (refreshed.isExpired) {
+          _showExpiredLicense();
+          return;
+        }
+        _showingExpiredLicense = false;
+        _scheduleLicenseExpiry(refreshed);
+      } catch (e) {
+        if (e.toString().toLowerCase().contains('expired')) {
+          _showExpiredLicense();
+        }
+      }
+    } finally {
+      _licenseRefreshRunning = false;
+    }
+  }
+
+  void _scheduleLicenseExpiry(LicenseActivation activation) {
+    _licenseExpiryTimer?.cancel();
+    final expiry = activation.licenseExpiresAt;
+    if (expiry == null) return;
+    final delay = expiry.difference(DateTime.now());
+    if (delay <= Duration.zero) {
+      _showExpiredLicense();
+      return;
+    }
+    _licenseExpiryTimer = Timer(delay, _showExpiredLicense);
+  }
+
+  void _showExpiredLicense() {
+    if (_showingExpiredLicense) return;
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+    _showingExpiredLicense = true;
+    _licenseExpiryTimer?.cancel();
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LicenseExpiredPage()),
+      (_) => false,
+    );
   }
 
   Future<void> _syncCloudInBackground({bool queueLocalSnapshot = false}) async {
@@ -134,6 +203,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: MaterialApp(
+        navigatorKey: _navigatorKey,
         debugShowCheckedModeBanner: false,
         themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
 

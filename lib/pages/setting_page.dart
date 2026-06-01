@@ -64,6 +64,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _cloudSyncIssue;
   String? _cloudAccountEmail;
   StreamSubscription<AuthState>? _authSubscription;
+  Timer? _licenseRefreshTimer;
   String _storeName = 'My Sari-Sari Store';
   bool _pinEnabled = false;
   LicenseActivation? _licenseActivation;
@@ -89,6 +90,9 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadPendingSyncCount();
     _loadCloudAccount();
     _loadLicenseActivation();
+    _licenseRefreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _loadLicenseActivation();
+    });
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((
       _,
     ) {
@@ -99,6 +103,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void dispose() {
     _authSubscription?.cancel();
+    _licenseRefreshTimer?.cancel();
     super.dispose();
   }
 
