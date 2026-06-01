@@ -565,8 +565,8 @@ class _HomePageState extends State<HomePage> {
     return null;
   }
 
-  Future<bool> _completeSharedSale() async {
-    if (sharedCart.isEmpty) return false;
+  Future<shop_cart.SaleCompletion?> _completeSharedSale() async {
+    if (sharedCart.isEmpty) return null;
 
     final db = await DatabaseHelper.instance.database;
     try {
@@ -578,6 +578,7 @@ class _HomePageState extends State<HomePage> {
       final receiptNumber = DatabaseHelper.instance.generateReceiptNumber(
         createdAt,
       );
+      int? firstSaleId;
       await db.transaction((txn) async {
         for (final item in sharedCart) {
           final product = item['product'] as Map<String, dynamic>;
@@ -635,6 +636,7 @@ class _HomePageState extends State<HomePage> {
             'created_at': createdAt.toIso8601String(),
           };
           final saleId = await txn.insert('sales', saleRow);
+          firstSaleId ??= saleId;
           await DatabaseHelper.instance.queueSyncUpsert('sales', {
             ...saleRow,
             'id': saleId,
@@ -673,12 +675,16 @@ class _HomePageState extends State<HomePage> {
         await DatabaseHelper.instance.completeDueSales();
       });
       await loadRecentTransactions();
-      _showSnack('Sale saved. Void available for 10 seconds.', top: true);
-      return true;
+      return firstSaleId == null
+          ? null
+          : shop_cart.SaleCompletion(
+              saleId: firstSaleId!,
+              receiptNumber: receiptNumber,
+            );
     } catch (e) {
       final message = e.toString().replaceFirst('Exception: ', '');
       _showSnack(message, isError: true, top: true);
-      return false;
+      return null;
     }
   }
 
@@ -702,6 +708,7 @@ class _HomePageState extends State<HomePage> {
         if (_isStaff) {
           return SalesPage(
             cart: sharedCart,
+            currentUsername: widget.username,
             onCartChanged: () {
               if (mounted) setState(() {});
             },
@@ -749,6 +756,7 @@ class _HomePageState extends State<HomePage> {
           ),
 
           cart: sharedCart,
+          currentUsername: widget.username,
           onBarcodeHandled: () {
             salesScannedBarcode = null;
           },
@@ -766,6 +774,7 @@ class _HomePageState extends State<HomePage> {
         }
         return SalesPage(
           cart: sharedCart,
+          currentUsername: widget.username,
           onCartChanged: () {
             if (mounted) setState(() {});
           },
@@ -794,6 +803,7 @@ class _HomePageState extends State<HomePage> {
         if (_isStaff) {
           return SalesPage(
             cart: sharedCart,
+            currentUsername: widget.username,
             onCartChanged: () {
               if (mounted) setState(() {});
             },
@@ -833,8 +843,9 @@ class _HomePageState extends State<HomePage> {
           onAdd: _addToSharedCart,
           onRemove: _removeFromSharedCart,
           onDelete: _deleteFromSharedCart,
+          currentUsername: widget.username,
           onCompleteSale: () async {
-            await _completeSharedSale();
+            return _completeSharedSale();
           },
           onBrowseProducts: () {
             setState(() => _selectedIndex = 3);

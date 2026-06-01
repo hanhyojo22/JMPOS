@@ -40,12 +40,14 @@ String _badgeLabel(int stock) => stock == 0 ? 'Out of stock' : '$stock left';
 class SalesPage extends StatefulWidget {
   final bool openCartDirectly;
   final String? initialBarcode;
+  final String currentUsername;
   final List<Map<String, dynamic>> cart;
   final VoidCallback? onBarcodeHandled;
   final VoidCallback? onCartChanged;
   const SalesPage({
     super.key,
     required this.cart,
+    required this.currentUsername,
     this.initialBarcode,
     this.onBarcodeHandled,
     this.onCartChanged,
@@ -276,8 +278,8 @@ class _SalesPageState extends State<SalesPage> {
     _notifyCartChanged();
   }
 
-  Future<void> _completeSale() async {
-    if (_cart.isEmpty) return;
+  Future<shop_cart.SaleCompletion?> _completeSale() async {
+    if (_cart.isEmpty) return null;
     final db = await DatabaseHelper.instance.database;
     try {
       await DatabaseHelper.instance.ensureSalesSchema();
@@ -288,6 +290,7 @@ class _SalesPageState extends State<SalesPage> {
       final receiptNumber = DatabaseHelper.instance.generateReceiptNumber(
         createdAt,
       );
+      int? firstSaleId;
       for (final item in _cart) {
         final product = item['product'];
         final int quantity = item['quantity'];
@@ -308,6 +311,7 @@ class _SalesPageState extends State<SalesPage> {
           'created_at': createdAt.toIso8601String(),
         };
         final saleId = await db.insert('sales', saleRow);
+        firstSaleId ??= saleId;
         await DatabaseHelper.instance.queueSyncUpsert('sales', {
           ...saleRow,
           'id': saleId,
@@ -341,9 +345,15 @@ class _SalesPageState extends State<SalesPage> {
       });
       await _loadProducts();
       _notifyCartChanged();
-      _showSnack('Sale saved. Void available for 10 seconds.', top: true);
+      return firstSaleId == null
+          ? null
+          : shop_cart.SaleCompletion(
+              saleId: firstSaleId,
+              receiptNumber: receiptNumber,
+            );
     } catch (e) {
       _showSnack('Error: $e', isError: true);
+      return null;
     }
   }
 
@@ -500,9 +510,11 @@ class _SalesPageState extends State<SalesPage> {
           onAdd: _addToCart,
           onRemove: _removeFromCart,
           onDelete: _deleteFromCart,
+          currentUsername: widget.currentUsername,
           onCompleteSale: () async {
-            await _completeSale();
+            return _completeSale();
           },
+          onBrowseProducts: () => Navigator.pop(context),
         ),
       ),
     );

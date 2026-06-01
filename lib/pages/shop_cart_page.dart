@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'package:pos_app/utils/message_banner.dart';
+import 'recent_sales.dart';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const _primary = Color(0xFF5C6BC0);
@@ -23,12 +24,20 @@ const _redBg = Color(0xFFFCEBEB);
 const _redBorder = Color(0xFFF7C1C1);
 
 // ─── CartPage ─────────────────────────────────────────────────────────────────
+class SaleCompletion {
+  const SaleCompletion({required this.saleId, required this.receiptNumber});
+
+  final int saleId;
+  final String receiptNumber;
+}
+
 class CartPage extends StatefulWidget {
   final List<Map<String, dynamic>> cart;
   final void Function(Map<String, dynamic>) onAdd;
   final void Function(int) onRemove;
   final void Function(int) onDelete;
-  final Future<void> Function() onCompleteSale;
+  final Future<SaleCompletion?> Function() onCompleteSale;
+  final String currentUsername;
   final bool showAppBar;
   final VoidCallback? onBrowseProducts;
   final VoidCallback? onCartChanged;
@@ -42,6 +51,7 @@ class CartPage extends StatefulWidget {
     required this.onRemove,
     required this.onDelete,
     required this.onCompleteSale,
+    required this.currentUsername,
     this.showAppBar = false,
     this.onBrowseProducts,
     this.onCartChanged,
@@ -491,6 +501,172 @@ class _CartPageState extends State<CartPage> {
     return confirmed == true;
   }
 
+  Future<void> _showSaleSuccessSheet({
+    required double total,
+    required SaleCompletion completion,
+  }) async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
+        final panel = isDark ? const Color(0xFF111827) : Colors.white;
+        final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
+        final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
+        final line = isDark ? const Color(0xFF334155) : const Color(0xFFE5E7EB);
+        final success = isDark
+            ? const Color(0xFF4ADE80)
+            : const Color(0xFF16A34A);
+        const actionBlue = Color(0xFF2563EB);
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 24,
+          ),
+          child: SingleChildScrollView(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 390),
+              decoration: BoxDecoration(
+                color: panel,
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _SaleSuccessBurst(color: success),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Sale Completed!',
+                    style: TextStyle(
+                      color: primaryText,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'The transaction was successful.',
+                    style: TextStyle(color: secondaryText, fontSize: 13),
+                  ),
+                  const SizedBox(height: 18),
+                  _DashedDivider(color: line),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Total Amount',
+                    style: TextStyle(color: secondaryText, fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    CurrencyFormatter.format(total),
+                    style: TextStyle(
+                      color: success,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  _DashedDivider(color: line),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Receipt Number',
+                    style: TextStyle(color: secondaryText, fontSize: 12),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    completion.receiptNumber,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: primaryText,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  _DashedDivider(color: line),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(dialogContext);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => RecentSalesPage(
+                              saleId: completion.saleId,
+                              currentUsername: widget.currentUsername,
+                            ),
+                          ),
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: actionBlue,
+                        side: const BorderSide(color: actionBlue, width: 1.4),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                      ),
+                      icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                      label: const Text(
+                        'View Receipt',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(dialogContext);
+                        widget.onBrowseProducts?.call();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: actionBlue,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                      ),
+                      icon: const Icon(
+                        Icons.add_circle_outline_rounded,
+                        size: 18,
+                      ),
+                      label: const Text(
+                        'New Sale',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _showPaymentSheet() {
     _cashCtrl.clear();
     showModalBottomSheet(
@@ -651,58 +827,59 @@ class _CartPageState extends State<CartPage> {
                     children: [
                       Expanded(
                         child: Container(
-                    decoration: BoxDecoration(
-                      color: cashFieldBg,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: cashFieldBorder),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 2,
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          '₱ ',
-                          style: TextStyle(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w800,
-                            color: _primary,
+                          decoration: BoxDecoration(
+                            color: cashFieldBg,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: cashFieldBorder),
                           ),
-                        ),
-                        Expanded(
-                          child: TextField(
-                            controller: _cashCtrl,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            inputFormatters: [
-                              TextInputFormatter.withFunction(
-                                _formatMoneyEdit,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 2,
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                '₱ ',
+                                style: TextStyle(
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w800,
+                                  color: _primary,
+                                ),
+                              ),
+                              Expanded(
+                                child: TextField(
+                                  controller: _cashCtrl,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  inputFormatters: [
+                                    TextInputFormatter.withFunction(
+                                      _formatMoneyEdit,
+                                    ),
+                                  ],
+                                  style: TextStyle(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w700,
+                                    color: _primaryText,
+                                  ),
+                                  decoration: InputDecoration(
+                                    hintText: '0.00',
+                                    hintStyle: TextStyle(
+                                      color: _tertiaryText,
+                                      fontSize: 19,
+                                    ),
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 9,
+                                    ),
+                                  ),
+                                  onChanged: (v) => setModal(() {}),
+                                ),
                               ),
                             ],
-                            style: TextStyle(
-                              fontSize: 19,
-                              fontWeight: FontWeight.w700,
-                              color: _primaryText,
-                            ),
-                            decoration: InputDecoration(
-                              hintText: '0.00',
-                              hintStyle: TextStyle(
-                                color: _tertiaryText,
-                                fontSize: 19,
-                              ),
-                              border: InputBorder.none,
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                vertical: 9,
-                              ),
-                            ),
-                            onChanged: (v) => setModal(() {}),
                           ),
-                        ),
-                      ],
-                    ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -840,7 +1017,14 @@ class _CartPageState extends State<CartPage> {
                               setState(() => _completing = true);
                               Navigator.pop(ctx);
                               try {
-                                await widget.onCompleteSale();
+                                final total = _total;
+                                final completion = await widget
+                                    .onCompleteSale();
+                                if (!mounted || completion == null) return;
+                                await _showSaleSuccessSheet(
+                                  total: total,
+                                  completion: completion,
+                                );
                               } catch (e) {
                                 if (!mounted) return;
                                 _showBanner('Error: $e', success: false);
@@ -1879,6 +2063,83 @@ class _ConfirmRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SaleSuccessBurst extends StatelessWidget {
+  const _SaleSuccessBurst({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 170,
+      height: 92,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          for (final dot in const [
+            (Alignment(-0.92, -0.66), 4.0),
+            (Alignment(-0.72, 0.02), 3.0),
+            (Alignment(-0.54, 0.74), 4.0),
+            (Alignment(-0.34, -0.92), 3.0),
+            (Alignment(0.38, -0.88), 4.0),
+            (Alignment(0.62, -0.48), 3.0),
+            (Alignment(0.92, -0.10), 4.0),
+            (Alignment(0.78, 0.58), 3.0),
+            (Alignment(0.42, 0.90), 4.0),
+            (Alignment(-0.88, 0.50), 3.0),
+          ])
+            Align(
+              alignment: dot.$1,
+              child: Container(
+                width: dot.$2,
+                height: dot.$2,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+            ),
+          Container(
+            width: 82,
+            height: 82,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            child: const Icon(
+              Icons.check_rounded,
+              color: Colors.white,
+              size: 50,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashedDivider extends StatelessWidget {
+  const _DashedDivider({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const dashWidth = 5.0;
+        const gapWidth = 4.0;
+        final count = (constraints.maxWidth / (dashWidth + gapWidth)).floor();
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: List.generate(
+            count,
+            (_) => SizedBox(
+              width: dashWidth,
+              height: 1,
+              child: ColoredBox(color: color),
+            ),
+          ),
+        );
+      },
     );
   }
 }
