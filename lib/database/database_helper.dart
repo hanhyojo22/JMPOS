@@ -608,9 +608,12 @@ class DatabaseHelper {
         local_id TEXT NOT NULL,
         operation TEXT NOT NULL,
         payload TEXT NOT NULL,
+        base_revision INTEGER NOT NULL DEFAULT 0,
+        cloud_revision INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'pending',
         attempts INTEGER NOT NULL DEFAULT 0,
         last_error TEXT,
+        conflict_details TEXT,
         next_retry_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -629,6 +632,21 @@ class DatabaseHelper {
 
     if (!columnNames.contains('next_retry_at')) {
       await db.execute('ALTER TABLE sync_queue ADD COLUMN next_retry_at TEXT');
+    }
+    if (!columnNames.contains('base_revision')) {
+      await db.execute(
+        'ALTER TABLE sync_queue ADD COLUMN base_revision INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (!columnNames.contains('cloud_revision')) {
+      await db.execute(
+        'ALTER TABLE sync_queue ADD COLUMN cloud_revision INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (!columnNames.contains('conflict_details')) {
+      await db.execute(
+        'ALTER TABLE sync_queue ADD COLUMN conflict_details TEXT',
+      );
     }
   }
 
@@ -848,15 +866,28 @@ class DatabaseHelper {
   }) async {
     final now = DateTime.now().toIso8601String();
     final queueKey = '$tableName:$localId';
+    final existing = await db.query(
+      'sync_queue',
+      columns: ['cloud_revision'],
+      where: 'queue_key = ?',
+      whereArgs: [queueKey],
+      limit: 1,
+    );
+    final cloudRevision = existing.isEmpty
+        ? 0
+        : (existing.first['cloud_revision'] as num?)?.toInt() ?? 0;
     await db.insert('sync_queue', {
       'queue_key': queueKey,
       'table_name': tableName,
       'local_id': localId,
       'operation': operation,
       'payload': jsonEncode(payload),
+      'base_revision': cloudRevision,
+      'cloud_revision': cloudRevision,
       'status': 'pending',
       'attempts': 0,
       'last_error': null,
+      'conflict_details': null,
       'next_retry_at': null,
       'created_at': now,
       'updated_at': now,
@@ -886,10 +917,10 @@ class DatabaseHelper {
         final pending = await db.query(
           'sync_queue',
           where: '''
-            status != ?
+            status IN (?, ?)
             AND (next_retry_at IS NULL OR next_retry_at = '' OR next_retry_at <= ?)
           ''',
-          whereArgs: ['synced', now],
+          whereArgs: ['pending', 'failed', now],
           orderBy: 'updated_at ASC',
           limit: limit,
         );
@@ -901,27 +932,53 @@ class DatabaseHelper {
           'Uploading batch ${batch + 1} (${pending.length} rows)',
         );
         try {
-          await service.uploadEvents(pending.cast<Map<String, Object?>>());
-          final syncedAt = DateTime.now().toIso8601String();
-          final ids = pending.map((row) => row['id']).toList();
-          await db.update(
-            'sync_queue',
-            {
-              'status': 'synced',
-              'synced_at': syncedAt,
-              'updated_at': syncedAt,
-              'last_error': null,
-              'next_retry_at': null,
-            },
-            where: 'id IN (${List.filled(ids.length, '?').join(',')})',
-            whereArgs: ids,
-          );
-          syncedTotal += pending.length;
-          onProgress?.call(
-            syncedTotal,
-            total,
-            'Uploaded $syncedTotal of $total',
-          );
+          for (final row in pending.cast<Map<String, Object?>>()) {
+            final results = await service.uploadEvents([row]);
+            final result = results.single;
+            final syncedAt = DateTime.now().toIso8601String();
+            if (result.conflicted) {
+              await db.update(
+                'sync_queue',
+                {
+                  'status': 'conflict',
+                  'cloud_revision': result.revision,
+                  'last_error': 'Sync conflict: ${result.message}',
+                  'conflict_details': result.message,
+                  'updated_at': syncedAt,
+                  'next_retry_at': null,
+                },
+                where: 'id = ?',
+                whereArgs: [row['id']],
+              );
+              onProgress?.call(
+                syncedTotal,
+                total,
+                'Conflict found for ${row['table_name']} ${row['local_id']}',
+              );
+              continue;
+            }
+            await db.update(
+              'sync_queue',
+              {
+                'status': 'synced',
+                'base_revision': result.revision,
+                'cloud_revision': result.revision,
+                'synced_at': syncedAt,
+                'updated_at': syncedAt,
+                'last_error': null,
+                'conflict_details': null,
+                'next_retry_at': null,
+              },
+              where: 'id = ?',
+              whereArgs: [row['id']],
+            );
+            syncedTotal += 1;
+            onProgress?.call(
+              syncedTotal,
+              total,
+              'Uploaded $syncedTotal of $total',
+            );
+          }
         } catch (e) {
           final failedAt = DateTime.now();
           final message = e.toString().replaceFirst(
@@ -939,6 +996,7 @@ class DatabaseHelper {
                 updated_at = ?,
                 next_retry_at = ?
             WHERE id IN (${List.filled(ids.length, '?').join(',')})
+              AND status IN (?, ?)
             ''',
             [
               'failed',
@@ -946,6 +1004,8 @@ class DatabaseHelper {
               failedAt.toIso8601String(),
               retryAt.toIso8601String(),
               ...ids,
+              'pending',
+              'failed',
             ],
           );
           onProgress?.call(
@@ -985,6 +1045,17 @@ class DatabaseHelper {
     final count = Sqflite.firstIntValue(
       await db.rawQuery("SELECT COUNT(*) FROM sync_queue WHERE status != ?", [
         'synced',
+      ]),
+    );
+    return count ?? 0;
+  }
+
+  Future<int> conflictedSyncCount() async {
+    final db = await database;
+    await _createSyncQueueTable(db);
+    final count = Sqflite.firstIntValue(
+      await db.rawQuery("SELECT COUNT(*) FROM sync_queue WHERE status = ?", [
+        'conflict',
       ]),
     );
     return count ?? 0;
@@ -1132,6 +1203,7 @@ class DatabaseHelper {
   ) async {
     var imported = 0;
     for (final cloudRow in cloudRows) {
+      if ((cloudRow['deleted_at']?.toString() ?? '').isNotEmpty) continue;
       final row = await mapper(cloudRow);
       final id = row['id'];
       if (id == null) continue;
@@ -1163,9 +1235,12 @@ class DatabaseHelper {
           'local_id': localId,
           'operation': cloudRow['operation']?.toString() ?? 'upsert',
           'payload': jsonEncode(_cloudPayloadMap(cloudRow)),
+          'base_revision': (cloudRow['revision'] as num?)?.toInt() ?? 0,
+          'cloud_revision': (cloudRow['revision'] as num?)?.toInt() ?? 0,
           'status': 'synced',
           'attempts': 0,
           'last_error': null,
+          'conflict_details': null,
           'next_retry_at': null,
           'created_at':
               cloudRow['local_updated_at']?.toString() ??
@@ -1663,6 +1738,10 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [ownerId],
     );
+    if (result > 0) {
+      await _queueUserForSync(db, ownerId);
+      unawaited(syncPendingChanges());
+    }
     return result > 0;
   }
 
@@ -1717,10 +1796,13 @@ class DatabaseHelper {
       if (existingOwner.isNotEmpty) {
         final ownerId = (existingOwner.first['id'] as num).toInt();
         await db.update('users', row, where: 'id = ?', whereArgs: [ownerId]);
+        await _queueUserForSync(db, ownerId);
         return ownerId;
       }
 
-      return await db.insert('users', row);
+      final ownerId = await db.insert('users', row);
+      await _queueUserForSync(db, ownerId);
+      return ownerId;
     } catch (_) {
       return -1;
     }
@@ -1758,20 +1840,35 @@ class DatabaseHelper {
     );
 
     if (existing.isEmpty) {
-      await db.insert('users', row);
+      final ownerId = await db.insert('users', row);
+      await _queueUserForSync(db, ownerId);
+      unawaited(syncPendingChanges());
       return getUserByUsername(normalizedEmail);
     }
 
     final ownerId = (existing.first['id'] as num).toInt();
     await db.update('users', row, where: 'id = ?', whereArgs: [ownerId]);
+    await _queueUserForSync(db, ownerId);
 
     await recordAuditLog(
       user: normalizedEmail,
       action: 'cloud_owner_login_cached',
       details: _auditDetails({'store_name': storeName}),
     );
+    unawaited(syncPendingChanges());
 
     return getUserByUsername(normalizedEmail);
+  }
+
+  Future<void> _queueUserForSync(DatabaseExecutor db, int userId) async {
+    final rows = await db.query(
+      'users',
+      where: 'id = ?',
+      whereArgs: [userId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+    await queueSyncUpsert('users', rows.first, executor: db);
   }
 
   /// Changes password for a given user. Returns true on success.

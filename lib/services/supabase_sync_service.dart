@@ -13,22 +13,22 @@ class SupabaseSyncService {
 
   static const cloudImagePrefix = 'supabase-storage://';
   static const _imageDeleteFunction = 'pos-image-delete';
+  static const _syncApplyFunction = 'pos-sync-apply';
 
-  Future<void> uploadEvents(List<Map<String, Object?>> events) async {
-    if (events.isEmpty) return;
+  Future<List<SyncUploadResult>> uploadEvents(
+    List<Map<String, Object?>> events,
+  ) async {
+    if (events.isEmpty) return const [];
 
     final client = await _authenticatedClient();
     final storeId = await _activeStoreId();
-    final rows = events
-        .map((event) => _toSupabaseRow(event, storeId))
-        .toList(growable: false);
-    await client.from('pos_sync_events').upsert(rows, onConflict: 'event_id');
-
+    final results = <SyncUploadResult>[];
     for (final event in events) {
-      await _uploadMirrorRow(client, event, storeId);
+      results.add(await _uploadMirrorRow(client, event, storeId));
     }
 
     await _cleanupUnusedSyncedImages(client: client, storeId: storeId);
+    return results;
   }
 
   Future<Map<String, List<Map<String, dynamic>>>>
@@ -96,37 +96,27 @@ class SupabaseSyncService {
     return storeId;
   }
 
-  Map<String, Object?> _toSupabaseRow(
-    Map<String, Object?> event,
-    String storeId,
-  ) {
-    final queueKey = event['queue_key']?.toString();
-    return {
-      'event_id': '$storeId:$queueKey',
-      'store_id': storeId,
-      'local_queue_id': event['id'],
-      'table_name': event['table_name']?.toString(),
-      'local_id': event['local_id']?.toString(),
-      'operation': event['operation']?.toString(),
-      'payload': event['payload']?.toString(),
-      'created_at': event['created_at']?.toString(),
-      'updated_at': event['updated_at']?.toString(),
-    };
-  }
-
-  Future<void> _uploadMirrorRow(
+  Future<SyncUploadResult> _uploadMirrorRow(
     SupabaseClient client,
     Map<String, Object?> event,
     String storeId,
   ) async {
     final sourceTable = event['table_name']?.toString();
     final targetTable = _targetTable(sourceTable);
-    if (targetTable == null) return;
+    if (targetTable == null) {
+      return SyncUploadResult.applied(
+        queueKey: event['queue_key']?.toString() ?? '',
+        revision: (event['cloud_revision'] as num?)?.toInt() ?? 0,
+      );
+    }
 
     final localId = event['local_id']?.toString();
-    if (localId == null || localId.isEmpty) return;
+    if (localId == null || localId.isEmpty) {
+      throw Exception('Sync event local id is missing.');
+    }
 
     final operation = event['operation']?.toString() ?? 'upsert';
+    Map<String, Object?>? mirrorRow;
     if (operation == 'delete') {
       if (sourceTable == 'products') {
         await _requestProductImageDeletion(
@@ -137,25 +127,73 @@ class SupabaseSyncService {
           syncEventId: '$storeId:${event['queue_key']?.toString()}',
         );
       }
-      await client
-          .from(targetTable)
-          .delete()
-          .eq('store_id', storeId)
-          .eq(
-            _deleteColumn(sourceTable),
-            _deleteValue(sourceTable, event) ?? localId,
-          );
-      return;
+    } else {
+      mirrorRow = await _toMirrorRow(client, event, storeId);
     }
 
-    final mirrorRow = await _toMirrorRow(client, event, storeId);
+    return _applySyncEvent(
+      client: client,
+      storeId: storeId,
+      event: event,
+      mirrorRow: mirrorRow,
+    );
+  }
 
-    await client
-        .from(targetTable)
-        .upsert(
-          mirrorRow,
-          onConflict: 'store_id,${_conflictColumn(sourceTable)}',
-        );
+  Future<SyncUploadResult> _applySyncEvent({
+    required SupabaseClient client,
+    required String storeId,
+    required Map<String, Object?> event,
+    required Map<String, Object?>? mirrorRow,
+  }) async {
+    final accessToken = client.auth.currentSession?.accessToken;
+    if (accessToken == null || accessToken.isEmpty) {
+      throw Exception('Cloud sync is not connected.');
+    }
+    final queueKey = event['queue_key']?.toString() ?? '';
+    final payload = _decodePayload(event['payload']?.toString() ?? '{}');
+    final response = await http.post(
+      _functionUrl(_syncApplyFunction),
+      headers: {
+        'apikey': EnvConfig.supabaseAnonKey,
+        'Authorization': 'Bearer $accessToken',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'storeId': storeId,
+        'queueKey': queueKey,
+        'localQueueId': event['id'],
+        'tableName': event['table_name']?.toString(),
+        'localId': event['local_id']?.toString(),
+        'operation': event['operation']?.toString(),
+        'payload': payload is Map ? payload : <String, Object?>{},
+        'mirrorRow': mirrorRow,
+        'baseRevision': (event['base_revision'] as num?)?.toInt() ?? 0,
+        'createdAt': event['created_at']?.toString(),
+        'updatedAt': event['updated_at']?.toString(),
+      }),
+    );
+
+    final body = _decodePayload(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final result = body is Map ? body : const <String, Object?>{};
+      return SyncUploadResult.applied(
+        queueKey: queueKey,
+        revision: (result['revision'] as num?)?.toInt() ?? 0,
+      );
+    }
+    if (response.statusCode == 409 &&
+        body is Map &&
+        body['code']?.toString() == 'SYNC_CONFLICT') {
+      return SyncUploadResult.conflict(
+        queueKey: queueKey,
+        message: body['error']?.toString() ?? 'Cloud row changed.',
+        revision: (body['currentRevision'] as num?)?.toInt() ?? 0,
+      );
+    }
+    final message = body is Map
+        ? body['error']?.toString() ?? response.body
+        : response.body;
+    throw Exception('Cloud sync apply failed: $message');
   }
 
   Future<void> _cleanupUnusedSyncedImages({
@@ -256,18 +294,6 @@ class SupabaseSyncService {
       default:
         return null;
     }
-  }
-
-  String _conflictColumn(String? sourceTable) {
-    return 'local_id';
-  }
-
-  String _deleteColumn(String? sourceTable) {
-    return 'local_id';
-  }
-
-  Object? _deleteValue(String? sourceTable, Map<String, Object?> event) {
-    return null;
   }
 
   String? _payloadImagePath(Map<String, Object?> event) {
@@ -450,4 +476,42 @@ class _CloudImageReference {
 
   final String bucket;
   final String objectPath;
+}
+
+class SyncUploadResult {
+  const SyncUploadResult._({
+    required this.queueKey,
+    required this.revision,
+    required this.conflicted,
+    this.message,
+  });
+
+  factory SyncUploadResult.applied({
+    required String queueKey,
+    required int revision,
+  }) {
+    return SyncUploadResult._(
+      queueKey: queueKey,
+      revision: revision,
+      conflicted: false,
+    );
+  }
+
+  factory SyncUploadResult.conflict({
+    required String queueKey,
+    required int revision,
+    required String message,
+  }) {
+    return SyncUploadResult._(
+      queueKey: queueKey,
+      revision: revision,
+      conflicted: true,
+      message: message,
+    );
+  }
+
+  final String queueKey;
+  final int revision;
+  final bool conflicted;
+  final String? message;
 }

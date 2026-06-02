@@ -57,6 +57,7 @@ class _SettingsPageState extends State<SettingsPage> {
   DateTime? _lastBackupAt;
   DateTime? _lastSalesExportAt;
   int _pendingSyncCount = 0;
+  int _conflictedSyncCount = 0;
   int _cloudSyncDone = 0;
   int _cloudSyncTotal = 0;
   int _cloudSyncStep = 0;
@@ -320,6 +321,12 @@ class _SettingsPageState extends State<SettingsPage> {
                                   strokeWidth: 2,
                                 ),
                               )
+                            : _conflictedSyncCount > 0
+                            ? _buildBadge(
+                                '$_conflictedSyncCount conflict${_conflictedSyncCount == 1 ? '' : 's'}',
+                                _dangerBg,
+                                _danger,
+                              )
                             : _pendingSyncCount > 0
                             ? _buildBadge(
                                 '$_pendingSyncCount',
@@ -333,7 +340,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 const Color(0xFFE1F5EE),
                                 const Color(0xFF0F6E56),
                               ),
-                        onTap: _isSyncingCloud ? null : _syncCloudNow,
+                        onTap: _isSyncingCloud ? null : _handleCloudSyncTap,
                       ),
                       if (_isSyncingCloud)
                         _CloudSyncProgressRow(
@@ -517,6 +524,9 @@ class _SettingsPageState extends State<SettingsPage> {
       return 'Uploading $_cloudSyncDone of $_cloudSyncTotal changes';
     }
     if (_cloudSyncIssue != null) return _cloudSyncIssue!;
+    if (_conflictedSyncCount > 0) {
+      return '$_conflictedSyncCount cloud conflict${_conflictedSyncCount == 1 ? '' : 's'} need review';
+    }
     if (_pendingSyncCount == 0) return 'Auto connected - SQLite is synced';
     return '$_pendingSyncCount local change${_pendingSyncCount == 1 ? '' : 's'} waiting';
   }
@@ -546,8 +556,12 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _loadPendingSyncCount() async {
     final count = await DatabaseHelper.instance.pendingSyncCount();
+    final conflicted = await DatabaseHelper.instance.conflictedSyncCount();
     if (!mounted) return;
-    setState(() => _pendingSyncCount = count);
+    setState(() {
+      _pendingSyncCount = count;
+      _conflictedSyncCount = conflicted;
+    });
   }
 
   void _loadCloudAccount() {
@@ -617,22 +631,28 @@ class _SettingsPageState extends State<SettingsPage> {
         },
       );
       final pending = await DatabaseHelper.instance.pendingSyncCount();
+      final conflicted = await DatabaseHelper.instance.conflictedSyncCount();
       final lastError = await DatabaseHelper.instance.lastSyncError();
       if (!mounted) return;
       final syncIssue = _friendlySyncError(lastError);
       setState(() {
         _pendingSyncCount = pending;
+        _conflictedSyncCount = conflicted;
         _cloudSyncIssue = pending == 0 ? null : syncIssue.message;
       });
 
-      final snackText = pending == 0
+      final snackText = conflicted > 0
+          ? 'Cloud sync needs review. $conflicted conflict${conflicted == 1 ? '' : 's'} will not retry automatically.'
+          : pending == 0
           ? 'Cloud sync complete. Uploaded $synced change${synced == 1 ? '' : 's'}.'
           : 'Sync paused. $pending change${pending == 1 ? '' : 's'} will retry later.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(snackText),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: pending == 0 ? const Color(0xFF0F6E56) : _danger,
+          backgroundColor: pending == 0 && conflicted == 0
+              ? const Color(0xFF0F6E56)
+              : _danger,
           action: pending == 0 || syncIssue.details == null
               ? null
               : SnackBarAction(
@@ -678,6 +698,98 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _handleCloudSyncTap() async {
+    if (_conflictedSyncCount > 0) {
+      await _resolveConflictsUsingCloud();
+      return;
+    }
+    await _syncCloudNow();
+  }
+
+  Future<void> _resolveConflictsUsingCloud() async {
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            title: const Text(
+              'Reload cloud version?',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            content: Text(
+              '$_conflictedSyncCount sync conflict${_conflictedSyncCount == 1 ? '' : 's'} were found. '
+              'This reloads products, sales, users, and audit logs from Supabase. '
+              'Unresolved local edits on this phone will be replaced.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Use cloud version'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _isSyncingCloud = true;
+      _cloudSyncStatus = 'Reloading cloud version';
+      _cloudSyncIssue = null;
+    });
+    await ScreenAwakeService.instance.acquireTemporaryHold();
+    try {
+      await DatabaseHelper.instance.runWithCloudRestoreGuard(
+        () => DatabaseHelper.instance.pullCloudSnapshotToLocal(
+          onProgress: (done, total, status) {
+            if (!mounted) return;
+            setState(() {
+              _cloudSyncDone = done;
+              _cloudSyncTotal = total;
+              _cloudSyncStatus = status;
+            });
+          },
+        ),
+      );
+      await _loadPendingSyncCount();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cloud version restored. Sync conflicts were cleared.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Color(0xFF0F6E56),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final issue = _friendlySyncError(e);
+      setState(() => _cloudSyncIssue = issue.message);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(issue.message),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _danger,
+        ),
+      );
+    } finally {
+      await ScreenAwakeService.instance.releaseTemporaryHold();
+      if (mounted) {
+        setState(() {
+          _isSyncingCloud = false;
+          _cloudSyncDone = 0;
+          _cloudSyncTotal = 0;
+          _cloudSyncStatus = '';
+        });
+      }
+    }
+  }
+
   _SyncUiError _friendlySyncError(Object? error) {
     final raw = error?.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
     final message = raw?.trim() ?? '';
@@ -688,6 +800,12 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     final lower = message.toLowerCase();
+    if (lower.contains('sync conflict')) {
+      return _SyncUiError(
+        'Cloud changes need review before this device can upload them.',
+        details: message,
+      );
+    }
     if (lower.contains('failed host lookup') ||
         lower.contains('socketexception') ||
         lower.contains('no address associated with hostname')) {
