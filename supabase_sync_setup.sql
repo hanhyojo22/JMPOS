@@ -61,6 +61,7 @@ add column if not exists local_id text unique,
 add column if not exists local_product_id text,
 add column if not exists local_voided_by text,
 add column if not exists receipt_number text,
+add column if not exists cost_price numeric,
 add column if not exists source_table text not null default 'sales',
 add column if not exists sync_event_id text,
 add column if not exists operation text not null default 'upsert',
@@ -146,7 +147,8 @@ begin
       execute format('delete from public.%I where store_id is null', table_name);
     end if;
   end loop;
-end $$;
+end;
+$$;
 
 alter table public.pos_sync_events
 alter column store_id set not null;

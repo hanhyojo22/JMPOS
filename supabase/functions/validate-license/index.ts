@@ -157,17 +157,12 @@ async function validateLicenseKeyForDevice(
   installationIdHash: string,
 ) {
   const codeHash = await sha256Hex(licenseKey);
-  const { data: invite, error: inviteError } = await admin
-    .from("store_invites")
-    .select("id, store_id, max_uses, device_slot_limit, used_count, expires_at, license_expires_at, status")
-    .eq("code_hash", codeHash)
-    .maybeSingle();
-
-  if (inviteError) throw inviteError;
+  const resolved = await resolveLicenseCode(admin, codeHash);
+  const invite = resolved.invite;
   if (!invite || invite.status === "revoked") {
     return {
       status: 404,
-      body: { error: "License code was not found" },
+      body: { error: resolved.recoveryError ?? "License code was not found" },
     };
   }
   if (invite.expires_at && new Date(invite.expires_at) <= new Date()) {
@@ -210,7 +205,7 @@ async function validateLicenseKeyForDevice(
     .maybeSingle();
 
   if (deviceError) throw deviceError;
-  if (device && !device.revoked_at) {
+  if (!resolved.recoveryCodeId && device && !device.revoked_at) {
     const { data: store, error: storeError } = await admin
       .from("stores")
       .select("id, name")
@@ -291,6 +286,7 @@ async function validateLicenseKeyForDevice(
           licenseExpiresAt: invite.license_expires_at,
           daysRemaining: daysRemaining(invite.license_expires_at),
           ownerEmailMasked,
+          recoveryCode: Boolean(resolved.recoveryCodeId),
           message:
             ownerEmailMasked
               ? `License is already registered. Sign in with the registered owner email (${ownerEmailMasked}) or use Forgot Password.`
@@ -323,6 +319,47 @@ async function validateLicenseKeyForDevice(
       daysRemaining: daysRemaining(invite.license_expires_at),
       message: "License is valid and ready for owner setup.",
     },
+  };
+}
+
+async function resolveLicenseCode(
+  admin: AdminClient,
+  codeHash: string,
+) {
+  const { data: invite, error: inviteError } = await admin
+    .from("store_invites")
+    .select("id, store_id, max_uses, device_slot_limit, used_count, expires_at, license_expires_at, status")
+    .eq("code_hash", codeHash)
+    .maybeSingle();
+  if (inviteError) throw inviteError;
+  if (invite) return { invite, recoveryCodeId: null, recoveryError: null };
+
+  const { data: recovery, error: recoveryError } = await admin
+    .from("license_recovery_codes")
+    .select("id, invite_id, expires_at, consumed_at, invalidated_at, store_invites(id, store_id, max_uses, device_slot_limit, used_count, expires_at, license_expires_at, status)")
+    .eq("code_hash", codeHash)
+    .maybeSingle();
+  if (recoveryError) throw recoveryError;
+  if (!recovery) return { invite: null, recoveryCodeId: null, recoveryError: null };
+  if (recovery.consumed_at) {
+    return { invite: null, recoveryCodeId: null, recoveryError: "Recovery code has already been used" };
+  }
+  if (recovery.invalidated_at) {
+    return { invite: null, recoveryCodeId: null, recoveryError: "Recovery code is no longer active" };
+  }
+  if (new Date(recovery.expires_at) <= new Date()) {
+    return { invite: null, recoveryCodeId: null, recoveryError: "Recovery code has expired" };
+  }
+  const recoveryInvite = Array.isArray(recovery.store_invites)
+    ? recovery.store_invites[0]
+    : recovery.store_invites;
+  if (!recoveryInvite?.store_id) {
+    return { invite: null, recoveryCodeId: null, recoveryError: "Recovery code is invalid" };
+  }
+  return {
+    invite: recoveryInvite,
+    recoveryCodeId: recovery.id as string,
+    recoveryError: null,
   };
 }
 

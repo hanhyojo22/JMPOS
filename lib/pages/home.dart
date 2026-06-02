@@ -610,7 +610,7 @@ class _HomePageState extends State<HomePage> {
 
           final currentRows = await txn.query(
             'products',
-            columns: ['id', 'stock_quantity'],
+            columns: ['id', 'stock_quantity', 'cost_price'],
             where: 'id = ?',
             whereArgs: [productId],
             limit: 1,
@@ -635,6 +635,8 @@ class _HomePageState extends State<HomePage> {
           }
 
           final price = (product['price'] as num).toDouble();
+          final costPrice = (currentRows.first['cost_price'] as num?)
+              ?.toDouble();
           final imagePath = product['imagePath']?.toString();
           final remainingStock = dbStock - quantity;
 
@@ -643,6 +645,7 @@ class _HomePageState extends State<HomePage> {
             'product_name': productName,
             'quantity': quantity,
             'price': price,
+            'cost_price': costPrice,
             'total': price * quantity,
             'image_url': imagePath == null || imagePath.isEmpty
                 ? null

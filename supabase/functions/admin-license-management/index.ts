@@ -75,6 +75,8 @@ Deno.serve(async (req: Request) => {
         return json(await setStatus(admin, adminUserId, body, "active"));
       case "revoke-device":
         return json(await revokeDevice(admin, adminUserId, body));
+      case "generate-recovery-code":
+        return json(await generateRecoveryCode(admin, adminUserId, body));
       case "replace-unused-code":
         return json(await replaceUnusedCode(admin, adminUserId, body));
       case "remove-unused":
@@ -277,6 +279,91 @@ async function revokeDevice(admin: AdminClient, adminUserId: string, body: Body)
   return { revoked: true };
 }
 
+async function generateRecoveryCode(admin: AdminClient, adminUserId: string, body: Body) {
+  const inviteId = requiredUuid(body.inviteId);
+  const deviceId = requiredUuid(body.deviceId);
+  const invite = await inviteById(admin, inviteId);
+  if (!invite.store_id) throw new HttpError("Only activated licenses can recover a lost phone", 409);
+  if (invite.status === "suspended" || invite.status === "revoked") {
+    throw new HttpError("Reactivate this license before generating recovery", 409);
+  }
+
+  const { data: device, error: deviceError } = await admin
+    .from("store_devices")
+    .select("id, invite_id, store_id, device_name, revoked_at")
+    .eq("id", deviceId)
+    .eq("invite_id", inviteId)
+    .eq("store_id", invite.store_id)
+    .maybeSingle();
+  if (deviceError) throw deviceError;
+  if (!device) throw new HttpError("Device was not found for this license", 404);
+  if (device.revoked_at) throw new HttpError("This device is already revoked", 409);
+
+  const now = new Date();
+  const revokedAt = now.toISOString();
+  const { error: revokeError } = await admin
+    .from("store_devices")
+    .update({
+      revoked_at: revokedAt,
+      cloud_session_id: null,
+      cloud_session_user_id: null,
+      updated_at: revokedAt,
+    })
+    .eq("id", deviceId);
+  if (revokeError) throw revokeError;
+
+  const { data: invalidated, error: invalidateError } = await admin
+    .from("license_recovery_codes")
+    .update({ invalidated_at: revokedAt })
+    .eq("invite_id", inviteId)
+    .is("consumed_at", null)
+    .is("invalidated_at", null)
+    .select("id");
+  if (invalidateError) throw invalidateError;
+
+  const code = recoveryCode();
+  const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+  const { data: recovery, error: recoveryError } = await admin
+    .from("license_recovery_codes")
+    .insert({
+      invite_id: inviteId,
+      store_id: invite.store_id,
+      code_hash: await sha256Hex(code),
+      revoked_device_id: deviceId,
+      issued_by_admin_user_id: adminUserId,
+      expires_at: expiresAt,
+    })
+    .select("id, expires_at")
+    .single();
+  if (recoveryError) throw recoveryError;
+
+  await audit(admin, adminUserId, inviteId, "revoke-lost-device", device, {
+    ...device,
+    revoked_at: revokedAt,
+  });
+  if ((invalidated ?? []).length > 0) {
+    await audit(admin, adminUserId, inviteId, "invalidate-recovery-codes", {
+      recoveryCodeIds: (invalidated ?? []).map((row: { id: string }) => row.id),
+    }, {
+      invalidatedAt: revokedAt,
+    });
+  }
+  await audit(admin, adminUserId, inviteId, "generate-recovery-code", {
+    revokedDevice: device,
+    invalidatedRecoveryCodeIds: (invalidated ?? []).map((row: { id: string }) => row.id),
+  }, {
+    recoveryCodeId: recovery.id,
+    revokedDeviceId: deviceId,
+    expiresAt,
+  });
+  return {
+    code,
+    expiresAt,
+    revokedDeviceId: deviceId,
+    revokedDeviceName: device.device_name || "POS Device",
+  };
+}
+
 async function replaceUnusedCode(admin: AdminClient, adminUserId: string, body: Body) {
   const inviteId = requiredUuid(body.inviteId);
   const before = await unusedInviteById(admin, inviteId);
@@ -374,6 +461,7 @@ function positiveInt(value: unknown, fallback: number, max: number) { const n = 
 function requiredUuid(value: unknown) { const id = String(value ?? "").trim(); if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError("Valid id is required", 400); return id; }
 function requiredIsoDate(value: unknown) { const date = new Date(String(value ?? "")); if (!Number.isFinite(date.getTime())) throw new HttpError("Valid expiry date is required", 400); return date.toISOString(); }
 function licenseCode() { const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const part = () => Array.from(crypto.getRandomValues(new Uint8Array(5))).map((n) => alphabet[n % alphabet.length]).join(""); return `${part()}-${part()}-${part()}`; }
+function recoveryCode() { const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const part = () => Array.from(crypto.getRandomValues(new Uint8Array(5))).map((n) => alphabet[n % alphabet.length]).join(""); return `REC-${part()}-${part()}-${part()}`; }
 async function sha256Hex(value: string) { const bytes = new TextEncoder().encode(value); const digest = await crypto.subtle.digest("SHA-256", bytes); return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join(""); }
 async function inviteById(admin: AdminClient, id: string) { const { data, error } = await admin.from("store_invites").select().eq("id", id).single(); if (error) throw error; return data; }
 async function unusedInviteById(admin: AdminClient, id: string) { const invite = await inviteById(admin, id); if (invite.store_id || invite.used_count !== 0 || invite.used_at) throw new HttpError("Only unused licenses can be changed or removed", 409); return invite; }

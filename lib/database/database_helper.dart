@@ -37,7 +37,7 @@ class ProductImageConnectionReport {
 class DatabaseHelper {
   static Database? _database;
   static bool _syncInProgress = false;
-  static const int _dbVersion = 9;
+  static const int _dbVersion = 10;
   static const saleCompletionGracePeriod = Duration(seconds: 10);
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
   static const int _productImageSize = 300;
@@ -522,6 +522,7 @@ class DatabaseHelper {
         product_name TEXT NOT NULL,
         quantity INTEGER NOT NULL,
         price REAL NOT NULL,
+        cost_price REAL,
         total REAL NOT NULL,
         image_url TEXT,
         voided_at TEXT,
@@ -579,6 +580,9 @@ class DatabaseHelper {
     }
     if (oldVersion < 9) {
       await _ensureProductSchema(db);
+    }
+    if (oldVersion < 10) {
+      await _ensureSalesSchema(db);
     }
   }
 
@@ -713,6 +717,9 @@ class DatabaseHelper {
 
     if (!columnNames.contains('image_url')) {
       await db.execute('ALTER TABLE sales ADD COLUMN image_url TEXT');
+    }
+    if (!columnNames.contains('cost_price')) {
+      await db.execute('ALTER TABLE sales ADD COLUMN cost_price REAL');
     }
     if (!columnNames.contains('voided_at')) {
       await db.execute('ALTER TABLE sales ADD COLUMN voided_at TEXT');
@@ -1202,6 +1209,7 @@ class DatabaseHelper {
       'product_name': _cloudString(payload, cloudRow, 'product_name'),
       'quantity': _cloudInt(payload, cloudRow, 'quantity'),
       'price': _cloudNumber(payload, cloudRow, 'price'),
+      'cost_price': _cloudNullableNumber(payload, cloudRow, 'cost_price'),
       'total': _cloudNumber(payload, cloudRow, 'total'),
       'image_url': null,
       'voided_at': _cloudNullableString(payload, cloudRow, 'voided_at'),
@@ -1286,6 +1294,16 @@ class DatabaseHelper {
     final value = payload.containsKey(key) ? payload[key] : cloudRow[key];
     if (value is num) return value;
     return num.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  num? _cloudNullableNumber(
+    Map<String, Object?> payload,
+    Map<String, dynamic> cloudRow,
+    String key,
+  ) {
+    final value = payload.containsKey(key) ? payload[key] : cloudRow[key];
+    if (value is num) return value;
+    return num.tryParse(value?.toString() ?? '');
   }
 
   int _cloudInt(

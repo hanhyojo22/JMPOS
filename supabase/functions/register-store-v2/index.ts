@@ -66,15 +66,10 @@ Deno.serve(async (req: Request) => {
 
     const codeHash = await sha256Hex(inviteCode);
     const installationIdHash = await sha256Hex(installationId);
-    const { data: invite, error: inviteError } = await admin
-      .from("store_invites")
-      .select("id, store_id, max_uses, device_slot_limit, license_duration_months, used_count, expires_at, license_expires_at, status")
-      .eq("code_hash", codeHash)
-      .maybeSingle();
-
-    if (inviteError) throw inviteError;
+    const resolved = await resolveRegistrationCode(admin, codeHash);
+    const invite = resolved.invite;
     if (!invite || invite.status === "revoked") {
-      return jsonResponse({ error: "Invite/license code is invalid" }, 400);
+      return jsonResponse({ error: resolved.recoveryError ?? "Invite/license code is invalid" }, 400);
     }
     if (invite.expires_at && new Date(invite.expires_at) <= new Date()) {
       return jsonResponse({ error: "Invite/license code has expired" }, 400);
@@ -101,14 +96,16 @@ Deno.serve(async (req: Request) => {
       (invite.used_count ?? 0) >= invite.max_uses;
 
     if (licenseAlreadyUsed) {
-      const restored = await restoreExistingDevice(
-        admin,
-        installationIdHash,
-        invite.id,
-        inviteCode,
-        presentedActivationToken,
-        invite.license_expires_at,
-      );
+      const restored = resolved.recoveryCodeId
+        ? null
+        : await restoreExistingDevice(
+          admin,
+          installationIdHash,
+          invite.id,
+          inviteCode,
+          presentedActivationToken,
+          invite.license_expires_at,
+        );
       if (restored) return jsonResponse(restored);
 
       if (!anonKey) {
@@ -129,6 +126,7 @@ Deno.serve(async (req: Request) => {
         deviceName,
         deviceSlotLimit: invite.device_slot_limit ?? 1,
         licenseExpiresAt: invite.license_expires_at,
+        recoveryCodeId: resolved.recoveryCodeId,
       });
       if (restoredByOwner) return jsonResponse(restoredByOwner);
 
@@ -277,6 +275,9 @@ Deno.serve(async (req: Request) => {
         { code: "DEVICE_LICENSE_CONFLICT", error: error.message },
         409,
       );
+    }
+    if (error instanceof RecoveryCodeError) {
+      return jsonResponse({ error: error.message }, 409);
     }
     if (error instanceof SlotLimitError) {
       return jsonResponse(
@@ -428,6 +429,7 @@ async function restoreUsedLicenseForOwner({
   deviceName,
   deviceSlotLimit,
   licenseExpiresAt,
+  recoveryCodeId,
 }: {
   admin: AdminClient;
   supabaseUrl: string;
@@ -443,6 +445,7 @@ async function restoreUsedLicenseForOwner({
   deviceName: string;
   deviceSlotLimit: number;
   licenseExpiresAt: string | null;
+  recoveryCodeId: string | null;
 }) {
   if (!invite.store_id) return null;
 
@@ -482,6 +485,30 @@ async function restoreUsedLicenseForOwner({
 
   const activationToken = crypto.randomUUID();
   const activationTokenHash = await sha256Hex(activationToken);
+  let recoveryConsumption: {
+    id: string;
+    invite_id: string;
+    issued_by_admin_user_id: string;
+  } | null = null;
+  let consumedAt = "";
+  if (recoveryCodeId) {
+    consumedAt = new Date().toISOString();
+    const { data: recovery, error: recoveryError } = await admin
+      .from("license_recovery_codes")
+      .update({ consumed_at: consumedAt })
+      .eq("id", recoveryCodeId)
+      .is("consumed_at", null)
+      .is("invalidated_at", null)
+      .gt("expires_at", consumedAt)
+      .select("id, invite_id, issued_by_admin_user_id")
+      .maybeSingle();
+    if (recoveryError) throw recoveryError;
+    if (!recovery) {
+      throw new RecoveryCodeError("Recovery code is no longer active");
+    }
+    recoveryConsumption = recovery;
+  }
+
   const { error: deviceError } = await admin.from("store_devices").upsert(
     {
       store_id: store.id,
@@ -498,13 +525,39 @@ async function restoreUsedLicenseForOwner({
     { onConflict: "installation_id_hash" },
   );
 
-  if (deviceError) throw deviceError;
+  if (deviceError) {
+    if (recoveryConsumption) {
+      await admin
+      .from("license_recovery_codes")
+        .update({ consumed_at: null })
+        .eq("id", recoveryConsumption.id)
+        .eq("consumed_at", consumedAt);
+    }
+    throw deviceError;
+  }
+
+  if (recoveryConsumption) {
+    const { error: auditError } = await admin
+      .from("license_admin_audit_logs")
+      .insert({
+        admin_user_id: recoveryConsumption.issued_by_admin_user_id,
+        invite_id: recoveryConsumption.invite_id,
+        action: "consume-recovery-code",
+        after_values: {
+          recoveryCodeId: recoveryConsumption.id,
+          replacementInstallationIdHash: installationIdHash,
+          consumedAt,
+        },
+      });
+    if (auditError) throw auditError;
+  }
 
   return {
     functionVersion: "register-store-admin-v4",
     storeId: store.id,
     storeName: store.name,
-    licenseKey,
+    licenseKey: recoveryCodeId ? "" : licenseKey,
+    persistLicenseKey: !recoveryCodeId,
     activationToken,
     licenseExpiresAt,
     daysRemaining: daysRemaining(licenseExpiresAt),
@@ -512,6 +565,47 @@ async function restoreUsedLicenseForOwner({
     session: null,
     sessionCreated: false,
     message: "License was restored after owner verification.",
+  };
+}
+
+async function resolveRegistrationCode(
+  admin: AdminClient,
+  codeHash: string,
+) {
+  const { data: invite, error: inviteError } = await admin
+    .from("store_invites")
+    .select("id, store_id, max_uses, device_slot_limit, license_duration_months, used_count, expires_at, license_expires_at, status")
+    .eq("code_hash", codeHash)
+    .maybeSingle();
+  if (inviteError) throw inviteError;
+  if (invite) return { invite, recoveryCodeId: null, recoveryError: null };
+
+  const { data: recovery, error: recoveryError } = await admin
+    .from("license_recovery_codes")
+    .select("id, expires_at, consumed_at, invalidated_at, store_invites(id, store_id, max_uses, device_slot_limit, license_duration_months, used_count, expires_at, license_expires_at, status)")
+    .eq("code_hash", codeHash)
+    .maybeSingle();
+  if (recoveryError) throw recoveryError;
+  if (!recovery) return { invite: null, recoveryCodeId: null, recoveryError: null };
+  if (recovery.consumed_at) {
+    return { invite: null, recoveryCodeId: null, recoveryError: "Recovery code has already been used" };
+  }
+  if (recovery.invalidated_at) {
+    return { invite: null, recoveryCodeId: null, recoveryError: "Recovery code is no longer active" };
+  }
+  if (new Date(recovery.expires_at) <= new Date()) {
+    return { invite: null, recoveryCodeId: null, recoveryError: "Recovery code has expired" };
+  }
+  const recoveryInvite = Array.isArray(recovery.store_invites)
+    ? recovery.store_invites[0]
+    : recovery.store_invites;
+  if (!recoveryInvite?.store_id) {
+    return { invite: null, recoveryCodeId: null, recoveryError: "Recovery code is invalid" };
+  }
+  return {
+    invite: recoveryInvite,
+    recoveryCodeId: recovery.id as string,
+    recoveryError: null,
   };
 }
 
@@ -590,3 +684,5 @@ class DeviceLicenseConflictError extends Error {
     );
   }
 }
+
+class RecoveryCodeError extends Error {}

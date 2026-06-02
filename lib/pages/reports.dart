@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/theme/app_typography.dart';
 import 'package:pos_app/utils/currency.dart';
+import 'package:pos_app/utils/profit_margin.dart' as profit_margin;
 import 'package:sqflite_sqlcipher/sqflite.dart';
 
 const _purple = Color(0xFF667EEA);
@@ -19,7 +20,7 @@ const _lowStockThreshold = 10;
 
 enum _ReportPeriod { today, custom }
 
-enum _ReportSection { overview, topProducts, inventory, voids }
+enum _ReportSection { overview, profit, topProducts, inventory, voids }
 
 class ReportsPage extends StatefulWidget {
   const ReportsPage({super.key, this.onOpenMenu, this.readOnly = false});
@@ -144,6 +145,10 @@ class _ReportsPageState extends State<ReportsPage> {
     final productStats = <int, _ProductAccumulator>{};
     final categoryRevenue = <String, double>{};
     final trendRevenue = <DateTime, double>{};
+    final trendProfit = <DateTime, double>{};
+    var coveredRevenue = 0.0;
+    var costOfGoodsSold = 0.0;
+    var legacyMissingCostCount = 0;
 
     for (final row in rows) {
       final createdAt = DateTime.tryParse(
@@ -188,6 +193,17 @@ class _ReportsPageState extends State<ReportsPage> {
             )
           : DateTime(createdAt.year, createdAt.month, createdAt.day);
       trendRevenue[trendKey] = (trendRevenue[trendKey] ?? 0) + total;
+      final costPrice = (row['cost_price'] as num?)?.toDouble();
+      if (costPrice == null) {
+        legacyMissingCostCount++;
+      } else {
+        final quantity = (row['quantity'] as num?)?.toInt() ?? 0;
+        final lineCost = costPrice * quantity;
+        final lineProfit = total - lineCost;
+        coveredRevenue += total;
+        costOfGoodsSold += lineCost;
+        trendProfit[trendKey] = (trendProfit[trendKey] ?? 0) + lineProfit;
+      }
     }
 
     final completedReceipts = receipts.values
@@ -201,6 +217,8 @@ class _ReportsPageState extends State<ReportsPage> {
       ..sort((a, b) => b.quantity.compareTo(a.quantity));
     final topByRevenue = [...stats]
       ..sort((a, b) => b.revenue.compareTo(a.revenue));
+    final productProfitability = [...stats]
+      ..sort((a, b) => b.grossProfit.compareTo(a.grossProfit));
 
     final inventory = _InventorySnapshot.fromProducts(products);
     final soldProductIds = productStats.keys.toSet();
@@ -219,6 +237,9 @@ class _ReportsPageState extends State<ReportsPage> {
       range: range,
       filteredRows: filteredRows,
       revenue: completedReceipts.fold(0, (sum, receipt) => sum + receipt.total),
+      coveredRevenue: coveredRevenue,
+      costOfGoodsSold: costOfGoodsSold,
+      legacyMissingCostCount: legacyMissingCostCount,
       receipts: completedReceipts.length,
       itemsSold: completedReceipts.fold(
         0,
@@ -233,8 +254,10 @@ class _ReportsPageState extends State<ReportsPage> {
           .toList(),
       topByQuantity: topByQuantity.take(5).toList(),
       topByRevenue: topByRevenue.take(5).toList(),
+      productProfitability: productProfitability,
       categoryRevenue: categoryRevenue,
       trend: _buildTrend(range, trendRevenue),
+      profitTrend: _buildTrend(range, trendProfit),
       inventory: inventory,
       slowMovers: slowMovers,
       periodLabel: switch (_period) {
@@ -402,6 +425,14 @@ class _ReportsPageState extends State<ReportsPage> {
       ..writeln('Sales Overview')
       ..writeln('Metric,Value')
       ..writeln('Net Sales,${_data.revenue}')
+      ..writeln('Profit-covered Sales,${_data.coveredRevenue}')
+      ..writeln('Excluded Sales,${_data.excludedRevenue}')
+      ..writeln('Cost Of Goods Sold,${_data.costOfGoodsSold}')
+      ..writeln('Gross Profit,${_data.grossProfit}')
+      ..writeln('Gross Margin,${_data.grossMarginPercent}%')
+      ..writeln(
+        'Legacy Items Missing Historical Cost,${_data.legacyMissingCostCount}',
+      )
       ..writeln('Receipt Count,${_data.receipts}')
       ..writeln('Items Sold,${_data.itemsSold}')
       ..writeln('Average Sale,${_data.averageSale}')
@@ -415,6 +446,27 @@ class _ReportsPageState extends State<ReportsPage> {
       ..writeln('Low Stock Products,${_data.inventory.lowStock.length}')
       ..writeln('Out Of Stock Products,${_data.inventory.outOfStock.length}')
       ..writeln('Estimated Cost Value,${_data.inventory.costValue}')
+      ..writeln()
+      ..writeln('Product Profitability')
+      ..writeln(
+        'Product,Units,Revenue,Covered Revenue,Excluded Revenue,Cost,Gross Profit,Gross Margin,Missing Cost Items',
+      );
+    for (final item in _data.productProfitability) {
+      buffer.writeln(
+        [
+          item.name,
+          item.quantity,
+          item.revenue,
+          item.coveredRevenue,
+          item.excludedRevenue,
+          item.costOfGoodsSold,
+          item.grossProfit,
+          '${item.grossMarginPercent}%',
+          item.missingCostItems,
+        ].map(_csvCell).join(','),
+      );
+    }
+    buffer
       ..writeln()
       ..writeln('Top Products By Quantity')
       ..writeln('Product,Units,Revenue');
@@ -477,12 +529,15 @@ class _ReportsPageState extends State<ReportsPage> {
   String _buildDetailedCsv() {
     final buffer = StringBuffer()
       ..writeln(
-        'Receipt Number,Date,Product ID,Product Name,Quantity,Unit Price,Total,Status,Voided By,Void Reason',
+        'Receipt Number,Date,Product ID,Product Name,Quantity,Unit Price,Unit Cost,Gross Profit,Total,Status,Voided By,Void Reason',
       );
     for (final row in _data.filteredRows) {
       final createdAt = DateTime.tryParse(
         row['created_at']?.toString() ?? '',
       )?.toLocal();
+      final unitCost = (row['cost_price'] as num?)?.toDouble();
+      final quantity = (row['quantity'] as num?)?.toInt() ?? 0;
+      final total = (row['total'] as num?)?.toDouble() ?? 0;
       buffer.writeln(
         [
           _receiptKey(row, createdAt ?? DateTime.now()),
@@ -491,6 +546,8 @@ class _ReportsPageState extends State<ReportsPage> {
           row['product_name'],
           row['quantity'],
           row['price'],
+          unitCost,
+          unitCost == null ? null : total - (unitCost * quantity),
           row['total'],
           _isVoided(row) ? 'Voided' : 'Completed',
           row['voided_by'],
@@ -638,6 +695,7 @@ class _ReportsPageState extends State<ReportsPage> {
     final selected = _section == section;
     final label = switch (section) {
       _ReportSection.overview => 'Overview',
+      _ReportSection.profit => 'Profit',
       _ReportSection.topProducts => 'Products',
       _ReportSection.inventory => 'Inventory',
       _ReportSection.voids => 'Voids',
@@ -712,16 +770,47 @@ class _ReportView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          _TrendCard(points: data.trend, period: data.periodLabel),
+          _TrendCard(
+            key: const ValueKey('sales-trend'),
+            salesPoints: data.trend,
+            profitPoints: data.profitTrend,
+            period: data.periodLabel,
+            allowToggle: false,
+          ),
           const SizedBox(height: 16),
           _CategoryCard(revenue: data.categoryRevenue),
+        ],
+        _ReportSection.profit => [
+          _ProfitOverviewCard(
+            data: data,
+            onSelectCustomRange: onSelectCustomRange,
+          ),
+          const SizedBox(height: 16),
+          _ProfitReconciliationCard(data: data),
+          if (data.legacyMissingCostCount > 0) ...[
+            const SizedBox(height: 12),
+            _LegacyCostWarning(
+              count: data.legacyMissingCostCount,
+              excludedRevenue: data.excludedRevenue,
+            ),
+          ],
+          const SizedBox(height: 16),
+          _TrendCard(
+            key: const ValueKey('profit-trend'),
+            salesPoints: data.trend,
+            profitPoints: data.profitTrend,
+            period: data.periodLabel,
+            initialShowProfit: true,
+            allowToggle: false,
+          ),
+          const SizedBox(height: 16),
+          _ProfitabilityCard(items: data.productProfitability),
         ],
         _ReportSection.topProducts => [
           _ProductHighlights(
             topByQuantity: data.topByQuantity,
             topByRevenue: data.topByRevenue,
           ),
-          const SizedBox(height: 16),
           _InsightPreview(
             title: 'Slow-moving Products',
             subtitle: 'In stock with no sales in this period',
@@ -943,6 +1032,244 @@ class _SalesOverviewCard extends StatelessWidget {
   }
 }
 
+class _ProfitOverviewCard extends StatelessWidget {
+  const _ProfitOverviewCard({
+    required this.data,
+    required this.onSelectCustomRange,
+  });
+
+  final _ReportData data;
+  final VoidCallback onSelectCustomRange;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final profitColor = data.grossProfit < 0 ? _red : _green;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [const Color(0xFF172033), const Color(0xFF111827)]
+              : [const Color(0xFFF0FDF4), Colors.white],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: profitColor.withValues(alpha: 0.22)),
+        boxShadow: [
+          BoxShadow(
+            color: profitColor.withValues(alpha: isDark ? 0.08 : 0.1),
+            blurRadius: 18,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Gross Profit', style: AppTypography.caption),
+                    const SizedBox(height: 5),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        CurrencyFormatter.format(data.grossProfit),
+                        style: AppTypography.heroAmount.copyWith(
+                          color: profitColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              _ProfitMarginChip(
+                margin: data.grossMarginPercent,
+                color: profitColor,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Icon(
+                Icons.calendar_month_outlined,
+                size: 16,
+                color: Color(0xFF64748B),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _profitRangeLabel(data.range),
+                  style: AppTypography.caption,
+                ),
+              ),
+              TextButton(
+                onPressed: onSelectCustomRange,
+                child: const Text('Change date'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _profitRangeLabel(DateTimeRange range) {
+  final end = range.end.subtract(const Duration(days: 1));
+  if (range.start.year == end.year &&
+      range.start.month == end.month &&
+      range.start.day == end.day) {
+    return DateFormat('MMM d, yyyy').format(range.start);
+  }
+  return '${DateFormat('MMM d').format(range.start)} - '
+      '${DateFormat('MMM d, yyyy').format(end)}';
+}
+
+class _ProfitMarginChip extends StatelessWidget {
+  const _ProfitMarginChip({required this.margin, required this.color});
+
+  final double margin;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            '${margin.toStringAsFixed(1)}%',
+            style: AppTypography.cardTitle.copyWith(color: color),
+          ),
+          Text(
+            'Margin',
+            style: AppTypography.smallCaption.copyWith(color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfitReconciliationCard extends StatelessWidget {
+  const _ProfitReconciliationCard({required this.data});
+
+  final _ReportData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final profitColor = data.grossProfit < 0 ? _red : _green;
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Profit Breakdown', style: AppTypography.cardTitle),
+          const SizedBox(height: 4),
+          Text(
+            'How your sales revenue becomes gross profit',
+            style: AppTypography.caption,
+          ),
+          const SizedBox(height: 14),
+          _ProfitBreakdownRow(
+            label: 'Total Sales Revenue',
+            value: data.revenue,
+            icon: Icons.payments_outlined,
+          ),
+          _ProfitBreakdownRow(
+            label: 'Profit-covered Sales',
+            value: data.coveredRevenue,
+            icon: Icons.verified_outlined,
+            color: _green,
+          ),
+          _ProfitBreakdownRow(
+            label: 'Excluded Sales',
+            value: data.excludedRevenue,
+            icon: Icons.info_outline_rounded,
+            color: data.excludedRevenue > 0 ? _amber : null,
+          ),
+          _ProfitBreakdownRow(
+            label: 'Cost of Goods Sold',
+            value: data.costOfGoodsSold,
+            icon: Icons.inventory_2_outlined,
+            color: _amber,
+          ),
+          const Divider(height: 24),
+          _ProfitBreakdownRow(
+            label: 'Gross Profit',
+            value: data.grossProfit,
+            icon: Icons.trending_up_rounded,
+            color: profitColor,
+            emphasized: true,
+            bottomPadding: 0,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfitBreakdownRow extends StatelessWidget {
+  const _ProfitBreakdownRow({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.color,
+    this.emphasized = false,
+    this.bottomPadding = 12,
+  });
+
+  final String label;
+  final double value;
+  final IconData icon;
+  final Color? color;
+  final bool emphasized;
+  final double bottomPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final valueColor = color ?? Theme.of(context).colorScheme.onSurface;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomPadding),
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: color ?? const Color(0xFF64748B)),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              label,
+              style: emphasized
+                  ? AppTypography.emphasizedBody
+                  : AppTypography.body,
+            ),
+          ),
+          Text(
+            CurrencyFormatter.format(value),
+            style:
+                (emphasized
+                        ? AppTypography.cardTitle
+                        : AppTypography.emphasizedBody)
+                    .copyWith(color: valueColor),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _OverviewTile extends StatelessWidget {
   const _OverviewTile({
     required this.width,
@@ -1014,13 +1341,74 @@ class _OverviewTile extends StatelessWidget {
   }
 }
 
-class _TrendCard extends StatelessWidget {
-  const _TrendCard({required this.points, required this.period});
-  final List<_TrendPoint> points;
-  final String period;
+class _LegacyCostWarning extends StatelessWidget {
+  const _LegacyCostWarning({
+    required this.count,
+    required this.excludedRevenue,
+  });
+
+  final int count;
+  final double excludedRevenue;
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _amber.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _amber.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline_rounded, color: _amber, size: 20),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              '${CurrencyFormatter.format(excludedRevenue)} from $count older '
+              'sale item${count == 1 ? '' : 's'} is excluded from profit. '
+              'Historical cost is unavailable, so the app does not estimate it.',
+              style: AppTypography.caption,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrendCard extends StatefulWidget {
+  const _TrendCard({
+    super.key,
+    required this.salesPoints,
+    required this.profitPoints,
+    required this.period,
+    this.initialShowProfit = false,
+    this.allowToggle = true,
+  });
+  final List<_TrendPoint> salesPoints;
+  final List<_TrendPoint> profitPoints;
+  final String period;
+  final bool initialShowProfit;
+  final bool allowToggle;
+
+  @override
+  State<_TrendCard> createState() => _TrendCardState();
+}
+
+class _TrendCardState extends State<_TrendCard> {
+  late bool _showProfit;
+
+  @override
+  void initState() {
+    super.initState();
+    _showProfit = widget.initialShowProfit;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final points = _showProfit ? widget.profitPoints : widget.salesPoints;
     return _Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1029,7 +1417,7 @@ class _TrendCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Sales Trend ($period)',
+                  '${_showProfit ? 'Profit' : 'Sales'} Trend (${widget.period})',
                   style: AppTypography.cardTitle,
                 ),
               ),
@@ -1046,12 +1434,21 @@ class _TrendCard extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      period == 'Today' ? 'Hourly' : 'Daily',
-                      style: AppTypography.smallCaption,
+                    InkWell(
+                      onTap: widget.allowToggle
+                          ? () => setState(() => _showProfit = !_showProfit)
+                          : null,
+                      child: Text(
+                        _showProfit ? 'Profit' : 'Sales',
+                        style: AppTypography.smallCaption.copyWith(
+                          color: const Color(0xFF2563EB),
+                        ),
+                      ),
                     ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.keyboard_arrow_down, size: 15),
+                    if (widget.allowToggle) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.swap_horiz_rounded, size: 15),
+                    ],
                   ],
                 ),
               ),
@@ -1463,6 +1860,252 @@ class _ProductList extends StatelessWidget {
   }
 }
 
+class _ProfitabilityCard extends StatelessWidget {
+  const _ProfitabilityCard({required this.items});
+
+  final List<_ProductAccumulator> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 10),
+            child: _SectionHeader(
+              title: 'Product Profitability',
+              subtitle: 'All sold products ranked by gross profit',
+              icon: Icons.insights_outlined,
+              color: _green,
+            ),
+          ),
+          if (items.isEmpty)
+            const _InlineEmpty(message: 'No completed sales in this period')
+          else
+            ...items.map((item) => _ProfitabilityRow(item: item)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfitabilityRow extends StatelessWidget {
+  const _ProfitabilityRow({required this.item});
+
+  final _ProductAccumulator item;
+
+  @override
+  Widget build(BuildContext context) {
+    final profitColor = item.grossProfit < 0 ? _red : _green;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return InkWell(
+      onTap: () => _showProductProfitDetails(context, item),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: profitColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(
+                item.grossProfit < 0
+                    ? Icons.trending_down_rounded
+                    : Icons.trending_up_rounded,
+                color: profitColor,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.emphasizedBody,
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Text(
+                        '${item.quantity} units sold',
+                        style: AppTypography.caption,
+                      ),
+                      if (item.missingCostItems > 0) ...[
+                        const SizedBox(width: 7),
+                        const Icon(
+                          Icons.info_outline_rounded,
+                          color: _amber,
+                          size: 14,
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  CurrencyFormatter.format(item.grossProfit),
+                  style: AppTypography.label.copyWith(color: profitColor),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: profitColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${item.grossMarginPercent.toStringAsFixed(1)}%',
+                    style: AppTypography.smallCaption.copyWith(
+                      color: profitColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 6),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: isDark ? Colors.white38 : Colors.black38,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showProductProfitDetails(
+  BuildContext context,
+  _ProductAccumulator item,
+) {
+  final profitColor = item.grossProfit < 0 ? _red : _green;
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (context) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(item.name, style: AppTypography.sectionTitle),
+            const SizedBox(height: 3),
+            Text('${item.quantity} units sold', style: AppTypography.caption),
+            const SizedBox(height: 18),
+            _ProductProfitDetailRow(
+              label: 'Total Sales Revenue',
+              value: CurrencyFormatter.format(item.revenue),
+            ),
+            _ProductProfitDetailRow(
+              label: 'Profit-covered Sales',
+              value: CurrencyFormatter.format(item.coveredRevenue),
+              valueColor: _green,
+            ),
+            _ProductProfitDetailRow(
+              label: 'Excluded Sales',
+              value: CurrencyFormatter.format(item.excludedRevenue),
+              valueColor: item.excludedRevenue > 0 ? _amber : null,
+            ),
+            _ProductProfitDetailRow(
+              label: 'Cost of Goods Sold',
+              value: CurrencyFormatter.format(item.costOfGoodsSold),
+            ),
+            const Divider(height: 24),
+            _ProductProfitDetailRow(
+              label: 'Gross Profit',
+              value: CurrencyFormatter.format(item.grossProfit),
+              valueColor: profitColor,
+              emphasized: true,
+            ),
+            _ProductProfitDetailRow(
+              label: 'Gross Margin',
+              value: '${item.grossMarginPercent.toStringAsFixed(1)}%',
+              valueColor: profitColor,
+              emphasized: true,
+            ),
+            if (item.missingCostItems > 0) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: _amber.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${item.missingCostItems} older sale item${item.missingCostItems == 1 ? '' : 's'} '
+                  'excluded because historical cost is unavailable.',
+                  style: AppTypography.caption,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _ProductProfitDetailRow extends StatelessWidget {
+  const _ProductProfitDetailRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+    this.emphasized = false,
+  });
+
+  final String label;
+  final String value;
+  final Color? valueColor;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: emphasized
+                  ? AppTypography.emphasizedBody
+                  : AppTypography.body,
+            ),
+          ),
+          Text(
+            value,
+            style:
+                (emphasized
+                        ? AppTypography.cardTitle
+                        : AppTypography.emphasizedBody)
+                    .copyWith(color: valueColor),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SlowMoverList extends StatelessWidget {
   const _SlowMoverList({required this.items});
   final List<_SlowMover> items;
@@ -1603,7 +2246,15 @@ class _TrendPainter extends CustomPainter {
     const bottom = 28.0;
     final width = size.width - left - right;
     final height = size.height - top - bottom;
-    final maxValue = points.map((point) => point.value).fold<double>(0, max);
+    final values = points.map((point) => point.value);
+    final maxValue = values.fold<double>(0, max);
+    final minValue = values.fold<double>(0, min);
+    final valueRange = maxValue - minValue;
+    double yFor(double value) =>
+        top +
+        height -
+        (valueRange == 0 ? 0 : (value - minValue) / valueRange * height);
+    final zeroY = yFor(0);
     final axis = Paint()
       ..color = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
     final grid = Paint()
@@ -1637,7 +2288,7 @@ class _TrendPainter extends CustomPainter {
     for (var index = 0; index <= 4; index++) {
       final y = top + height * index / 4;
       canvas.drawLine(Offset(left, y), Offset(size.width - right, y), grid);
-      final value = maxValue * (4 - index) / 4;
+      final value = maxValue - valueRange * index / 4;
       final painter = TextPainter(
         text: TextSpan(text: _compactMoney(value), style: labelStyle),
         textDirection: ui.TextDirection.ltr,
@@ -1645,8 +2296,8 @@ class _TrendPainter extends CustomPainter {
       painter.paint(canvas, Offset(0, y - painter.height / 2));
     }
     canvas.drawLine(
-      Offset(left, top + height),
-      Offset(size.width - right, top + height),
+      Offset(left, zeroY),
+      Offset(size.width - right, zeroY),
       axis,
     );
     final path = Path();
@@ -1658,14 +2309,11 @@ class _TrendPainter extends CustomPainter {
           (points.length == 1
               ? width / 2
               : width * index / (points.length - 1));
-      final y =
-          top +
-          height -
-          (maxValue == 0 ? 0 : points[index].value / maxValue * height);
+      final y = yFor(points[index].value);
       offsets.add(Offset(x, y));
       if (index == 0) {
         path.moveTo(x, y);
-        fillPath.moveTo(x, top + height);
+        fillPath.moveTo(x, zeroY);
         fillPath.lineTo(x, y);
       } else {
         path.lineTo(x, y);
@@ -1673,7 +2321,7 @@ class _TrendPainter extends CustomPainter {
       }
     }
     fillPath
-      ..lineTo(size.width, top + height)
+      ..lineTo(size.width, zeroY)
       ..close();
     canvas.drawPath(fillPath, fill);
     canvas.drawPath(path, line);
@@ -1880,14 +2528,19 @@ class _ReportData {
     required this.range,
     required this.filteredRows,
     required this.revenue,
+    required this.coveredRevenue,
+    required this.costOfGoodsSold,
+    required this.legacyMissingCostCount,
     required this.receipts,
     required this.itemsSold,
     required this.voidedAmount,
     required this.voidedReceipts,
     required this.topByQuantity,
     required this.topByRevenue,
+    required this.productProfitability,
     required this.categoryRevenue,
     required this.trend,
+    required this.profitTrend,
     required this.inventory,
     required this.slowMovers,
     required this.periodLabel,
@@ -1903,14 +2556,19 @@ class _ReportData {
       ),
       filteredRows: const [],
       revenue: 0,
+      coveredRevenue: 0,
+      costOfGoodsSold: 0,
+      legacyMissingCostCount: 0,
       receipts: 0,
       itemsSold: 0,
       voidedAmount: 0,
       voidedReceipts: const [],
       topByQuantity: const [],
       topByRevenue: const [],
+      productProfitability: const [],
       categoryRevenue: const {},
       trend: const [],
+      profitTrend: const [],
       inventory: const _InventorySnapshot.empty(),
       slowMovers: const [],
       periodLabel: 'Today',
@@ -1920,19 +2578,36 @@ class _ReportData {
   final DateTimeRange range;
   final List<Map<String, Object?>> filteredRows;
   final double revenue;
+  final double coveredRevenue;
+  final double costOfGoodsSold;
+  final int legacyMissingCostCount;
   final int receipts;
   final int itemsSold;
   final double voidedAmount;
   final List<_VoidAudit> voidedReceipts;
   final List<_ProductAccumulator> topByQuantity;
   final List<_ProductAccumulator> topByRevenue;
+  final List<_ProductAccumulator> productProfitability;
   final Map<String, double> categoryRevenue;
   final List<_TrendPoint> trend;
+  final List<_TrendPoint> profitTrend;
   final _InventorySnapshot inventory;
   final List<_SlowMover> slowMovers;
   final String periodLabel;
 
   double get averageSale => receipts == 0 ? 0 : revenue / receipts;
+  double get excludedRevenue => profit_margin.excludedRevenue(
+    totalRevenue: revenue,
+    coveredRevenue: coveredRevenue,
+  );
+  double get grossProfit => profit_margin.grossProfit(
+    coveredRevenue: coveredRevenue,
+    costOfGoodsSold: costOfGoodsSold,
+  );
+  double get grossMarginPercent => profit_margin.grossMarginPercent(
+    coveredRevenue: coveredRevenue,
+    costOfGoodsSold: costOfGoodsSold,
+  );
 }
 
 class _ReceiptAccumulator {
@@ -1975,11 +2650,36 @@ class _ProductAccumulator {
   final String name;
   int quantity = 0;
   double revenue = 0;
+  double coveredRevenue = 0;
+  double costOfGoodsSold = 0;
+  int missingCostItems = 0;
 
   void add(Map<String, Object?> row) {
-    quantity += (row['quantity'] as num?)?.toInt() ?? 0;
-    revenue += (row['total'] as num?)?.toDouble() ?? 0;
+    final lineQuantity = (row['quantity'] as num?)?.toInt() ?? 0;
+    final lineRevenue = (row['total'] as num?)?.toDouble() ?? 0;
+    final costPrice = (row['cost_price'] as num?)?.toDouble();
+    quantity += lineQuantity;
+    revenue += lineRevenue;
+    if (costPrice == null) {
+      missingCostItems++;
+    } else {
+      coveredRevenue += lineRevenue;
+      costOfGoodsSold += costPrice * lineQuantity;
+    }
   }
+
+  double get grossProfit => profit_margin.grossProfit(
+    coveredRevenue: coveredRevenue,
+    costOfGoodsSold: costOfGoodsSold,
+  );
+  double get grossMarginPercent => profit_margin.grossMarginPercent(
+    coveredRevenue: coveredRevenue,
+    costOfGoodsSold: costOfGoodsSold,
+  );
+  double get excludedRevenue => profit_margin.excludedRevenue(
+    totalRevenue: revenue,
+    coveredRevenue: coveredRevenue,
+  );
 }
 
 class _VoidAudit {

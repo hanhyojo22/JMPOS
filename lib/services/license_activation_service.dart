@@ -311,7 +311,8 @@ class LicenseActivationService {
     }
 
     await saveActivation(
-      licenseKey: licenseKey,
+      licenseKey: response['licenseKey']?.toString() ?? licenseKey,
+      clearLicenseKeyWhenEmpty: response['persistLicenseKey'] == false,
       installationId: installationId,
       storeId: storeId,
       activationToken: activationToken,
@@ -493,6 +494,7 @@ class LicenseActivationService {
     required String installationId,
     required String storeId,
     required String activationToken,
+    bool clearLicenseKeyWhenEmpty = false,
     String? storeName,
     DateTime? licenseExpiresAt,
     String licenseStatus = 'active',
@@ -501,6 +503,8 @@ class LicenseActivationService {
     await Future.wait([
       if (licenseKey.trim().isNotEmpty)
         _secureStorage.write(key: _licenseKey, value: licenseKey),
+      if (licenseKey.trim().isEmpty && clearLicenseKeyWhenEmpty)
+        _secureStorage.delete(key: _licenseKey),
       _secureStorage.write(key: _installationIdKey, value: installationId),
       _secureStorage.write(key: _storeIdKey, value: storeId),
       _secureStorage.write(key: _activationTokenKey, value: activationToken),

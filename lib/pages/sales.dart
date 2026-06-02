@@ -354,12 +354,27 @@ class _SalesPageState extends State<SalesPage> {
         final product = item['product'];
         final int quantity = item['quantity'];
         final double price = (product['price'] as num).toDouble();
+        final costProductRows = await db.query(
+          'products',
+          columns: ['cost_price'],
+          where: 'id = ?',
+          whereArgs: [product['id']],
+          limit: 1,
+        );
+        if (costProductRows.isEmpty) {
+          throw Exception(
+            '${product['title']} was deleted. Remove it from cart.',
+          );
+        }
+        final costPrice = (costProductRows.first['cost_price'] as num?)
+            ?.toDouble();
         final imagePath = product['imagePath']?.toString();
         final saleRow = {
           'product_id': product['id'],
           'product_name': product['title'],
           'quantity': quantity,
           'price': price,
+          'cost_price': costPrice,
           'total': price * quantity,
           'image_url': imagePath == null || imagePath.isEmpty
               ? null
