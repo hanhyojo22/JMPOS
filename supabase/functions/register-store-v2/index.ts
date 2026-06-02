@@ -55,7 +55,10 @@ Deno.serve(async (req: Request) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY") ?? "";
-    const anonKey = Deno.env.get("PUBLIC_ANON_KEY") ?? "";
+    const anonKey =
+      Deno.env.get("PUBLIC_ANON_KEY") ??
+      Deno.env.get("SUPABASE_ANON_KEY") ??
+      "";
     if (!supabaseUrl || !serviceRoleKey) {
       return jsonResponse({ error: "Registration service is not configured" }, 500);
     }
@@ -130,26 +133,9 @@ Deno.serve(async (req: Request) => {
       });
       if (restoredByOwner) return jsonResponse(restoredByOwner);
 
-      if (invite.store_id) {
-        const ownerMatches = await licenseOwnerEmailMatches(
-          admin,
-          invite.store_id,
-          email,
-        );
-        if (ownerMatches === false) {
-          return jsonResponse(
-            {
-              error:
-                "This email does not match the existing license account.",
-            },
-            403,
-          );
-        }
-      }
-
       return jsonResponse(
-        { error: "Invite/license code is already registered. Sign in with the original owner account to restore this store." },
-        400,
+        { error: "This email or password does not match the existing license account." },
+        403,
       );
     }
 
@@ -638,26 +624,6 @@ async function assertDeviceAvailableForInvite(
   if (device && !device.revoked_at && device.invite_id !== inviteId) {
     throw new DeviceLicenseConflictError();
   }
-}
-
-async function licenseOwnerEmailMatches(
-  admin: AdminClient,
-  storeId: string,
-  email: string,
-) {
-  const { data: store, error: storeError } = await admin
-    .from("stores")
-    .select("owner_user_id")
-    .eq("id", storeId)
-    .single();
-  if (storeError) throw storeError;
-  if (!store.owner_user_id) return null;
-
-  const { data: ownerData, error: ownerError } =
-    await admin.auth.admin.getUserById(store.owner_user_id);
-  if (ownerError) throw ownerError;
-
-  return ownerData.user?.email?.trim().toLowerCase() === email;
 }
 
 async function sha256Hex(value: string) {
