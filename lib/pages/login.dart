@@ -203,11 +203,10 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     try {
-      await LicenseActivationService.instance.saveCloudSyncCredentials(
+      await LicenseActivationService.instance.connectCloudSyncCredentials(
         email: email,
         password: password,
       );
-      await LicenseActivationService.instance.ensureCloudSyncSignedIn();
     } catch (_) {
       // Local login should still succeed if cloud is temporarily unavailable.
     }

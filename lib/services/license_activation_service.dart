@@ -400,6 +400,36 @@ class LicenseActivationService {
     ]);
   }
 
+  Future<bool> connectCloudSyncCredentials({
+    required String email,
+    required String password,
+  }) async {
+    final cleanedEmail = email.trim().toLowerCase();
+    if (cleanedEmail.isEmpty || password.isEmpty) return false;
+
+    final previous = await Future.wait([
+      _secureStorage.read(key: _cloudEmailKey),
+      _secureStorage.read(key: _cloudPasswordKey),
+    ]);
+    final client = Supabase.instance.client;
+    await client.auth.signOut();
+    await saveCloudSyncCredentials(email: cleanedEmail, password: password);
+    if (await ensureCloudSyncSignedIn()) return true;
+
+    await Future.wait([
+      if (previous[0]?.isNotEmpty == true)
+        _secureStorage.write(key: _cloudEmailKey, value: previous[0]!)
+      else
+        _secureStorage.delete(key: _cloudEmailKey),
+      if (previous[1]?.isNotEmpty == true)
+        _secureStorage.write(key: _cloudPasswordKey, value: previous[1]!)
+      else
+        _secureStorage.delete(key: _cloudPasswordKey),
+    ]);
+    await ensureCloudSyncSignedIn();
+    return false;
+  }
+
   Future<String?> readLocalOwnerStoreId() async {
     final storeId = await _secureStorage.read(key: _localOwnerStoreIdKey);
     final trimmed = storeId?.trim() ?? '';
@@ -430,7 +460,8 @@ class LicenseActivationService {
       final currentEmail = client.auth.currentUser?.email?.trim().toLowerCase();
       if (client.auth.currentSession != null) {
         if (email.isEmpty || currentEmail == email) {
-          return _authorizeCloudSyncSession(client);
+          if (await _authorizeCloudSyncSession(client)) return true;
+          if (email.isEmpty || password.isEmpty) return false;
         }
         await client.auth.signOut();
       }
@@ -473,20 +504,12 @@ class LicenseActivationService {
       if (response.statusCode == 401 ||
           response.statusCode == 403 ||
           response.statusCode == 409) {
-        await _clearCloudSyncCredentials(client);
+        await client.auth.signOut();
       }
       return false;
     } catch (_) {
       return false;
     }
-  }
-
-  Future<void> _clearCloudSyncCredentials(SupabaseClient client) async {
-    await client.auth.signOut();
-    await Future.wait([
-      _secureStorage.delete(key: _cloudEmailKey),
-      _secureStorage.delete(key: _cloudPasswordKey),
-    ]);
   }
 
   Future<void> saveActivation({
