@@ -26,7 +26,7 @@ type StoreJoin = {
 };
 type LicenseDevice = {
   id: string;
-  invite_id: string;
+  invite_id: string | null;
   device_name: string | null;
   activated_at: string | null;
   last_seen_at: string | null;
@@ -167,7 +167,9 @@ async function licenseDetails(admin: AdminClient, inviteId: string) {
     .single();
   if (error) throw error;
   const typedInvite = invite as LicenseRow;
-  const ownerEmail = await emailForUser(admin, storeFor(typedInvite)?.owner_user_id);
+  const devices = await devicesForLicenseDetails(admin, typedInvite);
+  const scopedInvite = { ...typedInvite, store_devices: devices };
+  const ownerEmail = await emailForUser(admin, storeFor(scopedInvite)?.owner_user_id);
   const { data: audit, error: auditError } = await admin
     .from("license_admin_audit_logs")
     .select("id, action, before_values, after_values, created_at")
@@ -175,7 +177,7 @@ async function licenseDetails(admin: AdminClient, inviteId: string) {
     .order("created_at", { ascending: false })
     .limit(50);
   if (auditError) throw auditError;
-  return { license: { ...toLicenseSummary(typedInvite, new Map([[storeFor(typedInvite)?.owner_user_id ?? "", ownerEmail]])), devices: devicesForLicense(typedInvite) }, audit: audit ?? [] };
+  return { license: { ...toLicenseSummary(scopedInvite, new Map([[storeFor(scopedInvite)?.owner_user_id ?? "", ownerEmail]])), devices }, audit: audit ?? [] };
 }
 
 async function createLicense(admin: AdminClient, adminUserId: string, body: Body) {
@@ -397,7 +399,7 @@ async function licenseRows(admin: AdminClient) {
     .select("id, label, status, store_id, device_slot_limit, used_count, created_at, used_at, license_expires_at, stores(id, name, owner_user_id), store_devices(id, invite_id, device_name, activated_at, last_seen_at, revoked_at)")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as LicenseRow[];
+  return scopeLicenseRows((data ?? []) as LicenseRow[]);
 }
 
 function toLicenseSummary(row: LicenseRow, ownerEmails: Map<string, string>) {
@@ -446,7 +448,43 @@ function licenseState(row: LicenseRow) {
   if (expiry !== null && expiry < Date.now()) return "expired";
   return row.store_id ? "active" : "unused";
 }
-function devicesForLicense(row: LicenseRow) { return (row.store_devices ?? []).filter((device) => device.invite_id === row.id); }
+function scopeLicenseRows(rows: LicenseRow[]) {
+  const licensesPerStore = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.store_id) continue;
+    licensesPerStore.set(row.store_id, (licensesPerStore.get(row.store_id) ?? 0) + 1);
+  }
+  return rows.map((row) => ({
+    ...row,
+    store_devices: (row.store_devices ?? []).filter((device) =>
+      device.invite_id === row.id ||
+      (!device.invite_id && row.store_id && licensesPerStore.get(row.store_id) === 1)
+    ),
+  }));
+}
+async function devicesForLicenseDetails(admin: AdminClient, row: LicenseRow) {
+  const assigned = (row.store_devices ?? []).filter((device) => device.invite_id === row.id);
+  const unassigned = (row.store_devices ?? []).filter((device) => !device.invite_id);
+  if (!row.store_id || unassigned.length === 0) return assigned;
+  const { count, error: countError } = await admin
+    .from("store_invites")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", row.store_id);
+  if (countError) throw countError;
+  if (count !== 1) return assigned;
+  const { error: updateError } = await admin
+    .from("store_devices")
+    .update({ invite_id: row.id })
+    .in("id", unassigned.map((device) => device.id))
+    .eq("store_id", row.store_id)
+    .is("invite_id", null);
+  if (updateError) throw updateError;
+  return [
+    ...assigned,
+    ...unassigned.map((device) => ({ ...device, invite_id: row.id })),
+  ];
+}
+function devicesForLicense(row: LicenseRow) { return row.store_devices ?? []; }
 function activeDevices(row: LicenseRow) { return devicesForLicense(row).filter((device) => !device.revoked_at).length; }
 function storeFor(row: LicenseRow) { return Array.isArray(row.stores) ? row.stores[0] : row.stores; }
 function latestDeviceSeen(row: LicenseRow) {
