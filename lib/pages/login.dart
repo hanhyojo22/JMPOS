@@ -143,33 +143,37 @@ class _LoginPageState extends State<LoginPage> {
           : localActivation?.licenseKey.trim() ?? '';
       if (licenseKey.isEmpty) return null;
 
-      final activation = await LicenseActivationService.instance.activateStore(
-        licenseKey: licenseKey,
-        storeName:
-            widget.cloudRestoreStoreName ??
-            localActivation?.storeName ??
-            'Restored Store',
-        ownerName: email,
-        email: email,
-        password: password,
-      );
-      await LicenseActivationService.instance.saveCloudSyncCredentials(
-        email: email,
-        password: password,
-      );
-      if (mounted) {
-        setState(() => _cloudRestoreStatus = 'Downloading cloud data');
-      }
-      final imported = await DatabaseHelper.instance.pullCloudSnapshotToLocal(
-        onProgress: (imported, total, status) {
-          if (!mounted) return;
-          setState(() {
-            _cloudRestoreStatus = total > 0
-                ? '$status ($imported of $total)'
-                : status;
-          });
-        },
-      );
+      late LicenseActivation activation;
+      late int imported;
+      await DatabaseHelper.instance.runWithCloudRestoreGuard(() async {
+        activation = await LicenseActivationService.instance.activateStore(
+          licenseKey: licenseKey,
+          storeName:
+              widget.cloudRestoreStoreName ??
+              localActivation?.storeName ??
+              'Restored Store',
+          ownerName: email,
+          email: email,
+          password: password,
+        );
+        await LicenseActivationService.instance.saveCloudSyncCredentials(
+          email: email,
+          password: password,
+        );
+        if (mounted) {
+          setState(() => _cloudRestoreStatus = 'Downloading cloud data');
+        }
+        imported = await DatabaseHelper.instance.pullCloudSnapshotToLocal(
+          onProgress: (imported, total, status) {
+            if (!mounted) return;
+            setState(() {
+              _cloudRestoreStatus = total > 0
+                  ? '$status ($imported of $total)'
+                  : status;
+            });
+          },
+        );
+      });
       await LicenseActivationService.instance.saveLocalOwnerStoreId(
         activation.storeId,
       );

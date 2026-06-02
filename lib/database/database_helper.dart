@@ -37,6 +37,7 @@ class ProductImageConnectionReport {
 class DatabaseHelper {
   static Database? _database;
   static bool _syncInProgress = false;
+  static bool _cloudRestoreInProgress = false;
   static const int _dbVersion = 10;
   static const saleCompletionGracePeriod = Duration(seconds: 10);
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
@@ -868,7 +869,7 @@ class DatabaseHelper {
     int maxBatches = 100,
     void Function(int synced, int total, String status)? onProgress,
   }) async {
-    if (_syncInProgress) return 0;
+    if (_syncInProgress || _cloudRestoreInProgress) return 0;
     _syncInProgress = true;
     final db = await database;
 
@@ -1036,6 +1037,22 @@ class DatabaseHelper {
     await service.deleteLegacySalesImageFolder();
   }
 
+  Future<T> runWithCloudRestoreGuard<T>(Future<T> Function() action) async {
+    while (_cloudRestoreInProgress) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+
+    _cloudRestoreInProgress = true;
+    try {
+      while (_syncInProgress) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      return await action();
+    } finally {
+      _cloudRestoreInProgress = false;
+    }
+  }
+
   Future<int> pullCloudSnapshotToLocal({
     void Function(int imported, int total, String status)? onProgress,
   }) async {
@@ -1058,6 +1075,8 @@ class DatabaseHelper {
     var imported = 0;
 
     await db.transaction((txn) async {
+      await _clearLocalMirrorBeforeCloudRestore(txn);
+
       imported += await _importCloudRows(
         txn,
         'products',
@@ -1089,11 +1108,20 @@ class DatabaseHelper {
         _cloudAuditLogToLocalRow,
       );
       onProgress?.call(imported, total, 'Restored audit log');
+
+      await _markCloudSnapshotSynced(snapshot, executor: txn);
     });
 
-    await _markCloudSnapshotSynced(snapshot);
     onProgress?.call(imported, total, 'Cloud data restored');
     return imported;
+  }
+
+  Future<void> _clearLocalMirrorBeforeCloudRestore(DatabaseExecutor db) async {
+    await db.delete('sync_queue');
+    await db.delete('sales');
+    await db.delete('products');
+    await db.delete('users');
+    await db.delete('audit_logs');
   }
 
   Future<int> _importCloudRows(
@@ -1118,9 +1146,10 @@ class DatabaseHelper {
   }
 
   Future<void> _markCloudSnapshotSynced(
-    Map<String, List<Map<String, dynamic>>> snapshot,
-  ) async {
-    final db = await database;
+    Map<String, List<Map<String, dynamic>>> snapshot, {
+    DatabaseExecutor? executor,
+  }) async {
+    final db = executor ?? await database;
     await _createSyncQueueTable(db);
     final syncedAt = DateTime.now().toIso8601String();
 

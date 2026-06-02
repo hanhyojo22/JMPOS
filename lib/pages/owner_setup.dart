@@ -89,16 +89,26 @@ class _OwnerSetupPageState extends State<OwnerSetupPage> {
         return;
       }
       try {
-        activation = await LicenseActivationService.instance.activateStore(
-          licenseKey: inviteCode,
-          storeName: storeName,
-          ownerName: ownerName,
-          email: email,
-          password: password,
-        );
-        if (isRestoreExisting) {
-          await DatabaseHelper.instance.pullCloudSnapshotToLocal();
+        Future<LicenseActivation> activateAndRestore() async {
+          final restored = await LicenseActivationService.instance
+              .activateStore(
+                licenseKey: inviteCode,
+                storeName: storeName,
+                ownerName: ownerName,
+                email: email,
+                password: password,
+              );
+          if (isRestoreExisting) {
+            await DatabaseHelper.instance.pullCloudSnapshotToLocal();
+          }
+          return restored;
         }
+
+        activation = isRestoreExisting
+            ? await DatabaseHelper.instance.runWithCloudRestoreGuard(
+                activateAndRestore,
+              )
+            : await activateAndRestore();
       } catch (e) {
         if (!mounted) return;
         setState(() {
