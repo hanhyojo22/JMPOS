@@ -686,15 +686,7 @@ class _LicenseExpiredPageState extends State<LicenseExpiredPage> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          Text(
-                            suspended
-                                ? 'This screen checks for reactivation automatically every 15 seconds.'
-                                : 'This screen checks for renewal automatically every 15 seconds.',
-                            textAlign: TextAlign.center,
-                            style: AppTypography.smallCaption.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
-                          ),
+
                           if (_error != null) ...[
                             const SizedBox(height: 14),
                             Container(

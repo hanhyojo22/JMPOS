@@ -1587,6 +1587,7 @@ class _InventoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final attentionItems = [...snapshot.outOfStock, ...snapshot.lowStock];
     return _Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1599,116 +1600,263 @@ class _InventoryCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            'Current values, not historical stock levels.',
+            'Live inventory status based on your current stock levels.',
             style: AppTypography.caption,
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _CompactStat(
-                label: 'Products in stock',
-                value: '${snapshot.productsInStock}',
-              ),
-              _CompactStat(
-                label: 'Units on hand',
-                value: '${snapshot.unitsOnHand}',
-              ),
-              _CompactStat(
-                label: 'Low stock',
-                value: '${snapshot.lowStock.length}',
-                color: _amber,
-              ),
-              _CompactStat(
-                label: 'Out of stock',
-                value: '${snapshot.outOfStock.length}',
-                color: _red,
-              ),
-            ],
-          ),
-          const Divider(height: 28),
-          Text('Estimated inventory cost value', style: AppTypography.caption),
-          const SizedBox(height: 3),
-          Text(
-            CurrencyFormatter.format(snapshot.costValue),
-            style: AppTypography.primaryAmount.copyWith(color: _green),
-          ),
-          if (snapshot.lowStock.isNotEmpty ||
-              snapshot.outOfStock.isNotEmpty) ...[
-            const Divider(height: 28),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Needs attention',
-                    style: AppTypography.cardTitle,
+          const SizedBox(height: 14),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const spacing = 10.0;
+              final tileWidth = (constraints.maxWidth - spacing) / 2;
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: [
+                  _InventoryStatTile(
+                    width: tileWidth,
+                    label: 'Products in stock',
+                    value: '${snapshot.productsInStock}',
+                    icon: Icons.inventory_2_outlined,
+                    color: _green,
                   ),
-                ),
+                  _InventoryStatTile(
+                    width: tileWidth,
+                    label: 'Units on hand',
+                    value: '${snapshot.unitsOnHand}',
+                    icon: Icons.layers_outlined,
+                    color: _purple,
+                  ),
+                  _InventoryStatTile(
+                    width: tileWidth,
+                    label: 'Low stock',
+                    value: '${snapshot.lowStock.length}',
+                    icon: Icons.warning_amber_rounded,
+                    color: _amber,
+                  ),
+                  _InventoryStatTile(
+                    width: tileWidth,
+                    label: 'Out of stock',
+                    value: '${snapshot.outOfStock.length}',
+                    icon: Icons.error_outline_rounded,
+                    color: _red,
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          _InventoryValueCard(value: snapshot.costValue),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: Text('Stock attention', style: AppTypography.cardTitle),
+              ),
+              if (attentionItems.isNotEmpty)
                 TextButton(
                   onPressed: () => _showReportDetails(
                     context,
                     title: 'Inventory Attention',
-                    subtitle: 'Low-stock and out-of-stock products',
-                    child: _Panel(
-                      padding: EdgeInsets.zero,
-                      child: Column(
-                        children: [...snapshot.outOfStock, ...snapshot.lowStock]
-                            .map(
-                              (item) => _SimpleRow(
-                                title: item.name,
-                                trailing: item.stock == 0
-                                    ? 'Out of stock'
-                                    : '${item.stock} left',
-                                trailingColor: item.stock == 0 ? _red : _amber,
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ),
+                    subtitle: 'Products that need restocking',
+                    child: _InventoryAttentionList(items: attentionItems),
                   ),
                   child: const Text('View all'),
                 ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            ...[...snapshot.outOfStock, ...snapshot.lowStock]
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (attentionItems.isEmpty)
+            const _InventoryHealthyState()
+          else
+            ...attentionItems
                 .take(3)
-                .map(
-                  (item) => _SimpleRow(
-                    title: item.name,
-                    trailing: item.stock == 0
-                        ? 'Out of stock'
-                        : '${item.stock} left',
-                    trailingColor: item.stock == 0 ? _red : _amber,
-                  ),
-                ),
-          ],
+                .map((item) => _InventoryAttentionRow(item: item)),
         ],
       ),
     );
   }
 }
 
-class _CompactStat extends StatelessWidget {
-  const _CompactStat({
+class _InventoryStatTile extends StatelessWidget {
+  const _InventoryStatTile({
+    required this.width,
     required this.label,
     required this.value,
-    this.color = _purple,
+    required this.icon,
+    required this.color,
   });
+
+  final double width;
   final String label;
   final String value;
+  final IconData icon;
   final Color color;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 132,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      width: width,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.14 : 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(height: 8),
           Text(value, style: AppTypography.sectionTitle.copyWith(color: color)),
-          Text(label, style: AppTypography.caption),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.caption,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InventoryValueCard extends StatelessWidget {
+  const _InventoryValueCard({required this.value});
+
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF172033) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF2B3A52) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: _green.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: const Icon(
+              Icons.account_balance_wallet_outlined,
+              color: _green,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Estimated inventory cost', style: AppTypography.caption),
+                const SizedBox(height: 3),
+                Text(
+                  CurrencyFormatter.format(value),
+                  style: AppTypography.sectionTitle.copyWith(color: _green),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InventoryAttentionList extends StatelessWidget {
+  const _InventoryAttentionList({required this.items});
+
+  final List<_StockItem> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: items
+          .map((item) => _InventoryAttentionRow(item: item))
+          .toList(),
+    );
+  }
+}
+
+class _InventoryAttentionRow extends StatelessWidget {
+  const _InventoryAttentionRow({required this.item});
+
+  final _StockItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final isOutOfStock = item.stock <= 0;
+    final color = isOutOfStock ? _red : _amber;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isOutOfStock
+                ? Icons.error_outline_rounded
+                : Icons.warning_amber_rounded,
+            color: color,
+            size: 19,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              item.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.emphasizedBody,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            isOutOfStock ? 'Out of stock' : '${item.stock} left',
+            style: AppTypography.label.copyWith(color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InventoryHealthyState extends StatelessWidget {
+  const _InventoryHealthyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _green.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: _green.withValues(alpha: 0.18)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.check_circle_outline_rounded, color: _green, size: 19),
+          SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              'Stock levels look healthy. No products need attention.',
+              style: AppTypography.caption,
+            ),
+          ),
         ],
       ),
     );

@@ -181,7 +181,7 @@ class _SalesPageState extends State<SalesPage> {
     _barcodeHandled = true;
     widget.onBarcodeHandled?.call();
     HapticFeedback.mediumImpact();
-    _showSnack('${product['title']} added to cart', top: true);
+    _showSnack('Product added to cart', top: true);
 
     if (widget.openCartDirectly) {
       Future.delayed(const Duration(milliseconds: 250), () {
@@ -206,7 +206,7 @@ class _SalesPageState extends State<SalesPage> {
       }
     });
     _notifyCartChanged();
-    _showSnack('${product['title']} added to cart', top: true);
+    _showSnack('Product added to cart', top: true);
   }
 
   GlobalKey _productCardKey(Map<String, dynamic> product) {
@@ -621,18 +621,27 @@ class _SalesPageState extends State<SalesPage> {
             child: Column(children: [Expanded(child: _buildSaleTab())]),
           ),
           if (_topMessage != null)
-            Positioned(
-              top: 12,
-              left: 16,
-              right: 16,
-              child: SafeArea(
-                bottom: false,
-                child: MessageBanner(
-                  message: _topMessage!,
-                  success: _topMessageSuccess,
+            if (_topMessageSuccess)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Center(
+                    child: CenteredToastLabel(message: _topMessage!),
+                  ),
+                ),
+              )
+            else
+              Positioned(
+                top: 12,
+                left: 16,
+                right: 16,
+                child: SafeArea(
+                  bottom: false,
+                  child: MessageBanner(
+                    message: _topMessage!,
+                    success: _topMessageSuccess,
+                  ),
                 ),
               ),
-            ),
         ],
       ),
     );
@@ -951,7 +960,7 @@ class _SalesPageState extends State<SalesPage> {
                       Text(
                         _badgeLabel(stock),
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 8,
                           fontWeight: FontWeight.w800,
                           color: _badgeFg(ss),
                         ),

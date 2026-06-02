@@ -26,6 +26,7 @@ type StoreJoin = {
 };
 type LicenseDevice = {
   id: string;
+  invite_id: string;
   device_name: string | null;
   activated_at: string | null;
   last_seen_at: string | null;
@@ -161,7 +162,7 @@ async function listLicenses(admin: AdminClient, body: Body) {
 async function licenseDetails(admin: AdminClient, inviteId: string) {
   const { data: invite, error } = await admin
     .from("store_invites")
-    .select("id, label, status, store_id, device_slot_limit, used_count, created_at, used_at, license_expires_at, stores(id, name, owner_user_id), store_devices(id, device_name, activated_at, last_seen_at, revoked_at)")
+    .select("id, label, status, store_id, device_slot_limit, used_count, created_at, used_at, license_expires_at, stores(id, name, owner_user_id), store_devices(id, invite_id, device_name, activated_at, last_seen_at, revoked_at)")
     .eq("id", inviteId)
     .single();
   if (error) throw error;
@@ -174,7 +175,7 @@ async function licenseDetails(admin: AdminClient, inviteId: string) {
     .order("created_at", { ascending: false })
     .limit(50);
   if (auditError) throw auditError;
-  return { license: { ...toLicenseSummary(typedInvite, new Map([[storeFor(typedInvite)?.owner_user_id ?? "", ownerEmail]])), devices: typedInvite.store_devices ?? [] }, audit: audit ?? [] };
+  return { license: { ...toLicenseSummary(typedInvite, new Map([[storeFor(typedInvite)?.owner_user_id ?? "", ownerEmail]])), devices: devicesForLicense(typedInvite) }, audit: audit ?? [] };
 }
 
 async function createLicense(admin: AdminClient, adminUserId: string, body: Body) {
@@ -273,7 +274,7 @@ async function revokeDevice(admin: AdminClient, adminUserId: string, body: Body)
   if (beforeError) throw beforeError;
   if (!before) throw new HttpError("Device was not found for this license", 404);
   const revokedAt = new Date().toISOString();
-  const { error } = await admin.from("store_devices").update({ revoked_at: revokedAt, cloud_session_id: null, cloud_session_user_id: null, updated_at: revokedAt }).eq("id", deviceId);
+  const { error } = await admin.from("store_devices").update({ revoked_at: revokedAt, cloud_session_id: null, cloud_session_user_id: null, updated_at: revokedAt }).eq("id", deviceId).eq("invite_id", inviteId);
   if (error) throw error;
   await audit(admin, adminUserId, inviteId, "revoke-device", before, { ...before, revoked_at: revokedAt });
   return { revoked: true };
@@ -309,7 +310,9 @@ async function generateRecoveryCode(admin: AdminClient, adminUserId: string, bod
       cloud_session_user_id: null,
       updated_at: revokedAt,
     })
-    .eq("id", deviceId);
+    .eq("id", deviceId)
+    .eq("invite_id", inviteId)
+    .eq("store_id", invite.store_id);
   if (revokeError) throw revokeError;
 
   const { data: invalidated, error: invalidateError } = await admin
@@ -391,7 +394,7 @@ async function removeUnusedLicense(admin: AdminClient, adminUserId: string, body
 async function licenseRows(admin: AdminClient) {
   const { data, error } = await admin
     .from("store_invites")
-    .select("id, label, status, store_id, device_slot_limit, used_count, created_at, used_at, license_expires_at, stores(id, name, owner_user_id), store_devices(id, device_name, activated_at, last_seen_at, revoked_at)")
+    .select("id, label, status, store_id, device_slot_limit, used_count, created_at, used_at, license_expires_at, stores(id, name, owner_user_id), store_devices(id, invite_id, device_name, activated_at, last_seen_at, revoked_at)")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as LicenseRow[];
@@ -443,10 +446,11 @@ function licenseState(row: LicenseRow) {
   if (expiry !== null && expiry < Date.now()) return "expired";
   return row.store_id ? "active" : "unused";
 }
-function activeDevices(row: LicenseRow) { return (row.store_devices ?? []).filter((device) => !device.revoked_at).length; }
+function devicesForLicense(row: LicenseRow) { return (row.store_devices ?? []).filter((device) => device.invite_id === row.id); }
+function activeDevices(row: LicenseRow) { return devicesForLicense(row).filter((device) => !device.revoked_at).length; }
 function storeFor(row: LicenseRow) { return Array.isArray(row.stores) ? row.stores[0] : row.stores; }
 function latestDeviceSeen(row: LicenseRow) {
-  return (row.store_devices ?? [])
+  return devicesForLicense(row)
     .map((device) => device.last_seen_at)
     .filter((value): value is string => Boolean(value))
     .sort()

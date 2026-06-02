@@ -128,15 +128,21 @@ class _CartPageState extends State<CartPage> {
     _messageOverlay?.remove();
 
     _messageOverlay = OverlayEntry(
-      builder: (context) => Positioned(
-        top: MediaQuery.of(context).padding.top + 14,
-        left: 16,
-        right: 16,
-        child: Material(
-          color: Colors.transparent,
-          child: MessageBanner(message: message, success: success),
-        ),
-      ),
+      builder: (context) => success
+          ? Positioned.fill(
+              child: IgnorePointer(
+                child: Center(child: CenteredToastLabel(message: message)),
+              ),
+            )
+          : Positioned(
+              top: MediaQuery.of(context).padding.top + 14,
+              left: 16,
+              right: 16,
+              child: Material(
+                color: Colors.transparent,
+                child: MessageBanner(message: message),
+              ),
+            ),
     );
 
     Overlay.of(context).insert(_messageOverlay!);
@@ -510,16 +516,34 @@ class _CartPageState extends State<CartPage> {
 
     await showDialog<void>(
       context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.5),
       builder: (dialogContext) {
         final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
-        final panel = isDark ? const Color(0xFF111827) : Colors.white;
-        final primaryText = isDark ? const Color(0xFFF8FAFC) : _textPrimary;
-        final secondaryText = isDark ? const Color(0xFFCBD5E1) : _textSecondary;
-        final line = isDark ? const Color(0xFF334155) : const Color(0xFFE5E7EB);
-        final success = isDark
+        final panelBg = isDark ? const Color(0xFF111827) : Colors.white;
+        final headerBg = isDark
+            ? const Color(0xFF052E16)
+            : const Color(0xFFF0FDF4);
+        final checkBg = isDark
+            ? const Color(0xFF16A34A)
+            : const Color(0xFF15803D);
+        final titleClr = isDark
+            ? const Color(0xFF86EFAC)
+            : const Color(0xFF15803D);
+        final pillBg = isDark
+            ? const Color(0xFF1E293B)
+            : const Color(0xFFF1F5F9);
+        final pillText = isDark
+            ? const Color(0xFF94A3B8)
+            : const Color(0xFF475569);
+        final pillAccent = isDark
             ? const Color(0xFF4ADE80)
             : const Color(0xFF16A34A);
-        const actionBlue = Color(0xFF2563EB);
+        final btnBg = isDark
+            ? const Color(0xFFF8FAFC)
+            : const Color(0xFF0F172A);
+        final btnFg = isDark
+            ? const Color(0xFF0F172A)
+            : const Color(0xFFF8FAFC);
 
         return Dialog(
           backgroundColor: Colors.transparent,
@@ -527,128 +551,144 @@ class _CartPageState extends State<CartPage> {
             horizontal: 18,
             vertical: 24,
           ),
-          child: SingleChildScrollView(
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 390),
-              decoration: BoxDecoration(
-                color: panel,
-                borderRadius: BorderRadius.circular(22),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 300),
+            decoration: BoxDecoration(
+              color: panelBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+            ),
+            clipBehavior: Clip.hardEdge,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: double.infinity,
+                  color: headerBg,
+                  padding: const EdgeInsets.fromLTRB(24, 34, 24, 28),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: checkBg,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Sale Completed!',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.pageTitle.copyWith(
+                          color: titleClr,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'The transaction was successful.',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.label.copyWith(
+                          color: titleClr.withValues(alpha: 0.7),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _SaleSuccessBurst(color: success),
-                  const SizedBox(height: 14),
-                  Text(
-                    'Sale Completed!',
-                    style: AppTypography.pageTitle.copyWith(
-                      color: primaryText,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'The transaction was successful.',
-                    style: AppTypography.label.copyWith(color: secondaryText),
-                  ),
-                  const SizedBox(height: 18),
-                  _DashedDivider(color: line),
-                  const SizedBox(height: 18),
-                  Text(
-                    'Total Amount',
-                    style: AppTypography.label.copyWith(color: secondaryText),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    CurrencyFormatter.format(total),
-                    style: AppTypography.primaryAmount.copyWith(
-                      color: success,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  _DashedDivider(color: line),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Receipt Number',
-                    style: AppTypography.label.copyWith(color: secondaryText),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    completion.receiptNumber,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.cardTitle.copyWith(color: primaryText),
-                  ),
-                  const SizedBox(height: 18),
-                  _DashedDivider(color: line),
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(dialogContext);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => RecentSalesPage(
-                              saleId: completion.saleId,
-                              currentUsername: widget.currentUsername,
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      _SaleStatusPill(
+                        icon: Icons.payments_outlined,
+                        label: 'Total amount',
+                        value: CurrencyFormatter.format(total),
+                        bg: pillBg,
+                        labelColor: pillText,
+                        valueColor: pillAccent,
+                      ),
+                      const SizedBox(height: 8),
+                      _SaleStatusPill(
+                        icon: Icons.receipt_long_outlined,
+                        label: 'Receipt number',
+                        value: completion.receiptNumber,
+                        bg: pillBg,
+                        labelColor: pillText,
+                        valueColor: pillText,
+                      ),
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => RecentSalesPage(
+                                  saleId: completion.saleId,
+                                  currentUsername: widget.currentUsername,
+                                ),
+                              ),
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: btnBg,
+                            side: BorderSide(color: btnBg, width: 1.2),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                        );
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: actionBlue,
-                        side: const BorderSide(color: actionBlue, width: 1.4),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(9),
+                          icon: const Icon(
+                            Icons.receipt_long_outlined,
+                            size: 16,
+                          ),
+                          label: const Text(
+                            'View receipt',
+                            style: AppTypography.button,
+                          ),
                         ),
                       ),
-                      icon: const Icon(Icons.receipt_long_outlined, size: 18),
-                      label: const Text(
-                        'View Receipt',
-                        style: AppTypography.button,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(dialogContext);
-                        widget.onBrowseProducts?.call();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: actionBlue,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(9),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            widget.onBrowseProducts?.call();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: btnBg,
+                            foregroundColor: btnFg,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.add_circle_outline_rounded,
+                            size: 16,
+                          ),
+                          label: const Text(
+                            'New sale',
+                            style: AppTypography.button,
+                          ),
                         ),
                       ),
-                      icon: const Icon(
-                        Icons.add_circle_outline_rounded,
-                        size: 18,
-                      ),
-                      label: const Text(
-                        'New Sale',
-                        style: AppTypography.button,
-                      ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         );
@@ -2056,79 +2096,58 @@ class _ConfirmRow extends StatelessWidget {
   }
 }
 
-class _SaleSuccessBurst extends StatelessWidget {
-  const _SaleSuccessBurst({required this.color});
+class _SaleStatusPill extends StatelessWidget {
+  const _SaleStatusPill({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.bg,
+    required this.labelColor,
+    required this.valueColor,
+  });
 
-  final Color color;
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color bg;
+  final Color labelColor;
+  final Color valueColor;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 170,
-      height: 92,
-      child: Stack(
-        alignment: Alignment.center,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
         children: [
-          for (final dot in const [
-            (Alignment(-0.92, -0.66), 4.0),
-            (Alignment(-0.72, 0.02), 3.0),
-            (Alignment(-0.54, 0.74), 4.0),
-            (Alignment(-0.34, -0.92), 3.0),
-            (Alignment(0.38, -0.88), 4.0),
-            (Alignment(0.62, -0.48), 3.0),
-            (Alignment(0.92, -0.10), 4.0),
-            (Alignment(0.78, 0.58), 3.0),
-            (Alignment(0.42, 0.90), 4.0),
-            (Alignment(-0.88, 0.50), 3.0),
-          ])
-            Align(
-              alignment: dot.$1,
-              child: Container(
-                width: dot.$2,
-                height: dot.$2,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
+          Icon(icon, size: 16, color: labelColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.label.copyWith(color: labelColor),
             ),
-          Container(
-            width: 82,
-            height: 82,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            child: const Icon(
-              Icons.check_rounded,
-              color: Colors.white,
-              size: 50,
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: AppTypography.label.copyWith(
+                color: valueColor,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _DashedDivider extends StatelessWidget {
-  const _DashedDivider({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const dashWidth = 5.0;
-        const gapWidth = 4.0;
-        final count = (constraints.maxWidth / (dashWidth + gapWidth)).floor();
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(
-            count,
-            (_) => SizedBox(
-              width: dashWidth,
-              height: 1,
-              child: ColoredBox(color: color),
-            ),
-          ),
-        );
-      },
     );
   }
 }

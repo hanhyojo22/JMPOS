@@ -227,7 +227,7 @@ class _ProductsPageState extends State<ProductsPage>
   String _stockLabel(int stock) {
     if (stock == 0) return 'Out of stock';
     if (stock <= 10) return '$stock left';
-    return '$stock in stock';
+    return '$stock stock';
   }
 
   bool get _isSelecting => _selectedProductIds.isNotEmpty;
@@ -938,7 +938,7 @@ class _ProductsPageState extends State<ProductsPage>
                             Text(
                               _stockLabel(stock),
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 8,
                                 fontWeight: FontWeight.w800,
                                 color: stockBadgeFg,
                               ),

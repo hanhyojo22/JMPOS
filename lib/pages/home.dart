@@ -10,6 +10,7 @@ import 'account_page.dart';
 import 'staff_management.dart';
 import 'package:pos_app/utils/greetings.dart';
 import 'package:pos_app/database/database_helper.dart';
+import 'package:pos_app/theme/app_typography.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'edit_product_page.dart';
 import 'setting_page.dart';
@@ -36,6 +37,51 @@ class HomePage extends StatefulWidget {
 
   @override
   State<HomePage> createState() => _HomePageState();
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.bg,
+    required this.labelColor,
+    required this.valueColor,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color bg;
+  final Color labelColor;
+  final Color valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: labelColor),
+          const SizedBox(width: 10),
+          Text(label, style: TextStyle(fontSize: 12, color: labelColor)),
+          const Spacer(),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: valueColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _HomePageState extends State<HomePage> {
@@ -113,7 +159,7 @@ class _HomePageState extends State<HomePage> {
     if (initialSuccessMessage?.isNotEmpty == true) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _showTopMessage(initialSuccessMessage!, success: true);
+        _showLoginSuccessDialog(initialSuccessMessage!);
       });
     }
   }
@@ -358,7 +404,7 @@ class _HomePageState extends State<HomePage> {
     final productName = await _addScannedBarcodeToSharedCart(scannedBarcode!);
     if (!mounted || productName == null) return;
 
-    await _openCartPage(initialMessage: '$productName added to cart');
+    await _openCartPage(initialMessage: 'Product added to cart');
   }
 
   void _showSnack(String message, {bool isError = false, bool top = false}) {
@@ -388,6 +434,153 @@ class _HomePageState extends State<HomePage> {
       if (!mounted || _topMessage != message) return;
       setState(() => _topMessage = null);
     });
+  }
+
+  Future<void> _showLoginSuccessDialog(String message) async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      builder: (dialogContext) {
+        final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
+
+        final panelBg = isDark ? const Color(0xFF111827) : Colors.white;
+        final headerBg = isDark
+            ? const Color(0xFF052E16)
+            : const Color(0xFFF0FDF4);
+        final checkBg = isDark
+            ? const Color(0xFF16A34A)
+            : const Color(0xFF15803D);
+        final titleClr = isDark
+            ? const Color(0xFF86EFAC)
+            : const Color(0xFF15803D);
+        final pillBg = isDark
+            ? const Color(0xFF1E293B)
+            : const Color(0xFFF1F5F9);
+        final pillText = isDark
+            ? const Color(0xFF94A3B8)
+            : const Color(0xFF475569);
+        final pillAccent = isDark
+            ? const Color(0xFF4ADE80)
+            : const Color(0xFF16A34A);
+        final btnBg = isDark
+            ? const Color(0xFFF8FAFC)
+            : const Color(0xFF0F172A);
+        final btnFg = isDark
+            ? const Color(0xFF0F172A)
+            : const Color(0xFFF8FAFC);
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 24,
+          ),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 300),
+            decoration: BoxDecoration(
+              color: panelBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+            ),
+            clipBehavior: Clip.hardEdge,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── Header band ──
+                Container(
+                  color: headerBg,
+                  padding: const EdgeInsets.fromLTRB(80, 48, 80, 40),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: checkBg,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        message.endsWith('!') ? message : '$message!',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.pageTitle.copyWith(
+                          color: titleClr,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'You are now signed in.',
+                        style: AppTypography.label.copyWith(
+                          color: titleClr.withValues(alpha: 0.7),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // ── Body ──
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      _StatusPill(
+                        icon: Icons.shield_outlined,
+                        label: 'Session secured',
+                        value: 'Active',
+                        bg: pillBg,
+                        labelColor: pillText,
+                        valueColor: pillAccent,
+                      ),
+                      const SizedBox(height: 8),
+                      _StatusPill(
+                        icon: Icons.access_time_outlined,
+                        label: 'Signed in just now',
+                        value: 'Just now',
+                        bg: pillBg,
+                        labelColor: pillText,
+                        valueColor: pillText,
+                      ),
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: ElevatedButton.icon(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: btnBg,
+                            foregroundColor: btnFg,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: const Icon(Icons.dashboard_outlined, size: 16),
+                          label: const Text(
+                            'Continue to dashboard',
+                            style: AppTypography.button,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<String?> _addScannedBarcodeToSharedCart(String barcode) async {
@@ -1604,18 +1797,27 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           if (_topMessage != null)
-            Positioned(
-              top: 12,
-              left: 16,
-              right: 16,
-              child: SafeArea(
-                bottom: false,
-                child: MessageBanner(
-                  message: _topMessage!,
-                  success: _topMessageSuccess,
+            if (_topMessageSuccess)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Center(
+                    child: CenteredToastLabel(message: _topMessage!),
+                  ),
+                ),
+              )
+            else
+              Positioned(
+                top: 12,
+                left: 16,
+                right: 16,
+                child: SafeArea(
+                  bottom: false,
+                  child: MessageBanner(
+                    message: _topMessage!,
+                    success: _topMessageSuccess,
+                  ),
                 ),
               ),
-            ),
         ],
       ),
 
