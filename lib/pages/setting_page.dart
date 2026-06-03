@@ -245,8 +245,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         iconColor: const Color(0xFF185FA5),
                         label: 'PIN login',
                         subtitle: _pinEnabled
-                            ? '4-digit PIN is enabled'
-                            : 'Set a 4-digit PIN',
+                            ? '6-digit PIN is enabled'
+                            : 'Set a 6-digit PIN',
                         onTap: _showPinDialog,
                       ),
                       _SettingsRow(
@@ -1308,8 +1308,8 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
   }
 
   String? _validatePin(String? value) {
-    if (value == null || value.isEmpty) return 'Enter a 4-digit PIN';
-    if (value.length != 4) return 'PIN must be exactly 4 digits';
+    if (value == null || value.isEmpty) return 'Enter a 6-digit PIN';
+    if (value.length != 6) return 'PIN must be exactly 6 digits';
     return null;
   }
 
@@ -1332,11 +1332,11 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
               keyboardType: TextInputType.number,
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(4),
+                LengthLimitingTextInputFormatter(6),
               ],
               decoration: InputDecoration(
                 labelText: 'New PIN',
-                hintText: '4 digits',
+                hintText: '6 digits',
                 prefixIcon: const Icon(Icons.pin_outlined),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1351,7 +1351,7 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
               keyboardType: TextInputType.number,
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(4),
+                LengthLimitingTextInputFormatter(6),
               ],
               decoration: InputDecoration(
                 labelText: 'Confirm PIN',

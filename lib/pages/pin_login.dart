@@ -25,21 +25,20 @@ class _PinLoginPageState extends State<PinLoginPage> {
     systemNavigationBarContrastEnforced: false,
   );
 
-  static const int _minPinLength = 4;
-  static const int _maxPinLength = 6;
+  static const int _pinLength = 6;
 
   String _pin = '';
   bool _isLoading = false;
   bool _invalidPin = false;
 
   void _enterDigit(String digit) {
-    if (_pin.length >= _maxPinLength || _isLoading) return;
+    if (_pin.length >= _pinLength || _isLoading) return;
     final nextPin = _sanitizePin(_pin + digit);
     setState(() {
       _invalidPin = false;
       _pin = nextPin;
     });
-    if (nextPin.length >= _minPinLength) {
+    if (nextPin.length == _pinLength) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _login(auto: true);
       });
@@ -56,16 +55,16 @@ class _PinLoginPageState extends State<PinLoginPage> {
 
   String _sanitizePin(String value) {
     final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
-    return digits.length <= _maxPinLength
+    return digits.length <= _pinLength
         ? digits
-        : digits.substring(0, _maxPinLength);
+        : digits.substring(0, _pinLength);
   }
 
   Future<void> _login({bool auto = false}) async {
     if (_isLoading) return;
 
     final pin = _sanitizePin(_pin);
-    if (pin.length < _minPinLength || pin.length > _maxPinLength) {
+    if (pin.length != _pinLength) {
       if (!auto) setState(() => _invalidPin = true);
       return;
     }
@@ -82,8 +81,6 @@ class _PinLoginPageState extends State<PinLoginPage> {
     setState(() => _isLoading = false);
 
     if (user == null) {
-      if (auto && pin.length < _maxPinLength) return;
-
       HapticFeedback.mediumImpact();
       setState(() {
         _pin = '';
@@ -192,7 +189,7 @@ class _PinLoginPageState extends State<PinLoginPage> {
                         const SizedBox(height: 26),
                         _PinDots(
                           count: _pin.length,
-                          maxCount: _maxPinLength,
+                          maxCount: _pinLength,
                           invalid: _invalidPin,
                           activeColor: const Color(0xFF667eea),
                           inactiveColor: secondaryText.withValues(alpha: 0.25),
@@ -212,8 +209,7 @@ class _PinLoginPageState extends State<PinLoginPage> {
                         _PinKeypad(
                           textColor: primaryText,
                           surfaceColor: fieldColor,
-                          canSubmit:
-                              _pin.length >= _minPinLength && !_isLoading,
+                          canSubmit: _pin.length == _pinLength && !_isLoading,
                           onDigit: _enterDigit,
                           onBackspace: _deleteDigit,
                           onSubmit: () => _login(),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/message_banner.dart';
 
@@ -342,6 +343,10 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                 controller: _pinController,
                 obscureText: _obscurePin,
                 keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(6),
+                ],
                 decoration: InputDecoration(
                   labelText: 'PIN',
                   prefixIcon: const Icon(Icons.pin_outlined),
@@ -360,8 +365,8 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                   if (pin.isEmpty) {
                     return 'Please enter PIN';
                   }
-                  if (!RegExp(r'^\d{4,6}$').hasMatch(pin)) {
-                    return 'PIN must be 4 to 6 digits';
+                  if (!RegExp(r'^\d{6}$').hasMatch(pin)) {
+                    return 'PIN must be exactly 6 digits';
                   }
                   return null;
                 },
@@ -594,6 +599,10 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
           controller: _pinController,
           obscureText: _obscurePin,
           keyboardType: TextInputType.number,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(6),
+          ],
           decoration: InputDecoration(
             labelText: 'New PIN',
             prefixIcon: const Icon(Icons.pin_outlined),
@@ -608,8 +617,8 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
             if (pin.isEmpty) {
               return 'Please enter new PIN';
             }
-            if (!RegExp(r'^\d{4,6}$').hasMatch(pin)) {
-              return 'PIN must be 4 to 6 digits';
+            if (!RegExp(r'^\d{6}$').hasMatch(pin)) {
+              return 'PIN must be exactly 6 digits';
             }
             return null;
           },

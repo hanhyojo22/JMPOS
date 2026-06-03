@@ -1595,6 +1595,8 @@ class DatabaseHelper {
     return digits.length <= 6 ? digits : digits.substring(0, 6);
   }
 
+  bool _isValidPin(String pin) => _normalizePin(pin).length == 6;
+
   // ─── Auth methods ─────────────────────────────────────────────────────────────
 
   /// Returns the user map if credentials are valid, null otherwise.
@@ -1647,7 +1649,7 @@ class DatabaseHelper {
   Future<Map<String, dynamic>?> loginWithPin(String pin) async {
     final db = await database;
     final normalizedPin = _normalizePin(pin);
-    if (normalizedPin.length < 4 || normalizedPin.length > 6) return null;
+    if (!_isValidPin(normalizedPin)) return null;
     final hash = _hashPassword(normalizedPin);
 
     final result = await db.query(
@@ -1673,7 +1675,7 @@ class DatabaseHelper {
   Future<Map<String, dynamic>?> verifyAdminPin(String pin) async {
     final db = await database;
     final normalizedPin = _normalizePin(pin);
-    if (normalizedPin.length < 4 || normalizedPin.length > 6) return null;
+    if (!_isValidPin(normalizedPin)) return null;
 
     final hash = _hashPassword(normalizedPin);
 
@@ -1702,7 +1704,9 @@ class DatabaseHelper {
 
   Future<bool> pinExists(String pin, {int? excludeUserId}) async {
     final db = await database;
-    final hash = _hashPassword(pin);
+    final normalizedPin = _normalizePin(pin);
+    if (!_isValidPin(normalizedPin)) return false;
+    final hash = _hashPassword(normalizedPin);
     final result = await db.query(
       'users',
       columns: ['id'],
@@ -1717,6 +1721,8 @@ class DatabaseHelper {
 
   Future<bool> setOwnerPin(String pin) async {
     final db = await database;
+    final normalizedPin = _normalizePin(pin);
+    if (!_isValidPin(normalizedPin)) return false;
     final ownerRows = await db.query(
       'users',
       columns: ['id'],
@@ -1728,13 +1734,13 @@ class DatabaseHelper {
     if (ownerRows.isEmpty) return false;
 
     final ownerId = (ownerRows.first['id'] as num).toInt();
-    if (await pinExists(pin, excludeUserId: ownerId)) {
+    if (await pinExists(normalizedPin, excludeUserId: ownerId)) {
       throw Exception('PIN is already used by another user');
     }
 
     final result = await db.update(
       'users',
-      {'pin_hash': _hashPassword(pin)},
+      {'pin_hash': _hashPassword(normalizedPin)},
       where: 'id = ?',
       whereArgs: [ownerId],
     );
@@ -2445,7 +2451,9 @@ class DatabaseHelper {
     required String pin,
   }) async {
     final db = await database;
-    if (await pinExists(pin)) return -2;
+    final normalizedPin = _normalizePin(pin);
+    if (!_isValidPin(normalizedPin)) return -1;
+    if (await pinExists(normalizedPin)) return -2;
 
     final now = DateTime.now();
     final generatedUsername =
@@ -2453,8 +2461,8 @@ class DatabaseHelper {
     try {
       return await db.insert('users', {
         'username': generatedUsername,
-        'password_hash': _hashPassword(pin),
-        'pin_hash': _hashPassword(pin),
+        'password_hash': _hashPassword(normalizedPin),
+        'pin_hash': _hashPassword(normalizedPin),
         'full_name': fullName.trim(),
         'email': null,
         'role': 'staff',
@@ -2552,11 +2560,13 @@ class DatabaseHelper {
     String? actorUsername,
   }) async {
     final db = await database;
-    if (await pinExists(pin, excludeUserId: userId)) {
+    final normalizedPin = _normalizePin(pin);
+    if (!_isValidPin(normalizedPin)) return false;
+    if (await pinExists(normalizedPin, excludeUserId: userId)) {
       throw Exception('PIN is already used by another user');
     }
 
-    final hash = _hashPassword(pin);
+    final hash = _hashPassword(normalizedPin);
     final result = await db.update(
       'users',
       {'pin_hash': hash, 'password_hash': hash},

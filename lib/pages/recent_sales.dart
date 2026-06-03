@@ -949,7 +949,7 @@ class _VoidSaleDialog extends StatefulWidget {
 
 class _VoidSaleDialogState extends State<_VoidSaleDialog> {
   static const int _maxReasonLength = 250;
-  static const int _maxPinLength = 6;
+  static const int _pinLength = 6;
   static const Color _danger = Color(0xFFDC2626);
   static const Color _dangerBg = Color(0xFFFEE2E2);
 
@@ -980,15 +980,14 @@ class _VoidSaleDialogState extends State<_VoidSaleDialog> {
 
   String _sanitizePin(String value) {
     final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
-    return digits.length <= _maxPinLength
+    return digits.length <= _pinLength
         ? digits
-        : digits.substring(0, _maxPinLength);
+        : digits.substring(0, _pinLength);
   }
 
   String? _pinValidationMessage(String pin) {
     if (pin.isEmpty) return 'Enter admin PIN';
-    if (pin.length < 4) return 'PIN must be 4 to 6 digits';
-    if (pin.length > _maxPinLength) return 'PIN must be 4 to 6 digits';
+    if (pin.length != _pinLength) return 'PIN must be exactly 6 digits';
     return null;
   }
 
@@ -1100,7 +1099,7 @@ class _VoidSaleDialogState extends State<_VoidSaleDialog> {
                         enabled: !_verifyingPin,
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(_maxPinLength),
+                          LengthLimitingTextInputFormatter(_pinLength),
                         ],
                         onChanged: (_) {
                           if (_pinError != null) {
