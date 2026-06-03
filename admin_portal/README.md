@@ -7,7 +7,7 @@ POS licenses.
 
 1. Run `supabase_admin_portal_migration.sql` in the Supabase SQL Editor.
 2. Create your developer account in Supabase Authentication.
-3. Grant the account access:
+3. Grant the account access:  
 
 ```sql
 insert into public.license_admins (user_id)
