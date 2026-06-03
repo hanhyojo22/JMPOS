@@ -19,10 +19,12 @@ on conflict do nothing;
 
 ```powershell
 supabase functions deploy admin-license-management
+supabase functions deploy sync-owner-password-reset
 ```
 
-5. Copy `.env.example` to `.env` and provide the Supabase URL and publishable
-   key.
+5. Copy `.env.example` to `.env` and provide the Supabase URL, publishable
+   key, and password reset redirect URL. For local development, use
+   `http://localhost:5173/reset-password`.
 
 ## Local development
 

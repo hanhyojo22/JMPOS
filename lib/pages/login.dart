@@ -73,6 +73,12 @@ class _LoginPageState extends State<LoginPage> {
         ? null
         : await DatabaseHelper.instance.login(username, password);
 
+    if (user == null &&
+        !restoringCloudLicense &&
+        LoginInputValidator.isEmail(username)) {
+      user = await _repairLocalOwnerPasswordFromCloud(username, password);
+    }
+
     if (restoringCloudLicense) {
       user = await _loginWithCloudOwner(username, password);
     }
@@ -109,6 +115,20 @@ class _LoginPageState extends State<LoginPage> {
       setState(() => _invalidCredentials = true);
       _formKey.currentState!.validate();
     }
+  }
+
+  Future<Map<String, dynamic>?> _repairLocalOwnerPasswordFromCloud(
+    String email,
+    String password,
+  ) async {
+    final signedIn = await LicenseActivationService.instance
+        .signInCloudOwnerForLocalActivation(email: email, password: password);
+    if (!signedIn) return null;
+
+    return DatabaseHelper.instance.resetOwnerPasswordFromCloud(
+      email: email,
+      newPassword: password,
+    );
   }
 
   Future<void> _bindLocalOwnerStoreIfNeeded(Map<String, dynamic> user) async {
@@ -232,10 +252,10 @@ class _LoginPageState extends State<LoginPage> {
     return error;
   }
 
-  void _showMagicLinkDialog() {
+  void _showForgotPasswordDialog() {
     showDialog<void>(
       context: context,
-      builder: (_) => const _MagicLinkDialog(),
+      builder: (_) => const _ForgotPasswordDialog(),
     );
   }
 
@@ -397,8 +417,8 @@ class _LoginPageState extends State<LoginPage> {
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: TextButton(
-                                  onPressed: _showMagicLinkDialog,
-                                  child: const Text('Email Magic Link'),
+                                  onPressed: _showForgotPasswordDialog,
+                                  child: const Text('Forgot Password?'),
                                 ),
                               ),
                             const SizedBox(height: 16),
@@ -759,14 +779,14 @@ class _CloudRestoreOverlay extends StatelessWidget {
   }
 }
 
-class _MagicLinkDialog extends StatefulWidget {
-  const _MagicLinkDialog();
+class _ForgotPasswordDialog extends StatefulWidget {
+  const _ForgotPasswordDialog();
 
   @override
-  State<_MagicLinkDialog> createState() => _MagicLinkDialogState();
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
 }
 
-class _MagicLinkDialogState extends State<_MagicLinkDialog> {
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   final _emailController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isSending = false;
@@ -786,12 +806,12 @@ class _MagicLinkDialogState extends State<_MagicLinkDialog> {
     _emailController.text = email;
     setState(() => _isSending = true);
     try {
-      await LicenseActivationService.instance.sendMagicLinkEmail(email);
+      await LicenseActivationService.instance.sendPasswordResetEmail(email);
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Magic link sent to $email'),
+          content: Text('Password reset email sent to $email'),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
@@ -811,12 +831,21 @@ class _MagicLinkDialogState extends State<_MagicLinkDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text('Email Magic Link'),
+      title: const Text('Forgot Password?'),
       content: Form(
         key: _formKey,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Text(
+              'Enter the owner email for this store. We will send a secure password reset link.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 14),
             TextFormField(
               controller: _emailController,
               autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -893,7 +922,10 @@ class _MagicLinkDialogState extends State<_MagicLinkDialog> {
                     color: Colors.white,
                   ),
                 )
-              : const Text('Send', style: TextStyle(color: Colors.white)),
+              : const Text(
+                  'Send Reset Email',
+                  style: TextStyle(color: Colors.white),
+                ),
         ),
       ],
     );

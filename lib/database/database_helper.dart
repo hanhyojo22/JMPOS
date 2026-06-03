@@ -1871,6 +1871,55 @@ class DatabaseHelper {
     await queueSyncUpsert('users', rows.first, executor: db);
   }
 
+  Future<Map<String, dynamic>?> resetOwnerPasswordFromCloud({
+    required String email,
+    required String newPassword,
+  }) async {
+    final db = await database;
+    final normalizedEmail = _normalizeAuthUsername(email);
+    final normalizedPassword = _sanitizeAuthSecret(newPassword);
+    if (!LoginInputValidator.isEmail(normalizedEmail) ||
+        !LoginInputValidator.isValidPassword(normalizedPassword)) {
+      return null;
+    }
+
+    final ownerRows = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'role = ? AND (LOWER(email) = ? OR username = ?)',
+      whereArgs: ['admin', normalizedEmail, normalizedEmail],
+      orderBy: 'created_at ASC',
+      limit: 1,
+    );
+    if (ownerRows.isEmpty) return null;
+
+    final ownerId = (ownerRows.first['id'] as num).toInt();
+    final result = await db.update(
+      'users',
+      {
+        'username': normalizedEmail,
+        'email': normalizedEmail,
+        'password_hash': _hashPassword(normalizedPassword),
+      },
+      where: 'id = ? AND role = ?',
+      whereArgs: [ownerId, 'admin'],
+    );
+    if (result == 0) return null;
+
+    await _queueUserForSync(db, ownerId);
+    await recordAuditLog(
+      user: normalizedEmail,
+      action: 'password_change',
+      details: _auditDetails({
+        'target_user': normalizedEmail,
+        'reset': true,
+        'source': 'cloud_owner_recovery',
+      }),
+    );
+    unawaited(syncPendingChanges());
+    return getUserByUsername(normalizedEmail);
+  }
+
   /// Changes password for a given user. Returns true on success.
   Future<bool> changePassword({
     required String username,

@@ -430,6 +430,28 @@ class LicenseActivationService {
     return false;
   }
 
+  Future<bool> signInCloudOwnerForLocalActivation({
+    required String email,
+    required String password,
+  }) async {
+    final cleanedEmail = email.trim().toLowerCase();
+    if (cleanedEmail.isEmpty || password.isEmpty) return false;
+
+    try {
+      final client = Supabase.instance.client;
+      await client.auth.signOut();
+      await client.auth.signInWithPassword(
+        email: cleanedEmail,
+        password: password,
+      );
+      if (!await _authorizeCloudSyncSession(client)) return false;
+      await saveCloudSyncCredentials(email: cleanedEmail, password: password);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<String?> readLocalOwnerStoreId() async {
     final storeId = await _secureStorage.read(key: _localOwnerStoreIdKey);
     final trimmed = storeId?.trim() ?? '';
@@ -568,6 +590,24 @@ class LicenseActivationService {
     }
   }
 
+  Future<void> sendPasswordResetEmail(String email) async {
+    final cleanedEmail = email.trim().toLowerCase();
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(cleanedEmail)) {
+      throw Exception('Enter a valid email.');
+    }
+    try {
+      final redirectUrl = EnvConfig.supabasePasswordResetRedirectUrl;
+      await Supabase.instance.client.auth.resetPasswordForEmail(
+        cleanedEmail,
+        redirectTo: redirectUrl.isEmpty ? null : redirectUrl,
+      );
+    } on AuthException catch (e) {
+      throw Exception(_passwordResetErrorMessage(e));
+    } catch (e) {
+      throw Exception(_passwordResetErrorMessage(e));
+    }
+  }
+
   String _magicLinkErrorMessage(Object error) {
     if (error is AuthException && _isRateLimitError(error)) {
       final waitSeconds = _waitSecondsFromMessage(error.message);
@@ -582,6 +622,22 @@ class LicenseActivationService {
     }
 
     return 'Could not send the magic link. Please check the email and try again.';
+  }
+
+  String _passwordResetErrorMessage(Object error) {
+    if (error is AuthException && _isRateLimitError(error)) {
+      final waitSeconds = _waitSecondsFromMessage(error.message);
+      if (waitSeconds != null) {
+        return 'Too many requests. Please wait $waitSeconds seconds before sending another reset email.';
+      }
+      return 'Too many requests. Please wait a minute before sending another reset email.';
+    }
+
+    if (_isRateLimitMessage(error.toString())) {
+      return 'Too many requests. Please wait a minute before sending another reset email.';
+    }
+
+    return 'Could not send the password reset email. Please check the email and try again.';
   }
 
   bool _isRateLimitError(AuthException error) {
