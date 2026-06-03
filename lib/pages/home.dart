@@ -572,7 +572,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                           ),
                           icon: const Icon(Icons.dashboard_outlined, size: 16),
-                          label: const Text(
+                          label: Text(
                             'Continue to dashboard',
                             style: AppTypography.button,
                           ),

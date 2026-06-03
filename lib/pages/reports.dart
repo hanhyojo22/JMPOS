@@ -1854,10 +1854,14 @@ class _InventoryHealthyState extends StatelessWidget {
         borderRadius: BorderRadius.circular(11),
         border: Border.all(color: _green.withValues(alpha: 0.18)),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.check_circle_outline_rounded, color: _green, size: 19),
-          SizedBox(width: 9),
+          const Icon(
+            Icons.check_circle_outline_rounded,
+            color: _green,
+            size: 19,
+          ),
+          const SizedBox(width: 9),
           Expanded(
             child: Text(
               'Stock levels look healthy. No products need attention.',

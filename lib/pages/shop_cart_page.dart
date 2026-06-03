@@ -1006,7 +1006,7 @@ class _CartPageState extends State<CartPage> {
                             Icons.receipt_long_outlined,
                             size: 16,
                           ),
-                          label: const Text(
+                          label: Text(
                             'View receipt',
                             style: AppTypography.button,
                           ),
@@ -1033,10 +1033,7 @@ class _CartPageState extends State<CartPage> {
                             Icons.add_circle_outline_rounded,
                             size: 16,
                           ),
-                          label: const Text(
-                            'New sale',
-                            style: AppTypography.button,
-                          ),
+                          label: Text('New sale', style: AppTypography.button),
                         ),
                       ),
                     ],
@@ -2510,6 +2507,7 @@ class _CartPageState extends State<CartPage> {
                   disabledBackgroundColor: Colors.grey[300],
                   elevation: 6,
                   shadowColor: _primary.withValues(alpha: 0.28),
+                  padding: EdgeInsets.zero,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -2523,24 +2521,29 @@ class _CartPageState extends State<CartPage> {
                           color: Colors.white,
                         ),
                       )
-                    : const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.credit_card_outlined,
-                            color: Colors.white,
-                            size: 16,
+                    : FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.credit_card_outlined,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Pay now',
+                                maxLines: 1,
+                                style: AppTypography.button.copyWith(
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
                           ),
-                          SizedBox(width: 6),
-                          Text(
-                            'Pay now',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
               ),
             ),
