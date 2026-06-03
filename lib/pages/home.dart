@@ -12,6 +12,7 @@ import 'package:pos_app/utils/greetings.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/theme/app_typography.dart';
 import 'package:pos_app/utils/currency.dart';
+import 'package:pos_app/utils/receipt_discount.dart';
 import 'edit_product_page.dart';
 import 'setting_page.dart';
 import 'login.dart';
@@ -210,26 +211,31 @@ class _HomePageState extends State<HomePage> {
       final totalResult = await db.rawQuery(
         '''
         SELECT
-          COALESCE(SUM(total), 0)  AS grand_total,
-          COUNT(
-            DISTINCT COALESCE(
-              NULLIF(receipt_number, ''),
-              substr(created_at, 1, 19)
-            )
-          ) AS total_count
-        FROM sales
-        WHERE created_at >= ? AND created_at < ?
-          AND (voided_at IS NULL OR voided_at = '')
+          COALESCE(SUM(receipt_total), 0) AS grand_total,
+          COUNT(*) AS total_count
+        FROM (
+          SELECT
+            SUM(total) - MAX(COALESCE(receipt_discount_amount, 0)) AS receipt_total
+          FROM sales
+          WHERE created_at >= ? AND created_at < ?
+            AND (voided_at IS NULL OR voided_at = '')
+          GROUP BY COALESCE(NULLIF(receipt_number, ''), substr(created_at, 1, 19))
+        )
       ''',
         [todayStart.toIso8601String(), todayEnd.toIso8601String()],
       );
 
       final yesterdayResult = await db.rawQuery(
         '''
-        SELECT COALESCE(SUM(total), 0) AS yesterday_total
-        FROM sales
-        WHERE created_at >= ? AND created_at < ?
-          AND (voided_at IS NULL OR voided_at = '')
+        SELECT COALESCE(SUM(receipt_total), 0) AS yesterday_total
+        FROM (
+          SELECT
+            SUM(total) - MAX(COALESCE(receipt_discount_amount, 0)) AS receipt_total
+          FROM sales
+          WHERE created_at >= ? AND created_at < ?
+            AND (voided_at IS NULL OR voided_at = '')
+          GROUP BY COALESCE(NULLIF(receipt_number, ''), substr(created_at, 1, 19))
+        )
       ''',
         [yesterdayStart.toIso8601String(), todayStart.toIso8601String()],
       );
@@ -242,7 +248,7 @@ class _HomePageState extends State<HomePage> {
             'R-' || MIN(sales.id)
           ) AS receipt_number,
           GROUP_CONCAT(sales.product_name, ', ') AS product_name,
-          SUM(sales.total) AS total,
+          SUM(sales.total) - MAX(COALESCE(sales.receipt_discount_amount, 0)) AS total,
           SUM(sales.quantity) AS quantity,
           MIN(sales.created_at) AS created_at
         FROM sales
@@ -775,7 +781,9 @@ class _HomePageState extends State<HomePage> {
     return null;
   }
 
-  Future<shop_cart.SaleCompletion?> _completeSharedSale() async {
+  Future<shop_cart.SaleCompletion?> _completeSharedSale(
+    ReceiptDiscount discount,
+  ) async {
     if (sharedCart.isEmpty) return null;
 
     final db = await DatabaseHelper.instance.database;
@@ -788,6 +796,18 @@ class _HomePageState extends State<HomePage> {
       final receiptNumber = DatabaseHelper.instance.generateReceiptNumber(
         createdAt,
       );
+      final receiptSubtotal = sharedCart.fold<double>(
+        0,
+        (sum, item) =>
+            sum +
+            (((item['product'] as Map<String, dynamic>)['price'] as num)
+                    .toDouble() *
+                ((item['quantity'] as num?)?.toInt() ?? 0)),
+      );
+      final receiptDiscountAmount = discount.amountFor(receiptSubtotal);
+      final receiptDiscountValue = discount.type == ReceiptDiscountType.percent
+          ? discount.value.clamp(0, 100).toDouble()
+          : receiptDiscountAmount;
       int? firstSaleId;
       await db.transaction((txn) async {
         for (final item in sharedCart) {
@@ -846,6 +866,10 @@ class _HomePageState extends State<HomePage> {
             'completion_due_at': completionDueAt.toIso8601String(),
             'completed_at': null,
             'receipt_number': receiptNumber,
+            'receipt_subtotal': receiptSubtotal,
+            'receipt_discount_amount': receiptDiscountAmount,
+            'receipt_discount_type': discount.storageType,
+            'receipt_discount_value': receiptDiscountValue,
             'created_at': createdAt.toIso8601String(),
           };
           final saleId = await txn.insert('sales', saleRow);
@@ -1074,8 +1098,8 @@ class _HomePageState extends State<HomePage> {
           onRemove: _removeFromSharedCart,
           onDelete: _deleteFromSharedCart,
           currentUsername: widget.username,
-          onCompleteSale: () async {
-            return _completeSharedSale();
+          onCompleteSale: (discount) async {
+            return _completeSharedSale(discount);
           },
           onBrowseProducts: () {
             setState(() => _selectedIndex = 3);

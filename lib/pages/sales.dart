@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'package:pos_app/utils/message_banner.dart';
+import 'package:pos_app/utils/receipt_discount.dart';
 import 'shop_cart_page.dart' as shop_cart;
 
 // ─── Stock helpers ────────────────────────────────────────────────────────────
@@ -337,7 +338,9 @@ class _SalesPageState extends State<SalesPage> {
     _notifyCartChanged();
   }
 
-  Future<shop_cart.SaleCompletion?> _completeSale() async {
+  Future<shop_cart.SaleCompletion?> _completeSale(
+    ReceiptDiscount discount,
+  ) async {
     if (_cart.isEmpty) return null;
     final db = await DatabaseHelper.instance.database;
     try {
@@ -349,6 +352,17 @@ class _SalesPageState extends State<SalesPage> {
       final receiptNumber = DatabaseHelper.instance.generateReceiptNumber(
         createdAt,
       );
+      final receiptSubtotal = _cart.fold<double>(
+        0,
+        (sum, item) =>
+            sum +
+            ((item['product']['price'] as num).toDouble() *
+                (item['quantity'] as int)),
+      );
+      final receiptDiscountAmount = discount.amountFor(receiptSubtotal);
+      final receiptDiscountValue = discount.type == ReceiptDiscountType.percent
+          ? discount.value.clamp(0, 100).toDouble()
+          : receiptDiscountAmount;
       int? firstSaleId;
       for (final item in _cart) {
         final product = item['product'];
@@ -382,6 +396,10 @@ class _SalesPageState extends State<SalesPage> {
           'completion_due_at': completionDueAt.toIso8601String(),
           'completed_at': null,
           'receipt_number': receiptNumber,
+          'receipt_subtotal': receiptSubtotal,
+          'receipt_discount_amount': receiptDiscountAmount,
+          'receipt_discount_type': discount.storageType,
+          'receipt_discount_value': receiptDiscountValue,
           'created_at': createdAt.toIso8601String(),
         };
         final saleId = await db.insert('sales', saleRow);
@@ -585,8 +603,8 @@ class _SalesPageState extends State<SalesPage> {
           onRemove: _removeFromCart,
           onDelete: _deleteFromCart,
           currentUsername: widget.currentUsername,
-          onCompleteSale: () async {
-            return _completeSale();
+          onCompleteSale: (discount) async {
+            return _completeSale(discount);
           },
           onBrowseProducts: () => Navigator.pop(context),
         ),

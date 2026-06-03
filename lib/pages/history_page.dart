@@ -86,7 +86,7 @@ class _HistoryPageState extends State<HistoryPage>
         COALESCE(NULLIF(sales.receipt_number,''),'INV-'||printf('%06d',MIN(sales.id))) AS receipt_number,
         GROUP_CONCAT(sales.product_name,', ') AS product_name,
         SUM(sales.quantity)   AS quantity,
-        SUM(sales.total)      AS total,
+        SUM(sales.total) - MAX(COALESCE(sales.receipt_discount_amount,0)) AS total,
         MIN(sales.created_at) AS created_at,
         MAX(sales.voided_at)  AS voided_at,
         COALESCE(MAX(sales.void_reason),'') AS void_reason

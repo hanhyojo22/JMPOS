@@ -10,6 +10,7 @@ import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:crypto/crypto.dart';
 import 'package:archive/archive_io.dart';
+import 'package:pos_app/models/receipt_discount_preset.dart';
 import 'package:pos_app/services/supabase_sync_service.dart';
 import 'package:pos_app/utils/login_input_validator.dart';
 
@@ -38,7 +39,7 @@ class DatabaseHelper {
   static Database? _database;
   static bool _syncInProgress = false;
   static bool _cloudRestoreInProgress = false;
-  static const int _dbVersion = 10;
+  static const int _dbVersion = 11;
   static const saleCompletionGracePeriod = Duration(seconds: 10);
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
   static const int _productImageSize = 300;
@@ -532,6 +533,10 @@ class DatabaseHelper {
         completion_due_at TEXT,
         completed_at TEXT,
         receipt_number TEXT,
+        receipt_subtotal REAL,
+        receipt_discount_amount REAL,
+        receipt_discount_type TEXT,
+        receipt_discount_value REAL,
         created_at TEXT NOT NULL
       )
     ''');
@@ -552,6 +557,8 @@ class DatabaseHelper {
 
     await _createAuditLogTable(db);
     await _createSyncQueueTable(db);
+    await _createReceiptDiscountsTable(db);
+    await _seedDefaultReceiptDiscounts(db);
 
     await _createIndexes(db);
   }
@@ -584,6 +591,10 @@ class DatabaseHelper {
     }
     if (oldVersion < 10) {
       await _ensureSalesSchema(db);
+    }
+    if (oldVersion < 11) {
+      await _createReceiptDiscountsTable(db);
+      await _seedDefaultReceiptDiscounts(db);
     }
   }
 
@@ -621,6 +632,49 @@ class DatabaseHelper {
       )
     ''');
     await _ensureSyncQueueSchema(db);
+  }
+
+  Future<void> _createReceiptDiscountsTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS receipt_discounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        percent REAL NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+  }
+
+  Future<void> _seedDefaultReceiptDiscounts(DatabaseExecutor db) async {
+    final count =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM receipt_discounts'),
+        ) ??
+        0;
+    if (count > 0) return;
+
+    final now = DateTime.now().toIso8601String();
+    final defaults = [
+      const ReceiptDiscountPreset(
+        name: 'Senior Citizen',
+        percent: 20,
+        sortOrder: 10,
+      ),
+      const ReceiptDiscountPreset(name: 'PWD', percent: 20, sortOrder: 20),
+      const ReceiptDiscountPreset(name: 'Employee', percent: 10, sortOrder: 30),
+      const ReceiptDiscountPreset(name: 'Promo', percent: 5, sortOrder: 40),
+    ];
+
+    for (final discount in defaults) {
+      await db.insert('receipt_discounts', {
+        ...discount.toMap(),
+        'created_at': now,
+        'updated_at': now,
+      });
+    }
   }
 
   Future<void> _ensureSyncQueueSchema(DatabaseExecutor db) async {
@@ -762,6 +816,24 @@ class DatabaseHelper {
     }
     if (!columnNames.contains('receipt_number')) {
       await db.execute('ALTER TABLE sales ADD COLUMN receipt_number TEXT');
+    }
+    if (!columnNames.contains('receipt_subtotal')) {
+      await db.execute('ALTER TABLE sales ADD COLUMN receipt_subtotal REAL');
+    }
+    if (!columnNames.contains('receipt_discount_amount')) {
+      await db.execute(
+        'ALTER TABLE sales ADD COLUMN receipt_discount_amount REAL',
+      );
+    }
+    if (!columnNames.contains('receipt_discount_type')) {
+      await db.execute(
+        'ALTER TABLE sales ADD COLUMN receipt_discount_type TEXT',
+      );
+    }
+    if (!columnNames.contains('receipt_discount_value')) {
+      await db.execute(
+        'ALTER TABLE sales ADD COLUMN receipt_discount_value REAL',
+      );
     }
     await db.execute('''
       UPDATE sales
@@ -1330,6 +1402,26 @@ class DatabaseHelper {
         cloudRow,
         'receipt_number',
       ),
+      'receipt_subtotal': _cloudNullableNumber(
+        payload,
+        cloudRow,
+        'receipt_subtotal',
+      ),
+      'receipt_discount_amount': _cloudNullableNumber(
+        payload,
+        cloudRow,
+        'receipt_discount_amount',
+      ),
+      'receipt_discount_type': _cloudNullableString(
+        payload,
+        cloudRow,
+        'receipt_discount_type',
+      ),
+      'receipt_discount_value': _cloudNullableNumber(
+        payload,
+        cloudRow,
+        'receipt_discount_value',
+      ),
       'created_at':
           _cloudNullableString(payload, cloudRow, 'created_at') ??
           DateTime.now().toIso8601String(),
@@ -1572,7 +1664,7 @@ class DatabaseHelper {
         : sanitized.substring(0, maxLength).trimRight();
   }
 
-  // ─── Password hashing ────────────────────────────────────────────────────────
+  // â”€â”€â”€ Password hashing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   static String _hashPassword(String password) {
     final bytes = utf8.encode(password);
     final digest = sha256.convert(bytes);
@@ -1597,7 +1689,7 @@ class DatabaseHelper {
 
   bool _isValidPin(String pin) => _normalizePin(pin).length == 6;
 
-  // ─── Auth methods ─────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Auth methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Returns the user map if credentials are valid, null otherwise.
   Future<Map<String, dynamic>?> login(String username, String password) async {
@@ -1975,7 +2067,131 @@ class DatabaseHelper {
     return null;
   }
 
-  // ─── Product methods ──────────────────────────────────────────────────────────
+  Future<List<ReceiptDiscountPreset>> getReceiptDiscounts({
+    bool includeDisabled = false,
+  }) async {
+    final db = await database;
+    await _createReceiptDiscountsTable(db);
+    await _seedDefaultReceiptDiscounts(db);
+    final rows = await db.query(
+      'receipt_discounts',
+      where: includeDisabled ? null : 'enabled = ?',
+      whereArgs: includeDisabled ? null : [1],
+      orderBy: 'sort_order ASC, name COLLATE NOCASE ASC',
+    );
+    return rows.map(ReceiptDiscountPreset.fromMap).toList();
+  }
+
+  Future<int> saveReceiptDiscount({
+    int? id,
+    required String name,
+    required double percent,
+    bool enabled = true,
+    String? actorUsername,
+  }) async {
+    final db = await database;
+    await _createReceiptDiscountsTable(db);
+    await _seedDefaultReceiptDiscounts(db);
+
+    final cleanName = name
+        .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (cleanName.isEmpty || cleanName.length > 50) {
+      throw Exception('Discount name must be 1 to 50 characters.');
+    }
+    if (!percent.isFinite || percent <= 0 || percent > 100) {
+      throw Exception('Discount percent must be between 1 and 100.');
+    }
+
+    final now = DateTime.now().toIso8601String();
+    final maxSort =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT MAX(sort_order) FROM receipt_discounts'),
+        ) ??
+        0;
+    final row = {
+      'name': cleanName,
+      'percent': percent,
+      'enabled': enabled ? 1 : 0,
+      'updated_at': now,
+    };
+
+    int discountId;
+    if (id == null) {
+      discountId = await db.insert('receipt_discounts', {
+        ...row,
+        'sort_order': maxSort + 10,
+        'created_at': now,
+      });
+    } else {
+      final updated = await db.update(
+        'receipt_discounts',
+        row,
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      if (updated == 0) throw Exception('Discount was not found.');
+      discountId = id;
+    }
+
+    await recordAuditLog(
+      user: actorUsername ?? 'owner',
+      action: id == null ? 'discount_create' : 'discount_update',
+      details: _auditDetails({
+        'discount_id': discountId,
+        'name': cleanName,
+        'percent': percent,
+        'enabled': enabled,
+      }),
+    );
+    return discountId;
+  }
+
+  Future<void> setReceiptDiscountEnabled({
+    required int id,
+    required bool enabled,
+    String? actorUsername,
+  }) async {
+    final db = await database;
+    await _createReceiptDiscountsTable(db);
+    final updated = await db.update(
+      'receipt_discounts',
+      {
+        'enabled': enabled ? 1 : 0,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (updated == 0) throw Exception('Discount was not found.');
+    await recordAuditLog(
+      user: actorUsername ?? 'owner',
+      action: 'discount_toggle',
+      details: _auditDetails({'discount_id': id, 'enabled': enabled}),
+    );
+  }
+
+  Future<void> deleteReceiptDiscount({
+    required int id,
+    String? actorUsername,
+  }) async {
+    final db = await database;
+    await _createReceiptDiscountsTable(db);
+    final deleted = await db.delete(
+      'receipt_discounts',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (deleted == 0) throw Exception('Discount was not found.');
+    await recordAuditLog(
+      user: actorUsername ?? 'owner',
+      action: 'discount_delete',
+      details: _auditDetails({'discount_id': id}),
+    );
+  }
+
+  // â”€â”€â”€ Product methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Adds a new product to the database with automatic timestamps.
   ///
@@ -2234,7 +2450,7 @@ class DatabaseHelper {
     return result;
   }
 
-  // ─── Sales methods ────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Sales methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   Future<int> insertSale(Map<String, dynamic> sale) async {
     final db = await database;
@@ -2443,7 +2659,7 @@ class DatabaseHelper {
     return true;
   }
 
-  // ─── Staff management methods ──────────────────────────────────────────────────
+  // â”€â”€â”€ Staff management methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Creates a new staff user. Returns the user id if successful, -1 otherwise.
   Future<int> createStaff({

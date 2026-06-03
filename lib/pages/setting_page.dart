@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/main.dart';
+import 'package:pos_app/pages/discounts_settings_page.dart';
 import 'package:pos_app/services/license_activation_service.dart';
 import 'package:pos_app/services/screen_awake_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -193,6 +194,23 @@ class _SettingsPageState extends State<SettingsPage> {
                         label: 'Receipt footer',
                         subtitle: 'Thank you for shopping!',
                         onTap: () {},
+                      ),
+                      _SettingsRow(
+                        icon: Icons.local_offer_outlined,
+                        iconBg: const Color(0xFFE1F5EE),
+                        iconColor: const Color(0xFF0F6E56),
+                        label: 'Discounts',
+                        subtitle: 'Senior, PWD, Employee, Promo',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => DiscountsSettingsPage(
+                                currentUsername: widget.currentUsername,
+                              ),
+                            ),
+                          );
+                        },
                         isLast: true,
                       ),
                     ],

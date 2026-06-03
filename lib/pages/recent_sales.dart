@@ -82,6 +82,10 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
           sales.completion_due_at,
           sales.completed_at,
           sales.receipt_number,
+          sales.receipt_subtotal,
+          sales.receipt_discount_amount,
+          sales.receipt_discount_type,
+          sales.receipt_discount_value,
           sales.created_at,
           products.category AS category,
           products.barcode AS barcode
@@ -116,6 +120,10 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
               sales.completion_due_at,
               sales.completed_at,
               sales.receipt_number,
+              sales.receipt_subtotal,
+              sales.receipt_discount_amount,
+              sales.receipt_discount_type,
+              sales.receipt_discount_value,
               sales.created_at,
               products.category AS category,
               products.barcode AS barcode
@@ -149,6 +157,10 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
               sales.completion_due_at,
               sales.completed_at,
               sales.receipt_number,
+              sales.receipt_subtotal,
+              sales.receipt_discount_amount,
+              sales.receipt_discount_type,
+              sales.receipt_discount_value,
               sales.created_at,
               products.category AS category,
               products.barcode AS barcode
@@ -364,8 +376,9 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
       0.0,
       (sum, item) => sum + ((item['total'] as num?)?.toDouble() ?? 0.0),
     );
-    const discount = 0.0;
-    final subtotal = transactionTotal + discount;
+    final discount = _receiptDiscountAmount(transactionTotal);
+    final subtotal = transactionTotal;
+    final total = (subtotal - discount).clamp(0, subtotal).toDouble();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -373,20 +386,28 @@ class _RecentSalesPageState extends State<RecentSalesPage> {
         _receiptHeaderCard(
           receiptId: _receiptLabel(),
           createdAt: createdAt,
-          total: transactionTotal,
+          total: total,
         ),
         const SizedBox(height: 14),
         _itemsTableCard(),
         const SizedBox(height: 14),
-        _totalsCard(
-          subtotal: subtotal,
-          discount: discount,
-          total: transactionTotal,
-        ),
+        _totalsCard(subtotal: subtotal, discount: discount, total: total),
         const SizedBox(height: 14),
         _noteCard(),
       ],
     );
+  }
+
+  double _receiptDiscountAmount(double subtotal) {
+    final values = _items
+        .map((item) => (item['receipt_discount_amount'] as num?)?.toDouble())
+        .whereType<double>();
+    final discount = values.fold<double>(
+      0,
+      (maxValue, value) => value > maxValue ? value : maxValue,
+    );
+    if (!discount.isFinite || discount <= 0) return 0;
+    return discount.clamp(0, subtotal).toDouble();
   }
 
   Widget _receiptHeaderCard({

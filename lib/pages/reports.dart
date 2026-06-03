@@ -165,7 +165,7 @@ class _ReportsPageState extends State<ReportsPage> {
         receiptKey,
         () => _ReceiptAccumulator(receiptNumber: receiptKey),
       );
-      receipt.add(row);
+      receipt.add(row, createdAt);
 
       if (_isVoided(row)) continue;
       final productId = (row['product_id'] as num?)?.toInt() ?? -1;
@@ -184,25 +184,9 @@ class _ReportsPageState extends State<ReportsPage> {
       final total = (row['total'] as num?)?.toDouble() ?? 0;
       categoryRevenue[categoryName] =
           (categoryRevenue[categoryName] ?? 0) + total;
-      final trendKey = _period == _ReportPeriod.today
-          ? DateTime(
-              createdAt.year,
-              createdAt.month,
-              createdAt.day,
-              createdAt.hour,
-            )
-          : DateTime(createdAt.year, createdAt.month, createdAt.day);
-      trendRevenue[trendKey] = (trendRevenue[trendKey] ?? 0) + total;
       final costPrice = (row['cost_price'] as num?)?.toDouble();
       if (costPrice == null) {
         legacyMissingCostCount++;
-      } else {
-        final quantity = (row['quantity'] as num?)?.toInt() ?? 0;
-        final lineCost = costPrice * quantity;
-        final lineProfit = total - lineCost;
-        coveredRevenue += total;
-        costOfGoodsSold += lineCost;
-        trendProfit[trendKey] = (trendProfit[trendKey] ?? 0) + lineProfit;
       }
     }
 
@@ -220,6 +204,26 @@ class _ReportsPageState extends State<ReportsPage> {
     final productProfitability = [...stats]
       ..sort((a, b) => b.grossProfit.compareTo(a.grossProfit));
 
+    for (final receipt in completedReceipts) {
+      final createdAt = receipt.createdAt;
+      if (createdAt == null) continue;
+      final trendKey = _period == _ReportPeriod.today
+          ? DateTime(
+              createdAt.year,
+              createdAt.month,
+              createdAt.day,
+              createdAt.hour,
+            )
+          : DateTime(createdAt.year, createdAt.month, createdAt.day);
+      trendRevenue[trendKey] = (trendRevenue[trendKey] ?? 0) + receipt.netTotal;
+      if (receipt.missingCostItems == 0) {
+        coveredRevenue += receipt.netTotal;
+        costOfGoodsSold += receipt.costOfGoodsSold;
+        trendProfit[trendKey] =
+            (trendProfit[trendKey] ?? 0) + receipt.grossProfit;
+      }
+    }
+
     final inventory = _InventorySnapshot.fromProducts(products);
     final soldProductIds = productStats.keys.toSet();
     final slowMovers =
@@ -236,7 +240,10 @@ class _ReportsPageState extends State<ReportsPage> {
     return _ReportData(
       range: range,
       filteredRows: filteredRows,
-      revenue: completedReceipts.fold(0, (sum, receipt) => sum + receipt.total),
+      revenue: completedReceipts.fold(
+        0,
+        (sum, receipt) => sum + receipt.netTotal,
+      ),
       coveredRevenue: coveredRevenue,
       costOfGoodsSold: costOfGoodsSold,
       legacyMissingCostCount: legacyMissingCostCount,
@@ -247,7 +254,7 @@ class _ReportsPageState extends State<ReportsPage> {
       ),
       voidedAmount: voidedReceipts.fold(
         0,
-        (sum, receipt) => sum + receipt.total,
+        (sum, receipt) => sum + receipt.netTotal,
       ),
       voidedReceipts: voidedReceipts
           .map((receipt) => receipt.toVoidAudit())
@@ -2762,15 +2769,33 @@ class _ReceiptAccumulator {
   _ReceiptAccumulator({required this.receiptNumber});
   final String receiptNumber;
   double total = 0;
+  double discount = 0;
+  double costOfGoodsSold = 0;
   int quantity = 0;
+  int missingCostItems = 0;
   bool isVoided = false;
+  DateTime? createdAt;
   DateTime voidedAt = DateTime.fromMillisecondsSinceEpoch(0);
   String voidedBy = 'Unknown';
   String reason = '';
 
-  void add(Map<String, Object?> row) {
-    total += (row['total'] as num?)?.toDouble() ?? 0;
-    quantity += (row['quantity'] as num?)?.toInt() ?? 0;
+  void add(Map<String, Object?> row, DateTime rowCreatedAt) {
+    createdAt ??= rowCreatedAt;
+    final lineTotal = (row['total'] as num?)?.toDouble() ?? 0;
+    final lineQuantity = (row['quantity'] as num?)?.toInt() ?? 0;
+    total += lineTotal;
+    quantity += lineQuantity;
+    final rowDiscount =
+        (row['receipt_discount_amount'] as num?)?.toDouble() ?? 0;
+    if (rowDiscount.isFinite && rowDiscount > discount) {
+      discount = rowDiscount;
+    }
+    final costPrice = (row['cost_price'] as num?)?.toDouble();
+    if (costPrice == null) {
+      missingCostItems++;
+    } else {
+      costOfGoodsSold += costPrice * lineQuantity;
+    }
     if (_isVoided(row)) {
       isVoided = true;
       final parsed = DateTime.tryParse(
@@ -2784,10 +2809,17 @@ class _ReceiptAccumulator {
     }
   }
 
+  double get netTotal => (total - discount.clamp(0, total)).clamp(0, total);
+
+  double get grossProfit => profit_margin.grossProfit(
+    coveredRevenue: netTotal,
+    costOfGoodsSold: costOfGoodsSold,
+  );
+
   _VoidAudit toVoidAudit() => _VoidAudit(
     receiptNumber: receiptNumber,
     voidedAt: voidedAt,
-    total: total,
+    total: netTotal,
     voidedBy: voidedBy,
     reason: reason,
   );
