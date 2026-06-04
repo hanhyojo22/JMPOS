@@ -42,28 +42,34 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const user = await authenticatedUser(admin, req);
-    await recordPasswordResetAttempt(admin, user.id);
-    const passwordHash = await sha256Hex(password);
+    const attemptId = await recordPasswordResetAttempt(admin, user.id);
+    try {
+      const passwordHash = await sha256Hex(password);
 
-    const { data: stores, error: storesError } = await admin
-      .from("stores")
-      .select("id")
-      .eq("owner_user_id", user.id);
-    if (storesError) throw storesError;
+      const { data: stores, error: storesError } = await admin
+        .from("stores")
+        .select("id")
+        .eq("owner_user_id", user.id);
+      if (storesError) throw storesError;
 
-    const storeIds = ((stores ?? []) as StoreRow[])
-      .map((store: StoreRow) => String(store.id ?? ""))
-      .filter((id: string) => id.length > 0);
+      const storeIds = ((stores ?? []) as StoreRow[])
+        .map((store: StoreRow) => String(store.id ?? ""))
+        .filter((id: string) => id.length > 0);
 
-    let updated = 0;
-    for (const storeId of storeIds) {
-      updated += await updateOwnerRows(admin, storeId, passwordHash);
+      let updated = 0;
+      for (const storeId of storeIds) {
+        updated += await updateOwnerRows(admin, storeId, passwordHash);
+      }
+      if (updated === 0 && user.email) {
+        updated += await updateOwnerRowsByEmail(admin, user.email, passwordHash);
+      }
+
+      await markPasswordResetAttemptSucceeded(admin, attemptId);
+      return json({ updated });
+    } catch (error) {
+      await markPasswordResetAttemptFailed(admin, attemptId, error);
+      throw error;
     }
-    if (updated === 0 && user.email) {
-      updated += await updateOwnerRowsByEmail(admin, user.email, passwordHash);
-    }
-
-    return json({ updated });
   } catch (error) {
     const message = error instanceof HttpError
       ? error.message
@@ -89,10 +95,50 @@ async function recordPasswordResetAttempt(admin: AdminClient, userId: string) {
     );
   }
 
-  const { error: insertError } = await admin
+  const { data, error: insertError } = await admin
     .from("password_reset_attempts")
-    .insert({ user_id: userId });
+    .insert({ user_id: userId })
+    .select("id")
+    .single();
   if (insertError) throw insertError;
+  const attemptId = String(data?.id ?? "");
+  if (!attemptId) {
+    throw new HttpError("Could not record password reset attempt.", 500);
+  }
+  return attemptId;
+}
+
+async function markPasswordResetAttemptSucceeded(
+  admin: AdminClient,
+  attemptId: string,
+) {
+  const { error } = await admin
+    .from("password_reset_attempts")
+    .update({
+      succeeded_at: new Date().toISOString(),
+      failure_reason: null,
+    })
+    .eq("id", attemptId);
+  if (error) throw error;
+}
+
+async function markPasswordResetAttemptFailed(
+  admin: AdminClient,
+  attemptId: string,
+  error: unknown,
+) {
+  const { error: updateError } = await admin
+    .from("password_reset_attempts")
+    .update({
+      failure_reason: failureReason(error),
+    })
+    .eq("id", attemptId);
+  if (updateError) console.error("Could not mark reset attempt failed", updateError);
+}
+
+function failureReason(error: unknown) {
+  const text = error instanceof Error ? error.message : String(error);
+  return text.slice(0, 500);
 }
 
 async function authenticatedUser(

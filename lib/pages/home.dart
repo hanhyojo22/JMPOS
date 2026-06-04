@@ -7,6 +7,7 @@ import 'products.dart';
 import 'sales.dart';
 import 'reports.dart';
 import 'account_page.dart';
+import 'shift_management_page.dart';
 import 'staff_management.dart';
 import 'package:pos_app/utils/greetings.dart';
 import 'package:pos_app/database/database_helper.dart';
@@ -789,6 +790,8 @@ class _HomePageState extends State<HomePage> {
     final db = await DatabaseHelper.instance.database;
     try {
       await DatabaseHelper.instance.ensureSalesSchema();
+      final shift = await DatabaseHelper.instance.requireOpenShiftForCheckout();
+      final shiftId = (shift['id'] as num).toInt();
       final createdAt = DateTime.now();
       final completionDueAt = createdAt.add(
         DatabaseHelper.saleCompletionGracePeriod,
@@ -870,6 +873,7 @@ class _HomePageState extends State<HomePage> {
             'receipt_discount_amount': receiptDiscountAmount,
             'receipt_discount_type': discount.storageType,
             'receipt_discount_value': receiptDiscountValue,
+            'shift_id': shiftId,
             'created_at': createdAt.toIso8601String(),
           };
           final saleId = await txn.insert('sales', saleRow);
@@ -1109,6 +1113,12 @@ class _HomePageState extends State<HomePage> {
       case 10:
         if (_isStaff) return _buildAccessDeniedPage();
         return AccountPage(username: widget.username);
+
+      case 11:
+        return ShiftManagementPage(
+          currentUsername: widget.username,
+          readOnly: widget.readOnly,
+        );
     }
 
     // ── Home tab ─────────────────────────────────────────────────────────────
@@ -1688,6 +1698,13 @@ class _HomePageState extends State<HomePage> {
                     title: 'Sales History',
                     index: 6,
                   ),
+
+                  if (!widget.readOnly)
+                    _drawerItem(
+                      icon: Icons.point_of_sale_rounded,
+                      title: 'Shift',
+                      index: 11,
+                    ),
 
                   if (!widget.readOnly)
                     _drawerItem(

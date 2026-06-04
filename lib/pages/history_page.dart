@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'recent_sales.dart';
+import 'z_reading_detail_page.dart';
 
 class HistoryPage extends StatefulWidget {
   final String currentUsername;
@@ -20,6 +21,7 @@ class HistoryPage extends StatefulWidget {
 class _HistoryPageState extends State<HistoryPage>
     with SingleTickerProviderStateMixin {
   List<Map<String, dynamic>> salesHistory = [];
+  List<Map<String, dynamic>> zReadings = [];
   bool loading = true;
 
   // ── Palette ────────────────────────────────────────────────────
@@ -36,7 +38,7 @@ class _HistoryPageState extends State<HistoryPage>
   static const Color _divider = Color(0xFFEEEEEE);
   static const Color _bg = Color(0xFFF5F4FC); // very light purple tint
 
-  String _selectedTab = 'Completed'; // 'Completed' | 'Void'
+  String _selectedTab = 'Completed'; // 'Completed' | 'Void' | 'Z'
   String _selectedSort = 'Newest';
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
@@ -76,6 +78,7 @@ class _HistoryPageState extends State<HistoryPage>
 
     final db = await DatabaseHelper.instance.database;
     await DatabaseHelper.instance.ensureSalesSchema();
+    await DatabaseHelper.instance.ensureShiftSchema();
     if (!widget.readOnly) {
       await DatabaseHelper.instance.completeDueSales();
     }
@@ -94,6 +97,27 @@ class _HistoryPageState extends State<HistoryPage>
       LEFT JOIN products ON products.id = sales.product_id
       GROUP BY COALESCE(NULLIF(sales.receipt_number,''),substr(sales.created_at,1,19))
       ORDER BY MAX(sales.created_at) DESC, MAX(sales.id) DESC
+    ''');
+
+    final zRows = await db.rawQuery('''
+      SELECT
+        shift_readings.id,
+        shift_readings.shift_id,
+        shift_readings.created_by,
+        shift_readings.created_at,
+        shift_readings.opening_cash,
+        shift_readings.sales_total,
+        shift_readings.void_total,
+        shift_readings.receipt_count,
+        shift_readings.item_count,
+        shift_readings.expected_cash,
+        shift_readings.counted_cash,
+        shift_readings.over_short,
+        shifts.z_reading_number
+      FROM shift_readings
+      LEFT JOIN shifts ON shifts.id = shift_readings.shift_id
+      WHERE shift_readings.type = 'z'
+      ORDER BY shift_readings.created_at DESC, shift_readings.id DESC
     ''');
 
     const months = [
@@ -142,6 +166,47 @@ class _HistoryPageState extends State<HistoryPage>
           'voidReason': sale['void_reason']?.toString() ?? '',
         };
       }).toList();
+      zReadings = zRows.map((reading) {
+        DateTime? createdAt;
+        try {
+          createdAt = DateTime.parse(
+            reading['created_at'].toString(),
+          ).toLocal();
+        } catch (_) {}
+
+        String dateStr = '';
+        String timeStr = '';
+        if (createdAt != null) {
+          dateStr =
+              '${months[createdAt.month - 1]} ${createdAt.day.toString().padLeft(2, '0')}, ${createdAt.year}';
+          final h = createdAt.hour % 12 == 0 ? 12 : createdAt.hour % 12;
+          final m = createdAt.minute.toString().padLeft(2, '0');
+          final period = createdAt.hour >= 12 ? 'PM' : 'AM';
+          timeStr = '$h:$m $period';
+        }
+
+        return {
+          'id': reading['id'],
+          'shiftId': reading['shift_id'],
+          'zReadingNumber':
+              reading['z_reading_number']?.toString().trim().isNotEmpty == true
+              ? reading['z_reading_number'].toString()
+              : 'Z-${reading['id']}',
+          'createdBy': reading['created_by']?.toString() ?? 'unknown',
+          'createdAt': createdAt,
+          'date': dateStr,
+          'time': timeStr,
+          'openingCash': reading['opening_cash'],
+          'salesTotal': reading['sales_total'],
+          'voidTotal': reading['void_total'],
+          'receiptCount': reading['receipt_count'],
+          'itemCount': reading['item_count'],
+          'expectedCash': reading['expected_cash'],
+          'countedCash': reading['counted_cash'],
+          'overShort': reading['over_short'],
+          'total': reading['expected_cash'],
+        };
+      }).toList();
       loading = false;
     });
 
@@ -188,6 +253,53 @@ class _HistoryPageState extends State<HistoryPage>
         break;
       case 'Lowest Amount':
         list.sort((a, b) => (a['total'] as num).compareTo(b['total'] as num));
+        break;
+      default:
+        list.sort(_cmpDate);
+    }
+    return list;
+  }
+
+  List<Map<String, dynamic>> _sortedZReadings(
+    List<Map<String, dynamic>> items,
+  ) {
+    final query = _searchQuery.trim().toLowerCase();
+    final list = items.where((reading) {
+      if (query.isEmpty) return true;
+      final expectedCash = (reading['expectedCash'] as num?)?.toDouble() ?? 0;
+      final countedCash = (reading['countedCash'] as num?)?.toDouble() ?? 0;
+      final overShort = (reading['overShort'] as num?)?.toDouble() ?? 0;
+      return [
+        reading['zReadingNumber'],
+        reading['createdBy'],
+        reading['date'],
+        reading['time'],
+        reading['receiptCount'],
+        reading['itemCount'],
+        expectedCash,
+        countedCash,
+        overShort,
+        CurrencyFormatter.format(expectedCash),
+        CurrencyFormatter.format(countedCash),
+        CurrencyFormatter.format(overShort),
+        'z reading',
+      ].any((value) => (value?.toString() ?? '').toLowerCase().contains(query));
+    }).toList();
+    switch (_selectedSort) {
+      case 'Oldest':
+        list.sort((a, b) => _cmpDate(b, a));
+        break;
+      case 'Highest Amount':
+        list.sort(
+          (a, b) =>
+              ((b['total'] as num?) ?? 0).compareTo((a['total'] as num?) ?? 0),
+        );
+        break;
+      case 'Lowest Amount':
+        list.sort(
+          (a, b) =>
+              ((a['total'] as num?) ?? 0).compareTo((b['total'] as num?) ?? 0),
+        );
         break;
       default:
         list.sort(_cmpDate);
@@ -293,8 +405,15 @@ class _HistoryPageState extends State<HistoryPage>
             label: 'Void Sales',
             selected: _selectedTab == 'Void',
             activeColor: _red,
-            alignment: Alignment.centerRight,
+            alignment: Alignment.center,
             onTap: () => setState(() => _selectedTab = 'Void'),
+          ),
+          _TabItem(
+            label: 'Z Reading',
+            selected: _selectedTab == 'Z',
+            activeColor: Colors.green,
+            alignment: Alignment.centerRight,
+            onTap: () => setState(() => _selectedTab = 'Z'),
           ),
         ],
       ),
@@ -310,7 +429,10 @@ class _HistoryPageState extends State<HistoryPage>
     }
 
     final isCompleted = _selectedTab == 'Completed';
-    final items = _sorted(isCompleted ? _completedSales : _voidedSales);
+    final isZReading = _selectedTab == 'Z';
+    final items = isZReading
+        ? _sortedZReadings(zReadings)
+        : _sorted(isCompleted ? _completedSales : _voidedSales);
 
     return FadeTransition(
       opacity: _fadeAnim,
@@ -321,17 +443,23 @@ class _HistoryPageState extends State<HistoryPage>
           slivers: [
             if (items.isEmpty)
               SliverFillRemaining(
-                child: _buildEmpty(
-                  isCompleted,
-                  hasSearchQuery: _searchQuery.trim().isNotEmpty,
-                ),
+                child: isZReading
+                    ? _buildZReadingEmpty(
+                        hasSearchQuery: _searchQuery.trim().isNotEmpty,
+                      )
+                    : _buildEmpty(
+                        isCompleted,
+                        hasSearchQuery: _searchQuery.trim().isNotEmpty,
+                      ),
               )
             else
               SliverList(
                 delegate: SliverChildBuilderDelegate((_, i) {
-                  final sale = items[i];
                   final isLast = i == items.length - 1;
-                  return _buildRow(sale, isLast);
+                  if (isZReading) {
+                    return _buildZReadingRow(items[i], isLast);
+                  }
+                  return _buildRow(items[i], isLast);
                 }, childCount: items.length),
               ),
             const SliverToBoxAdapter(child: SizedBox(height: 32)),
@@ -459,6 +587,164 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   // ── Empty ─────────────────────────────────────────────────────
+  Widget _buildZReadingRow(Map<String, dynamic> reading, bool isLast) {
+    final expectedCash = (reading['expectedCash'] as num?)?.toDouble() ?? 0.0;
+    final overShort = (reading['overShort'] as num?)?.toDouble() ?? 0.0;
+    final receiptCount = (reading['receiptCount'] as num?)?.toInt() ?? 0;
+    final badgeColor = overShort == 0
+        ? Colors.green
+        : overShort > 0
+        ? const Color(0xFFF59E0B)
+        : _red;
+    final badgeBg = badgeColor.withValues(alpha: 0.12);
+    final badgeLabel = overShort == 0
+        ? 'Balanced'
+        : overShort > 0
+        ? 'Over'
+        : 'Short';
+
+    return InkWell(
+      onTap: () {
+        final readingId = (reading['id'] as num?)?.toInt();
+        if (readingId == null) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ZReadingDetailPage(readingId: readingId),
+          ),
+        );
+      },
+      child: Container(
+        color: Colors.white,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          reading['zReadingNumber']?.toString() ?? 'Z Reading',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: _textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${reading['date'] ?? ''}  ${reading['time'] ?? ''}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: _textGrey,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '$receiptCount receipt${receiptCount == 1 ? '' : 's'}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: _textGrey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 104,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          CurrencyFormatter.format(expectedCash),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: _purple,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: _StatusBadge(
+                            label: badgeLabel,
+                            color: badgeColor,
+                            bg: badgeBg,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: Color(0xFFBDBDBD),
+                  ),
+                ],
+              ),
+            ),
+            if (!isLast)
+              const Divider(
+                height: 1,
+                thickness: 1,
+                color: _divider,
+                indent: 16,
+                endIndent: 16,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildZReadingEmpty({bool hasSearchQuery = false}) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: Colors.green.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.point_of_sale_rounded,
+              color: Colors.green.withValues(alpha: 0.65),
+              size: 32,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            hasSearchQuery ? 'No matching Z readings' : 'No Z readings',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: _textDark,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            hasSearchQuery
+                ? 'Try a different Z number, cashier, date, or amount'
+                : 'Closed shift reports will appear here',
+            style: const TextStyle(fontSize: 13, color: _textGrey),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEmpty(bool isCompleted, {bool hasSearchQuery = false}) {
     final color = isCompleted ? _purple : _red;
     final bg = isCompleted ? _purpleLight : _redLight;

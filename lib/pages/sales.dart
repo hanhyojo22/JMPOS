@@ -345,6 +345,8 @@ class _SalesPageState extends State<SalesPage> {
     final db = await DatabaseHelper.instance.database;
     try {
       await DatabaseHelper.instance.ensureSalesSchema();
+      final shift = await DatabaseHelper.instance.requireOpenShiftForCheckout();
+      final shiftId = (shift['id'] as num).toInt();
       final createdAt = DateTime.now();
       final completionDueAt = createdAt.add(
         DatabaseHelper.saleCompletionGracePeriod,
@@ -400,6 +402,7 @@ class _SalesPageState extends State<SalesPage> {
           'receipt_discount_amount': receiptDiscountAmount,
           'receipt_discount_type': discount.storageType,
           'receipt_discount_value': receiptDiscountValue,
+          'shift_id': shiftId,
           'created_at': createdAt.toIso8601String(),
         };
         final saleId = await db.insert('sales', saleRow);

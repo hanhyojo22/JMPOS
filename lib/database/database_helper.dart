@@ -39,7 +39,7 @@ class DatabaseHelper {
   static Database? _database;
   static bool _syncInProgress = false;
   static bool _cloudRestoreInProgress = false;
-  static const int _dbVersion = 11;
+  static const int _dbVersion = 12;
   static const saleCompletionGracePeriod = Duration(seconds: 10);
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
   static const int _productImageSize = 300;
@@ -412,6 +412,9 @@ class DatabaseHelper {
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
       onOpen: (db) async {
+        await _ensureSalesSchema(db);
+        await _createShiftsTable(db);
+        await _createShiftReadingsTable(db);
         await _createSyncQueueTable(db);
         await _createIndexes(db);
       },
@@ -537,6 +540,7 @@ class DatabaseHelper {
         receipt_discount_amount REAL,
         receipt_discount_type TEXT,
         receipt_discount_value REAL,
+        shift_id INTEGER,
         created_at TEXT NOT NULL
       )
     ''');
@@ -558,6 +562,8 @@ class DatabaseHelper {
     await _createAuditLogTable(db);
     await _createSyncQueueTable(db);
     await _createReceiptDiscountsTable(db);
+    await _createShiftsTable(db);
+    await _createShiftReadingsTable(db);
     await _seedDefaultReceiptDiscounts(db);
 
     await _createIndexes(db);
@@ -595,6 +601,12 @@ class DatabaseHelper {
     if (oldVersion < 11) {
       await _createReceiptDiscountsTable(db);
       await _seedDefaultReceiptDiscounts(db);
+    }
+    if (oldVersion < 12) {
+      await _ensureSalesSchema(db);
+      await _createShiftsTable(db);
+      await _createShiftReadingsTable(db);
+      await _createIndexes(db);
     }
   }
 
@@ -644,6 +656,44 @@ class DatabaseHelper {
         sort_order INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      )
+    ''');
+  }
+
+  Future<void> _createShiftsTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS shifts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        status TEXT NOT NULL DEFAULT 'open',
+        opened_by TEXT NOT NULL,
+        opened_at TEXT NOT NULL,
+        opening_cash REAL NOT NULL DEFAULT 0,
+        closed_by TEXT,
+        closed_at TEXT,
+        closing_cash REAL,
+        expected_cash REAL,
+        over_short REAL,
+        z_reading_number TEXT
+      )
+    ''');
+  }
+
+  Future<void> _createShiftReadingsTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS shift_readings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shift_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        opening_cash REAL NOT NULL DEFAULT 0,
+        sales_total REAL NOT NULL DEFAULT 0,
+        void_total REAL NOT NULL DEFAULT 0,
+        receipt_count INTEGER NOT NULL DEFAULT 0,
+        item_count INTEGER NOT NULL DEFAULT 0,
+        expected_cash REAL NOT NULL DEFAULT 0,
+        counted_cash REAL,
+        over_short REAL
       )
     ''');
   }
@@ -723,6 +773,27 @@ class DatabaseHelper {
     await db.execute('''
       CREATE INDEX IF NOT EXISTS idx_sales_voided_at
       ON sales(voided_at)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sales_shift_id
+      ON sales(shift_id)
+    ''');
+
+    await db.execute('''
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_one_open
+      ON shifts(status)
+      WHERE status = 'open'
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_shifts_opened_at
+      ON shifts(opened_at DESC, id DESC)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_shift_readings_shift_created
+      ON shift_readings(shift_id, created_at DESC, id DESC)
     ''');
 
     await db.execute('''
@@ -835,6 +906,9 @@ class DatabaseHelper {
         'ALTER TABLE sales ADD COLUMN receipt_discount_value REAL',
       );
     }
+    if (!columnNames.contains('shift_id')) {
+      await db.execute('ALTER TABLE sales ADD COLUMN shift_id INTEGER');
+    }
     await db.execute('''
       UPDATE sales
       SET receipt_number =
@@ -872,6 +946,262 @@ class DatabaseHelper {
         .toString()
         .padLeft(6, '0');
     return 'R-$date-$time-$suffix';
+  }
+
+  Future<void> ensureShiftSchema() async {
+    final db = await database;
+    await _ensureSalesSchema(db);
+    await _createShiftsTable(db);
+    await _createShiftReadingsTable(db);
+    await _createIndexes(db);
+  }
+
+  Future<Map<String, Object?>?> getOpenShift() async {
+    final db = await database;
+    await ensureShiftSchema();
+    final rows = await db.query(
+      'shifts',
+      where: 'status = ?',
+      whereArgs: ['open'],
+      orderBy: 'opened_at DESC, id DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return Map<String, Object?>.from(rows.first);
+  }
+
+  Future<Map<String, Object?>> requireOpenShiftForCheckout() async {
+    final shift = await getOpenShift();
+    if (shift == null) {
+      throw Exception('Open a shift before completing sales.');
+    }
+    return shift;
+  }
+
+  Future<int> openShift({
+    required double openingCash,
+    required String openedBy,
+  }) async {
+    final db = await database;
+    await ensureShiftSchema();
+    final existing = await getOpenShift();
+    if (existing != null) {
+      throw Exception('A shift is already open.');
+    }
+
+    final now = DateTime.now().toIso8601String();
+    final row = {
+      'status': 'open',
+      'opened_by': _normalizeActor(openedBy),
+      'opened_at': now,
+      'opening_cash': openingCash,
+      'closed_by': null,
+      'closed_at': null,
+      'closing_cash': null,
+      'expected_cash': null,
+      'over_short': null,
+      'z_reading_number': null,
+    };
+    final id = await db.insert('shifts', row);
+    await queueSyncUpsert('shifts', {...row, 'id': id});
+    unawaited(syncPendingChanges());
+    return id;
+  }
+
+  Future<Map<String, Object?>> createXReading({
+    required int shiftId,
+    required String createdBy,
+  }) async {
+    final db = await database;
+    await ensureShiftSchema();
+    await completeDueSales();
+    return await _createShiftReading(
+      db,
+      shiftId: shiftId,
+      type: 'x',
+      createdBy: createdBy,
+    );
+  }
+
+  Future<Map<String, Object?>> closeShiftWithZReading({
+    required int shiftId,
+    required double countedCash,
+    required String closedBy,
+  }) async {
+    final db = await database;
+    await ensureShiftSchema();
+    await completeDueSales();
+
+    late Map<String, Object?> reading;
+    await db.transaction((txn) async {
+      final shift = await _shiftById(txn, shiftId);
+      if (shift == null) throw Exception('Shift was not found.');
+      if (shift['status']?.toString() != 'open') {
+        throw Exception('Shift is already closed.');
+      }
+
+      reading = await _createShiftReading(
+        txn,
+        shiftId: shiftId,
+        type: 'z',
+        createdBy: closedBy,
+        countedCash: countedCash,
+      );
+      final now =
+          reading['created_at']?.toString() ?? DateTime.now().toIso8601String();
+      final updatedShift = {
+        ...shift,
+        'status': 'closed',
+        'closed_by': _normalizeActor(closedBy),
+        'closed_at': now,
+        'closing_cash': countedCash,
+        'expected_cash': reading['expected_cash'],
+        'over_short': reading['over_short'],
+        'z_reading_number': _generateZReadingNumber(DateTime.parse(now)),
+      };
+      await txn.update(
+        'shifts',
+        updatedShift,
+        where: 'id = ?',
+        whereArgs: [shiftId],
+      );
+      await queueSyncUpsert('shifts', updatedShift, executor: txn);
+    });
+    unawaited(syncPendingChanges());
+    return reading;
+  }
+
+  Future<List<Map<String, Object?>>> getShiftReadings({int? shiftId}) async {
+    final db = await database;
+    await ensureShiftSchema();
+    return await db.query(
+      'shift_readings',
+      where: shiftId == null ? null : 'shift_id = ?',
+      whereArgs: shiftId == null ? null : [shiftId],
+      orderBy: 'created_at DESC, id DESC',
+    );
+  }
+
+  Future<List<Map<String, Object?>>> getShiftHistory({int limit = 30}) async {
+    final db = await database;
+    await ensureShiftSchema();
+    return await db.query(
+      'shifts',
+      orderBy: 'opened_at DESC, id DESC',
+      limit: limit,
+    );
+  }
+
+  Future<Map<String, Object?>> getShiftSummary(int shiftId) async {
+    final db = await database;
+    await ensureShiftSchema();
+    final shift = await _shiftById(db, shiftId);
+    if (shift == null) throw Exception('Shift was not found.');
+    final totals = await _shiftSalesTotals(db, shiftId);
+    return {...shift, ...totals};
+  }
+
+  Future<Map<String, Object?>?> _shiftById(
+    DatabaseExecutor db,
+    int shiftId,
+  ) async {
+    final rows = await db.query(
+      'shifts',
+      where: 'id = ?',
+      whereArgs: [shiftId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return Map<String, Object?>.from(rows.first);
+  }
+
+  Future<Map<String, Object?>> _createShiftReading(
+    DatabaseExecutor db, {
+    required int shiftId,
+    required String type,
+    required String createdBy,
+    double? countedCash,
+  }) async {
+    final shift = await _shiftById(db, shiftId);
+    if (shift == null) throw Exception('Shift was not found.');
+    final totals = await _shiftSalesTotals(db, shiftId);
+    final openingCash = (shift['opening_cash'] as num?)?.toDouble() ?? 0;
+    final salesTotal = (totals['sales_total'] as num?)?.toDouble() ?? 0;
+    final expectedCash = openingCash + salesTotal;
+    final overShort = countedCash == null ? null : countedCash - expectedCash;
+    final row = {
+      'shift_id': shiftId,
+      'type': type,
+      'created_by': _normalizeActor(createdBy),
+      'created_at': DateTime.now().toIso8601String(),
+      'opening_cash': openingCash,
+      'sales_total': salesTotal,
+      'void_total': (totals['void_total'] as num?)?.toDouble() ?? 0,
+      'receipt_count': (totals['receipt_count'] as num?)?.toInt() ?? 0,
+      'item_count': (totals['item_count'] as num?)?.toInt() ?? 0,
+      'expected_cash': expectedCash,
+      'counted_cash': countedCash,
+      'over_short': overShort,
+    };
+    final id = await db.insert('shift_readings', row);
+    final inserted = {...row, 'id': id};
+    await queueSyncUpsert('shift_readings', inserted, executor: db);
+    return inserted;
+  }
+
+  Future<Map<String, Object?>> _shiftSalesTotals(
+    DatabaseExecutor db,
+    int shiftId,
+  ) async {
+    final rows = await db.rawQuery(
+      '''
+      SELECT
+        COALESCE(SUM(CASE WHEN is_voided = 0 THEN net_total ELSE 0 END), 0) AS sales_total,
+        COALESCE(SUM(CASE WHEN is_voided = 1 THEN net_total ELSE 0 END), 0) AS void_total,
+        COALESCE(SUM(CASE WHEN is_voided = 0 THEN quantity ELSE 0 END), 0) AS item_count,
+        COALESCE(SUM(CASE WHEN is_voided = 0 THEN 1 ELSE 0 END), 0) AS receipt_count
+      FROM (
+        SELECT
+          SUM(total) - MAX(COALESCE(receipt_discount_amount, 0)) AS net_total,
+          SUM(quantity) AS quantity,
+          CASE WHEN MAX(COALESCE(voided_at, '')) = '' THEN 0 ELSE 1 END AS is_voided
+        FROM sales
+        WHERE shift_id = ?
+        GROUP BY COALESCE(NULLIF(receipt_number, ''), substr(created_at, 1, 19))
+      )
+      ''',
+      [shiftId],
+    );
+    if (rows.isEmpty) {
+      return {
+        'sales_total': 0.0,
+        'void_total': 0.0,
+        'item_count': 0,
+        'receipt_count': 0,
+      };
+    }
+    final row = rows.first;
+    return {
+      'sales_total': (row['sales_total'] as num?)?.toDouble() ?? 0.0,
+      'void_total': (row['void_total'] as num?)?.toDouble() ?? 0.0,
+      'item_count': (row['item_count'] as num?)?.toInt() ?? 0,
+      'receipt_count': (row['receipt_count'] as num?)?.toInt() ?? 0,
+    };
+  }
+
+  String _generateZReadingNumber(DateTime value) {
+    final local = value.toLocal();
+    return 'Z-${local.year.toString().padLeft(4, '0')}'
+        '${local.month.toString().padLeft(2, '0')}'
+        '${local.day.toString().padLeft(2, '0')}-'
+        '${local.hour.toString().padLeft(2, '0')}'
+        '${local.minute.toString().padLeft(2, '0')}'
+        '${local.second.toString().padLeft(2, '0')}';
+  }
+
+  String _normalizeActor(String value) {
+    final sanitized = _sanitizeAuditText(value, maxLength: 80);
+    return sanitized.trim().isEmpty ? 'unknown' : sanitized.trim();
   }
 
   Future<void> recordAuditLog({
@@ -1153,6 +1483,8 @@ class DatabaseHelper {
     final db = await database;
     await _ensureProductSchema(db);
     await _ensureSalesSchema(db);
+    await _createShiftsTable(db);
+    await _createShiftReadingsTable(db);
     await _createAuditLogTable(db);
     await _createSyncQueueTable(db);
 
@@ -1164,6 +1496,16 @@ class DatabaseHelper {
     final sales = await db.query('sales');
     for (final row in sales) {
       await _queueSnapshotUpsert(db, 'sales', row);
+    }
+
+    final shifts = await db.query('shifts');
+    for (final row in shifts) {
+      await _queueSnapshotUpsert(db, 'shifts', row);
+    }
+
+    final shiftReadings = await db.query('shift_readings');
+    for (final row in shiftReadings) {
+      await _queueSnapshotUpsert(db, 'shift_readings', row);
     }
 
     final users = await db.query('users');
@@ -1202,6 +1544,8 @@ class DatabaseHelper {
     final db = await database;
     await _ensureProductSchema(db);
     await _ensureSalesSchema(db);
+    await _createShiftsTable(db);
+    await _createShiftReadingsTable(db);
     await _createAuditLogTable(db);
     await _createSyncQueueTable(db);
 
@@ -1246,6 +1590,22 @@ class DatabaseHelper {
 
       imported += await _importCloudRows(
         txn,
+        'shifts',
+        snapshot['shifts'] ?? const [],
+        _cloudShiftToLocalRow,
+      );
+      onProgress?.call(imported, total, 'Restored shifts');
+
+      imported += await _importCloudRows(
+        txn,
+        'shift_readings',
+        snapshot['shift_readings'] ?? const [],
+        _cloudShiftReadingToLocalRow,
+      );
+      onProgress?.call(imported, total, 'Restored shift readings');
+
+      imported += await _importCloudRows(
+        txn,
         'audit_logs',
         snapshot['audit_logs'] ?? const [],
         _cloudAuditLogToLocalRow,
@@ -1261,6 +1621,8 @@ class DatabaseHelper {
 
   Future<void> _clearLocalMirrorBeforeCloudRestore(DatabaseExecutor db) async {
     await db.delete('sync_queue');
+    await db.delete('shift_readings');
+    await db.delete('shifts');
     await db.delete('sales');
     await db.delete('products');
     await db.delete('users');
@@ -1422,9 +1784,58 @@ class DatabaseHelper {
         cloudRow,
         'receipt_discount_value',
       ),
+      'shift_id': _cloudNullableInt(payload, cloudRow, 'shift_id'),
       'created_at':
           _cloudNullableString(payload, cloudRow, 'created_at') ??
           DateTime.now().toIso8601String(),
+    };
+  }
+
+  Map<String, Object?> _cloudShiftToLocalRow(Map<String, dynamic> cloudRow) {
+    final payload = _cloudPayloadMap(cloudRow);
+    return {
+      'id': _cloudLocalId(cloudRow),
+      'status': _cloudNullableString(payload, cloudRow, 'status') ?? 'open',
+      'opened_by':
+          _cloudNullableString(payload, cloudRow, 'opened_by') ?? 'unknown',
+      'opened_at':
+          _cloudNullableString(payload, cloudRow, 'opened_at') ??
+          DateTime.now().toIso8601String(),
+      'opening_cash': _cloudNumber(payload, cloudRow, 'opening_cash'),
+      'closed_by': _cloudNullableString(payload, cloudRow, 'closed_by'),
+      'closed_at': _cloudNullableString(payload, cloudRow, 'closed_at'),
+      'closing_cash': _cloudNullableNumber(payload, cloudRow, 'closing_cash'),
+      'expected_cash': _cloudNullableNumber(payload, cloudRow, 'expected_cash'),
+      'over_short': _cloudNullableNumber(payload, cloudRow, 'over_short'),
+      'z_reading_number': _cloudNullableString(
+        payload,
+        cloudRow,
+        'z_reading_number',
+      ),
+    };
+  }
+
+  Map<String, Object?> _cloudShiftReadingToLocalRow(
+    Map<String, dynamic> cloudRow,
+  ) {
+    final payload = _cloudPayloadMap(cloudRow);
+    return {
+      'id': _cloudLocalId(cloudRow),
+      'shift_id': _cloudInt(payload, cloudRow, 'shift_id'),
+      'type': _cloudNullableString(payload, cloudRow, 'type') ?? 'x',
+      'created_by':
+          _cloudNullableString(payload, cloudRow, 'created_by') ?? 'unknown',
+      'created_at':
+          _cloudNullableString(payload, cloudRow, 'created_at') ??
+          DateTime.now().toIso8601String(),
+      'opening_cash': _cloudNumber(payload, cloudRow, 'opening_cash'),
+      'sales_total': _cloudNumber(payload, cloudRow, 'sales_total'),
+      'void_total': _cloudNumber(payload, cloudRow, 'void_total'),
+      'receipt_count': _cloudInt(payload, cloudRow, 'receipt_count'),
+      'item_count': _cloudInt(payload, cloudRow, 'item_count'),
+      'expected_cash': _cloudNumber(payload, cloudRow, 'expected_cash'),
+      'counted_cash': _cloudNullableNumber(payload, cloudRow, 'counted_cash'),
+      'over_short': _cloudNullableNumber(payload, cloudRow, 'over_short'),
     };
   }
 
@@ -1510,6 +1921,16 @@ class DatabaseHelper {
     final value = payload.containsKey(key) ? payload[key] : cloudRow[key];
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  int? _cloudNullableInt(
+    Map<String, Object?> payload,
+    Map<String, dynamic> cloudRow,
+    String key,
+  ) {
+    final value = payload.containsKey(key) ? payload[key] : cloudRow[key];
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
   }
 
   int _cloudBoolInt(
@@ -2067,6 +2488,27 @@ class DatabaseHelper {
     return null;
   }
 
+  Future<String?> getSavedOwnerResetEmail() async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT email
+      FROM users
+      WHERE email IS NOT NULL
+        AND TRIM(email) != ''
+        AND role IN ('owner', 'admin')
+      ORDER BY
+        CASE
+          WHEN role = 'owner' THEN 0
+          ELSE 1
+        END,
+        id ASC
+      LIMIT 1
+      ''');
+    if (result.isEmpty) return null;
+    final email = result.first['email']?.toString().trim().toLowerCase() ?? '';
+    return LoginInputValidator.isEmail(email) ? email : null;
+  }
+
   Future<List<ReceiptDiscountPreset>> getReceiptDiscounts({
     bool includeDisabled = false,
   }) async {
@@ -2543,6 +2985,15 @@ class DatabaseHelper {
     final selectedSale = saleRows.first;
     if ((selectedSale['voided_at']?.toString() ?? '').isNotEmpty) {
       throw Exception('Sale is already voided');
+    }
+    final selectedShiftId = (selectedSale['shift_id'] as num?)?.toInt();
+    if (selectedShiftId != null) {
+      final selectedShift = await _shiftById(db, selectedShiftId);
+      if (selectedShift?['status']?.toString() == 'closed') {
+        throw Exception(
+          'This receipt belongs to a closed shift and cannot be voided.',
+        );
+      }
     }
     final isCompleted =
         (selectedSale['completed_at']?.toString() ?? '').isNotEmpty;

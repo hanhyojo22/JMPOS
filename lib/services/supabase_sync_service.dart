@@ -37,7 +37,14 @@ class SupabaseSyncService {
     final storeId = await _activeStoreId();
     final snapshot = <String, List<Map<String, dynamic>>>{};
 
-    for (final table in const ['products', 'users', 'sales', 'audit_logs']) {
+    for (final table in const [
+      'products',
+      'users',
+      'sales',
+      'shifts',
+      'shift_readings',
+      'audit_logs',
+    ]) {
       final rows = await client
           .from(table)
           .select()
@@ -287,6 +294,10 @@ class SupabaseSyncService {
         return 'products';
       case 'sales':
         return 'sales';
+      case 'shifts':
+        return 'shifts';
+      case 'shift_readings':
+        return 'shift_readings';
       case 'users':
         return 'users';
       case 'audit_logs':

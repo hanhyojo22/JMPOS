@@ -253,9 +253,12 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _showForgotPasswordDialog() {
+    final candidateEmail = LoginInputValidator.sanitizeUsername(
+      _usernameController.text,
+    );
     showDialog<void>(
       context: context,
-      builder: (_) => const _ForgotPasswordDialog(),
+      builder: (_) => _ForgotPasswordDialog(candidateEmail: candidateEmail),
     );
   }
 
@@ -780,32 +783,29 @@ class _CloudRestoreOverlay extends StatelessWidget {
 }
 
 class _ForgotPasswordDialog extends StatefulWidget {
-  const _ForgotPasswordDialog();
+  const _ForgotPasswordDialog({required this.candidateEmail});
+
+  final String candidateEmail;
 
   @override
   State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
 }
 
 class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
-  final _emailController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
   bool _isSending = false;
   String? _error;
 
-  @override
-  void dispose() {
-    _emailController.dispose();
-    super.dispose();
-  }
-
   Future<void> _send() async {
     setState(() => _error = null);
-    if (!_formKey.currentState!.validate()) return;
 
-    final email = LoginInputValidator.sanitizeUsername(_emailController.text);
-    _emailController.text = email;
     setState(() => _isSending = true);
     try {
+      final email = await _resolveResetEmail();
+      if (email == null) {
+        throw Exception(
+          'No saved owner email found. Enter the owner email on the login screen, then try Forgot Password again.',
+        );
+      }
       await LicenseActivationService.instance.sendPasswordResetEmail(email);
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -827,81 +827,85 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     }
   }
 
+  Future<String?> _resolveResetEmail() async {
+    final localEmail = await _savedLocalResetEmail();
+    final cloudEmail = await LicenseActivationService.instance
+        .readSavedCloudSyncEmail();
+    final candidateEmail = widget.candidateEmail.trim().toLowerCase();
+
+    if (localEmail != null &&
+        cloudEmail != null &&
+        LoginInputValidator.isEmail(cloudEmail) &&
+        localEmail != cloudEmail) {
+      throw Exception(
+        'Saved owner emails do not match. Contact support before resetting the password.',
+      );
+    }
+
+    if (localEmail != null) return localEmail;
+    if (cloudEmail != null && LoginInputValidator.isEmail(cloudEmail)) {
+      return cloudEmail;
+    }
+    return LoginInputValidator.isEmail(candidateEmail) ? candidateEmail : null;
+  }
+
+  Future<String?> _savedLocalResetEmail() async {
+    try {
+      return await DatabaseHelper.instance.getSavedOwnerResetEmail();
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: const Text('Forgot Password?'),
-      content: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Enter the owner email for this store. We will send a secure password reset link.',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 13,
-                height: 1.35,
-              ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'We will send a secure password reset link to the saved owner email for this store.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 13,
+              height: 1.35,
             ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _emailController,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-              decoration: InputDecoration(
-                labelText: 'Email Address',
-                hintText: 'Enter your email',
-                prefixIcon: const Icon(Icons.email_outlined),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFECACA)),
               ),
-              keyboardType: TextInputType.emailAddress,
-              inputFormatters: [
-                FilteringTextInputFormatter.deny(
-                  LoginInputValidator.usernameDeniedCharacters,
-                ),
-                LengthLimitingTextInputFormatter(
-                  LoginInputValidator.maxUsernameLength,
-                ),
-              ],
-              validator: LoginInputValidator.validateEmail,
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF2F2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFFECACA)),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(
-                      Icons.info_outline,
-                      color: Color(0xFFDC2626),
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _error!,
-                        style: const TextStyle(
-                          color: Color(0xFF991B1B),
-                          fontSize: 13,
-                        ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.info_outline,
+                    color: Color(0xFFDC2626),
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _error!,
+                      style: const TextStyle(
+                        color: Color(0xFF991B1B),
+                        fontSize: 13,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
       actions: [
         TextButton(

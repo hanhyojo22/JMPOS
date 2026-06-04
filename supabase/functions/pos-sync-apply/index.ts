@@ -7,7 +7,14 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const allowedTables = new Set(["products", "sales", "users", "audit_logs"]);
+const allowedTables = new Set([
+  "products",
+  "sales",
+  "users",
+  "audit_logs",
+  "shifts",
+  "shift_readings",
+]);
 type AdminClient = SupabaseClient;
 type SyncBody = {
   storeId?: string;

@@ -400,6 +400,12 @@ class LicenseActivationService {
     ]);
   }
 
+  Future<String?> readSavedCloudSyncEmail() async {
+    final email = await _secureStorage.read(key: _cloudEmailKey);
+    final cleanedEmail = email?.trim().toLowerCase() ?? '';
+    return cleanedEmail.isEmpty ? null : cleanedEmail;
+  }
+
   Future<bool> connectCloudSyncCredentials({
     required String email,
     required String password,
