@@ -4,7 +4,11 @@ const url = import.meta.env.VITE_SUPABASE_URL as string;
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const passwordResetRedirectUrl = import.meta.env
   .VITE_SUPABASE_PASSWORD_RESET_REDIRECT_URL as string | undefined;
-export const supabase = createClient(url, key);
+export const supabase = createClient(url, key, {
+  auth: {
+    flowType: "implicit",
+  },
+});
 export const resetRedirectUrl =
   passwordResetRedirectUrl?.trim() ||
   `${globalThis.location.origin}/reset-password`;
