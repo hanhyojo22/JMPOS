@@ -45,6 +45,8 @@ type LicenseDetail = {
 };
 
 const emptyDashboard: Dashboard = { total: 0, active: 0, expiring: 0, expired: 0, suspended: 0, activeDevices: 0, recent: [] };
+let resetSessionPreparation: Promise<boolean> | null = null;
+let resetSessionPrepared = false;
 
 export function App() {
   const isPasswordReset = globalThis.location.pathname === "/reset-password";
@@ -145,8 +147,52 @@ function ResetPassword() {
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
   const [busy,setBusy]=useState(false);
-  async function prepareResetSession(showError=false){try{const url=new URL(globalThis.location.href);const params=url.searchParams;const hashParams=new URLSearchParams(url.hash.replace(/^#/,""));const accessToken=hashParams.get("access_token")||params.get("access_token");const refreshToken=hashParams.get("refresh_token")||params.get("refresh_token");const tokenHash=params.get("token_hash")||hashParams.get("token_hash");const code=params.get("code");if(accessToken&&refreshToken){const {error}=await supabase.auth.setSession({access_token:accessToken,refresh_token:refreshToken});if(error)throw error;globalThis.history.replaceState(null,"","/reset-password");}else if(tokenHash){const {error}=await supabase.auth.verifyOtp({token_hash:tokenHash,type:"recovery"});if(error)throw error;globalThis.history.replaceState(null,"","/reset-password");}else if(code){const {error}=await supabase.auth.exchangeCodeForSession(code);if(error)throw resetSessionError(error);globalThis.history.replaceState(null,"","/reset-password");}const {data}=await supabase.auth.getSession();setReady(Boolean(data.session));if(!data.session&&showError)setError("Open the latest reset link from your email. This password reset session is missing or expired.");return Boolean(data.session);}catch(e){setReady(false);if(showError)setError(message(e));return false;}}
-  useEffect(()=>{let mounted=true;async function prepare(){setError("");await prepareResetSession(false);if(!mounted)return;}void prepare();const {data:{subscription}}=supabase.auth.onAuthStateChange((event,session)=>{if(!mounted)return;if(event==="PASSWORD_RECOVERY"||session){setReady(Boolean(session));setError("");}});return()=>{mounted=false;subscription.unsubscribe();};},[]);
+  async function readResetSessionFromUrl(){
+    const url=new URL(globalThis.location.href);
+    const params=url.searchParams;
+    const hashParams=new URLSearchParams(url.hash.replace(/^#/,""));
+    const accessToken=hashParams.get("access_token")||params.get("access_token");
+    const refreshToken=hashParams.get("refresh_token")||params.get("refresh_token");
+    const tokenHash=params.get("token_hash")||hashParams.get("token_hash");
+    const code=params.get("code");
+    if(accessToken&&refreshToken){
+      const {error}=await supabase.auth.setSession({access_token:accessToken,refresh_token:refreshToken});
+      if(error)throw error;
+      globalThis.history.replaceState(null,"","/reset-password");
+    }else if(tokenHash){
+      const {error}=await supabase.auth.verifyOtp({token_hash:tokenHash,type:"recovery"});
+      if(error)throw error;
+      globalThis.history.replaceState(null,"","/reset-password");
+    }else if(code){
+      const {error}=await supabase.auth.exchangeCodeForSession(code);
+      if(error)throw resetSessionError(error);
+      globalThis.history.replaceState(null,"","/reset-password");
+    }
+    const {data}=await supabase.auth.getSession();
+    resetSessionPrepared=Boolean(data.session);
+    return resetSessionPrepared;
+  }
+  async function prepareResetSession(showError=false){
+    try{
+      if(resetSessionPrepared){
+        setReady(true);
+        return true;
+      }
+      resetSessionPreparation??=readResetSessionFromUrl().catch(e=>{
+        resetSessionPreparation=null;
+        throw e;
+      });
+      const hasSession=await resetSessionPreparation;
+      setReady(hasSession);
+      if(!hasSession&&showError)setError("Open the latest POS owner password reset link from your email. This reset session is missing or expired.");
+      return hasSession;
+    }catch(e){
+      setReady(false);
+      if(showError)setError(message(e));
+      return false;
+    }
+  }
+  useEffect(()=>{let mounted=true;async function prepare(){setError("");const hasSession=await prepareResetSession(false);if(!mounted)return;setReady(hasSession);}void prepare();const {data:{subscription}}=supabase.auth.onAuthStateChange((event,session)=>{if(!mounted)return;if(event==="PASSWORD_RECOVERY"||session){resetSessionPrepared=Boolean(session);setReady(Boolean(session));setError("");}});return()=>{mounted=false;subscription.unsubscribe();};},[]);
   async function submit(e:React.FormEvent){e.preventDefault();setError("");setNotice("");if(password.length<6){setError("Password must be at least 6 characters.");return;}if(password!==confirmPassword){setError("Passwords do not match.");return;}setBusy(true);try{const hasSession=ready||await prepareResetSession(true);if(!hasSession)return;const {error}=await supabase.auth.updateUser({password});if(error)throw error;const result=await syncOwnerPasswordAfterRecovery(password);if(result.updated===0)throw new Error("Password changed for this email, but no POS owner account was found. Use the owner email registered during POS license activation.");setNotice("POS owner password updated. You can now sign in to the POS app with the new password.");setPassword("");setConfirmPassword("");}catch(e){setError(message(e));}finally{setBusy(false);}}
   return <div className="login-page"><form className="login-panel" onSubmit={submit}><div className="brand-mark large"><img src="/app-icon.png" alt="TindaPOS"/></div><h1>Reset POS owner password</h1><p>Use the owner email registered during POS license activation.</p>{error && <div className="error">{error}</div>}{notice && <div className="notice">{notice}</div>}<label>New password<input value={password} onChange={e=>setPassword(e.target.value)} type="password" minLength={6} required disabled={Boolean(notice)||busy}/></label><label>Confirm password<input value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} type="password" minLength={6} required disabled={Boolean(notice)||busy}/></label><button type="submit" className="primary wide" disabled={busy||Boolean(notice)}>{busy?"Updating...":"Update POS password"}</button><button type="button" className="text-button wide" onClick={()=>{globalThis.location.href="/";}}>Return to sign in</button></form></div>;
 }
@@ -292,9 +338,9 @@ function message(e: unknown) {
 function resetSessionError(e: unknown) {
   const text = message(e);
   if (text.toLowerCase().includes("auth code") && text.toLowerCase().includes("code verifier")) {
-    return new Error("Request a new password reset email, then click the latest email link normally so it opens in a new tab of this same browser.");
+    return new Error("This POS owner reset link was already used or expired. Request a new password reset email from the POS app, then open the newest email link.");
   }
-  return e;
+  return e instanceof Error ? e : new Error(text);
 }
 function confirmDeviceRevoke(deviceName:string|null){return globalThis.confirm(`Revoke ${deviceName||"this POS device"}?\n\nThe customer's account and store data will remain safe. This device slot will be released. The phone can be activated again later with owner verification unless the license is suspended.`)}
 function confirmLostPhoneRecovery(deviceName:string|null){return globalThis.confirm(`Recover a lost phone for ${deviceName||"this POS device"}?\n\nThis revokes the selected device immediately and creates a one-time recovery code valid for 24 hours. The replacement phone must still sign in with the original owner email and password.`)}
