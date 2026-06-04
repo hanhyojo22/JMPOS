@@ -5,7 +5,9 @@ POS licenses.
 
 ## First-time setup
 
-1. Run `supabase_admin_portal_migration.sql` in the Supabase SQL Editor.
+1. Run `supabase_admin_portal_migration.sql` and
+   `supabase_password_reset_rate_limit_migration.sql` in the Supabase SQL
+   Editor.
 2. Create your developer account in Supabase Authentication.
 3. Grant the account access:  
 

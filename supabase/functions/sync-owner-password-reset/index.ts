@@ -18,6 +18,8 @@ type AuthenticatedUser = {
   id: string;
   email: string;
 };
+const RESET_ATTEMPT_LIMIT = 5;
+const RESET_ATTEMPT_WINDOW_MS = 60 * 60 * 1000;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return json({ ok: true });
@@ -40,6 +42,7 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const user = await authenticatedUser(admin, req);
+    await recordPasswordResetAttempt(admin, user.id);
     const passwordHash = await sha256Hex(password);
 
     const { data: stores, error: storesError } = await admin
@@ -69,6 +72,28 @@ Deno.serve(async (req: Request) => {
     return json({ error: message }, status);
   }
 });
+
+async function recordPasswordResetAttempt(admin: AdminClient, userId: string) {
+  const windowStart = new Date(Date.now() - RESET_ATTEMPT_WINDOW_MS)
+    .toISOString();
+  const { count, error: countError } = await admin
+    .from("password_reset_attempts")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("attempted_at", windowStart);
+  if (countError) throw countError;
+  if ((count ?? 0) >= RESET_ATTEMPT_LIMIT) {
+    throw new HttpError(
+      "Too many password reset attempts. Please wait 1 hour before trying again.",
+      429,
+    );
+  }
+
+  const { error: insertError } = await admin
+    .from("password_reset_attempts")
+    .insert({ user_id: userId });
+  if (insertError) throw insertError;
+}
 
 async function authenticatedUser(
   admin: AdminClient,
