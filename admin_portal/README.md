@@ -24,9 +24,8 @@ supabase functions deploy admin-license-management
 supabase functions deploy sync-owner-password-reset
 ```
 
-5. Copy `.env.example` to `.env` and provide the Supabase URL, publishable
-   key, and password reset redirect URL. For local development, use
-   `http://localhost:5173/reset-password`.
+5. Copy `.env.example` to `.env` and provide the Supabase URL and publishable
+   key.
 6. In Supabase Authentication email templates, set the Reset Password link to
    use a token hash so the web portal can verify resets requested from the POS
    app:

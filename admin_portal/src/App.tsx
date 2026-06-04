@@ -23,7 +23,6 @@ import {
 import {
   adminApi,
   LicenseSummary,
-  resetRedirectUrl,
   supabase,
   syncOwnerPasswordAfterRecovery,
 } from "./api";
@@ -145,12 +144,9 @@ function ResetPassword() {
   const [ready,setReady]=useState(false);
   const [password,setPassword]=useState("");
   const [confirmPassword,setConfirmPassword]=useState("");
-  const [resetEmail,setResetEmail]=useState("");
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
   const [busy,setBusy]=useState(false);
-  const [resetEmailBusy,setResetEmailBusy]=useState(false);
-  const [resetEmailNotice,setResetEmailNotice]=useState("");
   async function readResetSessionFromUrl(){
     const url=new URL(globalThis.location.href);
     const params=url.searchParams;
@@ -197,22 +193,8 @@ function ResetPassword() {
     }
   }
   useEffect(()=>{let mounted=true;async function prepare(){setError("");const url=new URL(globalThis.location.href);const hasResetToken=Boolean(url.searchParams.get("token_hash")||url.searchParams.get("code")||url.hash.includes("token_hash")||url.hash.includes("access_token"));const hasSession=await prepareResetSession(hasResetToken);if(!mounted)return;setReady(hasSession);}void prepare();const {data:{subscription}}=supabase.auth.onAuthStateChange((event,session)=>{if(!mounted)return;if(event==="PASSWORD_RECOVERY"||session){resetSessionPrepared=Boolean(session);setReady(Boolean(session));setError("");}});return()=>{mounted=false;subscription.unsubscribe();};},[]);
-  async function sendResetEmail(){
-    setError("");
-    setResetEmailNotice("");
-    const cleanEmail=resetEmail.trim().toLowerCase();
-    if(!cleanEmail){setError("Enter the POS owner email first.");return;}
-    if(!RegExp(/^[^@\s]+@[^@\s]+\.[^@\s]+$/).test(cleanEmail)){setError("Enter a valid POS owner email.");return;}
-    setResetEmailBusy(true);
-    try{
-      const {error}=await supabase.auth.resetPasswordForEmail(cleanEmail,{redirectTo:resetRedirectUrl});
-      if(error)throw error;
-      setResetEmailNotice(`Password reset email sent to ${cleanEmail}. Open the newest link from this same browser.`);
-    }catch(e){setError(message(e));}
-    finally{setResetEmailBusy(false);}
-  }
   async function submit(e:React.FormEvent){e.preventDefault();setError("");setNotice("");if(password.length<6){setError("Password must be at least 6 characters.");return;}if(password!==confirmPassword){setError("Passwords do not match.");return;}setBusy(true);try{const hasSession=ready||await prepareResetSession(true);if(!hasSession)return;const {error}=await supabase.auth.updateUser({password});if(error)throw error;const result=await syncOwnerPasswordAfterRecovery(password);if(result.updated===0)throw new Error("Password changed for this email, but no POS owner account was found. Use the owner email registered during POS license activation.");await supabase.auth.signOut();resetSessionPrepared=false;resetSessionPreparation=null;setReady(false);setNotice("POS owner password updated. The reset link is now closed. You can sign in to the POS app with the new password.");setPassword("");setConfirmPassword("");}catch(e){setError(message(e));}finally{setBusy(false);}}
-  return <div className="login-page"><form className="login-panel" onSubmit={submit}><div className="brand-mark large"><img src="/app-icon.png" alt="TindaPOS"/></div><h1>Reset POS owner password</h1><p>Use the owner email registered during POS license activation.</p>{error && <div className="error">{error}</div>}{notice && <div className="notice">{notice}</div>}{resetEmailNotice && <div className="notice">{resetEmailNotice}</div>}<label>New password<input value={password} onChange={e=>setPassword(e.target.value)} type="password" minLength={6} required disabled={Boolean(notice)||busy}/></label><label>Confirm password<input value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} type="password" minLength={6} required disabled={Boolean(notice)||busy}/></label><button type="submit" className="primary wide" disabled={busy||Boolean(notice)}>{busy?"Updating...":"Update POS password"}</button><div className="reset-request"><label>Need a new reset email?<input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} type="email" placeholder="POS owner email" disabled={resetEmailBusy}/></label><button type="button" className="secondary wide" disabled={resetEmailBusy} onClick={()=>void sendResetEmail()}>{resetEmailBusy?"Sending reset email...":"Send reset email"}</button></div><button type="button" className="text-button wide" onClick={()=>{globalThis.location.href="/";}}>Return to sign in</button></form></div>;
+  return <div className="login-page"><form className="login-panel" onSubmit={submit}><div className="brand-mark large"><img src="/app-icon.png" alt="TindaPOS"/></div><h1>Reset POS owner password</h1><p>Use the owner email registered during POS license activation.</p>{error && <div className="error">{error}</div>}{notice && <div className="notice">{notice}</div>}<label>New password<input value={password} onChange={e=>setPassword(e.target.value)} type="password" minLength={6} required disabled={Boolean(notice)||busy}/></label><label>Confirm password<input value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} type="password" minLength={6} required disabled={Boolean(notice)||busy}/></label><button type="submit" className="primary wide" disabled={busy||Boolean(notice)}>{busy?"Updating...":"Update POS password"}</button><button type="button" className="text-button wide" onClick={()=>{globalThis.location.href="/";}}>Return to sign in</button></form></div>;
 }
 function DashboardView({ data, open }: { data: Dashboard; open: (id: string) => void }) {
   return <><section className="metrics"><Metric label="Active licenses" value={data.active} icon={<CheckCircle2/>}/><Metric label="Expiring soon" value={data.expiring} icon={<CalendarClock/>}/><Metric label="Expired" value={data.expired} icon={<ShieldAlert/>}/><Metric label="Active devices" value={data.activeDevices} icon={<Laptop/>}/></section><section className="panel"><div className="panel-title"><h2>Recent activity</h2><span>{data.total} total licenses</span></div><LicenseTable licenses={data.recent} open={open}/></section></>;
