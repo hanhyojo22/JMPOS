@@ -131,7 +131,7 @@ export function App() {
 function Login() {
   const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false); const [resetBusy, setResetBusy] = useState(false);
   async function submit(e: React.FormEvent) { e.preventDefault(); setBusy(true); setError(""); const { error } = await supabase.auth.signInWithPassword({ email, password }); if (error) setError(error.message); setBusy(false); }
-  async function sendReset() { setError(""); setNotice(""); const cleanEmail=email.trim().toLowerCase(); if(!cleanEmail){setError("Enter your email first.");return;} setResetBusy(true); const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, { redirectTo: resetRedirectUrl }); if(error)setError(error.message); else setNotice(`Password reset email sent to ${cleanEmail}.`); setResetBusy(false); }
+  async function sendReset() { setError(""); setNotice(""); const cleanEmail=email.trim().toLowerCase(); if(!cleanEmail){setError("Enter your email first.");return;} setResetBusy(true); const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, { redirectTo: resetRedirectUrl }); if(error)setError(error.message); else setNotice(`Password reset email sent to ${cleanEmail}. Click the link normally so it opens in a new tab of this browser.`); setResetBusy(false); }
   return <div className="login-page"><form className="login-panel" onSubmit={submit}><div className="brand-mark large"><img src="/app-icon.png" alt="TindaPOS"/></div><h1>TindaPOS License Admin</h1><p>Internal access only</p>{error && <div className="error">{error}</div>}{notice && <div className="notice">{notice}</div>}<label>Email<input value={email} onChange={e => setEmail(e.target.value)} type="email" required/></label><label>Password<input value={password} onChange={e => setPassword(e.target.value)} type="password" required/></label><button type="submit" className="primary wide" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</button><button type="button" className="text-button wide" disabled={resetBusy} onClick={()=>void sendReset()}>{resetBusy ? "Sending reset email..." : "Forgot admin password?"}</button></form></div>;
 }
 
@@ -237,7 +237,7 @@ function message(e: unknown) {
 function resetSessionError(e: unknown) {
   const text = message(e);
   if (text.toLowerCase().includes("auth code") && text.toLowerCase().includes("code verifier")) {
-    return new Error("This reset link can only be opened from the browser that requested it. Request a new password reset email, then open the latest link from the same browser.");
+    return new Error("Request a new password reset email, then click the latest email link normally so it opens in a new tab of this same browser.");
   }
   return e;
 }
