@@ -4,15 +4,10 @@ const url = import.meta.env.VITE_SUPABASE_URL as string;
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const passwordResetRedirectUrl = import.meta.env
   .VITE_SUPABASE_PASSWORD_RESET_REDIRECT_URL as string | undefined;
-const adminPasswordResetRedirectUrl = import.meta.env
-  .VITE_SUPABASE_ADMIN_PASSWORD_RESET_REDIRECT_URL as string | undefined;
 export const supabase = createClient(url, key);
 export const resetRedirectUrl =
   passwordResetRedirectUrl?.trim() ||
   `${globalThis.location.origin}/reset-password`;
-export const adminResetRedirectUrl =
-  adminPasswordResetRedirectUrl?.trim() ||
-  `${globalThis.location.origin}/admin-reset-password`;
 
 export type LicenseSummary = {
   id: string;

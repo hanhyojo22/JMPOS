@@ -10,17 +10,18 @@ import {
   KeyRound,
   Laptop,
   LogOut,
+  Mail,
   Plus,
   RefreshCw,
   RotateCw,
   Search,
+  Settings,
   ShieldAlert,
   Trash2,
   X,
 } from "lucide-react";
 import {
   adminApi,
-  adminResetRedirectUrl,
   LicenseSummary,
   supabase,
   syncOwnerPasswordAfterRecovery,
@@ -47,10 +48,9 @@ const emptyDashboard: Dashboard = { total: 0, active: 0, expiring: 0, expired: 0
 
 export function App() {
   const isPasswordReset = globalThis.location.pathname === "/reset-password";
-  const isAdminPasswordReset = globalThis.location.pathname === "/admin-reset-password";
   const [sessionReady, setSessionReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
-  const [page, setPage] = useState<"dashboard" | "licenses">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "licenses" | "settings">("dashboard");
   const [dashboard, setDashboard] = useState(emptyDashboard);
   const [licenses, setLicenses] = useState<LicenseSummary[]>([]);
   const [query, setQuery] = useState("");
@@ -103,7 +103,6 @@ export function App() {
     } catch (e) { setError(message(e)); return null; }
   }
   if (isPasswordReset) return <ResetPassword />;
-  if (isAdminPasswordReset) return <AdminResetPassword />;
   if (!sessionReady) return <Loading />;
   if (!signedIn) return <Login />;
 
@@ -116,13 +115,16 @@ export function App() {
          
           <button type="button" className={page === "dashboard" ? "active" : ""} onClick={() => setPage("dashboard")}><Activity/>Dashboard</button>
           <button type="button" className={page === "licenses" ? "active" : ""} onClick={() => setPage("licenses")}><KeyRound/>Licenses</button>
+          <button type="button" className={page === "settings" ? "active" : ""} onClick={() => setPage("settings")}><Settings/>Settings</button>
         </nav>
         <button type="button" className="signout" onClick={() => confirmSignOut() && void supabase.auth.signOut()}><LogOut/>Sign out</button>
       </aside>
       <main>
-        <header><div><h1>{page === "dashboard" ? "License overview" : "Licenses"}</h1><p>Manage subscriptions, devices, and customer access.</p></div><button type="button" className="primary" onClick={() => setCreating(true)}><Plus/>New license</button></header>
+        <header><div><h1>{pageTitle(page)}</h1><p>{page === "settings" ? "Manage admin account access and sign-in details." : "Manage subscriptions, devices, and customer access."}</p></div>{page !== "settings" && <button type="button" className="primary" onClick={() => setCreating(true)}><Plus/>New license</button>}</header>
         {error && <div className="error"><ShieldAlert size={18}/>{error}</div>}
-        {page === "dashboard" ? <DashboardView data={dashboard} open={openLicense}/> : <LicenseList licenses={licenses} query={query} setQuery={setQuery} status={status} setStatus={setStatus} refresh={refresh} busy={busy} open={openLicense}/>}
+        {page === "dashboard" && <DashboardView data={dashboard} open={openLicense}/>}
+        {page === "licenses" && <LicenseList licenses={licenses} query={query} setQuery={setQuery} status={status} setStatus={setStatus} refresh={refresh} busy={busy} open={openLicense}/>}
+        {page === "settings" && <SettingsView/>}
       </main>
       {selected && <LicenseDrawer detail={selected} close={() => setSelected(null)} mutate={mutate}/>}
       {creating && <CreateModal close={() => setCreating(false)} created={() => { setCreating(false); void refresh(); }}/>}
@@ -131,10 +133,9 @@ export function App() {
 }
 
 function Login() {
-  const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false); const [resetBusy, setResetBusy] = useState(false);
+  const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   async function submit(e: React.FormEvent) { e.preventDefault(); setBusy(true); setError(""); const { error } = await supabase.auth.signInWithPassword({ email, password }); if (error) setError(error.message); setBusy(false); }
-  async function sendReset() { setError(""); setNotice(""); const cleanEmail=email.trim().toLowerCase(); if(!cleanEmail){setError("Enter your developer email first.");return;} setResetBusy(true); const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, { redirectTo: adminResetRedirectUrl }); if(error)setError(error.message); else setNotice(`Developer password reset email sent to ${cleanEmail}. Click the latest link normally so it opens in a new tab of this browser.`); setResetBusy(false); }
-  return <div className="login-page"><form className="login-panel" onSubmit={submit}><div className="brand-mark large"><img src="/app-icon.png" alt="TindaPOS"/></div><h1>TindaPOS License Admin</h1><p>Developer access only</p>{error && <div className="error">{error}</div>}{notice && <div className="notice">{notice}</div>}<label>Email<input value={email} onChange={e => setEmail(e.target.value)} type="email" required/></label><label>Password<input value={password} onChange={e => setPassword(e.target.value)} type="password" required/></label><button type="submit" className="primary wide" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</button><button type="button" className="text-button wide" disabled={resetBusy} onClick={()=>void sendReset()}>{resetBusy ? "Sending reset email..." : "Forgot developer password?"}</button></form></div>;
+  return <div className="login-page"><form className="login-panel" onSubmit={submit}><div className="brand-mark large"><img src="/app-icon.png" alt="TindaPOS"/></div><h1>TindaPOS License Admin</h1><p>Developer access only</p>{error && <div className="error">{error}</div>}<label>Email<input value={email} onChange={e => setEmail(e.target.value)} type="email" required/></label><label>Password<input value={password} onChange={e => setPassword(e.target.value)} type="password" required/></label><button type="submit" className="primary wide" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</button></form></div>;
 }
 
 function ResetPassword() {
@@ -149,22 +150,61 @@ function ResetPassword() {
   async function submit(e:React.FormEvent){e.preventDefault();setError("");setNotice("");if(password.length<6){setError("Password must be at least 6 characters.");return;}if(password!==confirmPassword){setError("Passwords do not match.");return;}setBusy(true);try{const hasSession=ready||await prepareResetSession(true);if(!hasSession)return;const {error}=await supabase.auth.updateUser({password});if(error)throw error;const result=await syncOwnerPasswordAfterRecovery(password);if(result.updated===0)throw new Error("Password changed for this email, but no POS owner account was found. Use the owner email registered during POS license activation.");setNotice("POS owner password updated. You can now sign in to the POS app with the new password.");setPassword("");setConfirmPassword("");}catch(e){setError(message(e));}finally{setBusy(false);}}
   return <div className="login-page"><form className="login-panel" onSubmit={submit}><div className="brand-mark large"><img src="/app-icon.png" alt="TindaPOS"/></div><h1>Reset POS owner password</h1><p>Use the owner email registered during POS license activation.</p>{error && <div className="error">{error}</div>}{notice && <div className="notice">{notice}</div>}<label>New password<input value={password} onChange={e=>setPassword(e.target.value)} type="password" minLength={6} required disabled={Boolean(notice)||busy}/></label><label>Confirm password<input value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} type="password" minLength={6} required disabled={Boolean(notice)||busy}/></label><button type="submit" className="primary wide" disabled={busy||Boolean(notice)}>{busy?"Updating...":"Update POS password"}</button><button type="button" className="text-button wide" onClick={()=>{globalThis.location.href="/";}}>Return to sign in</button></form></div>;
 }
-function AdminResetPassword() {
-  const [ready,setReady]=useState(false);
-  const [password,setPassword]=useState("");
-  const [confirmPassword,setConfirmPassword]=useState("");
-  const [error,setError]=useState("");
-  const [notice,setNotice]=useState("");
-  const [busy,setBusy]=useState(false);
-  async function prepareResetSession(showError=false){try{const url=new URL(globalThis.location.href);const params=url.searchParams;const hashParams=new URLSearchParams(url.hash.replace(/^#/,""));const accessToken=hashParams.get("access_token")||params.get("access_token");const refreshToken=hashParams.get("refresh_token")||params.get("refresh_token");const tokenHash=params.get("token_hash")||hashParams.get("token_hash");const code=params.get("code");if(accessToken&&refreshToken){const {error}=await supabase.auth.setSession({access_token:accessToken,refresh_token:refreshToken});if(error)throw error;globalThis.history.replaceState(null,"","/admin-reset-password");}else if(tokenHash){const {error}=await supabase.auth.verifyOtp({token_hash:tokenHash,type:"recovery"});if(error)throw error;globalThis.history.replaceState(null,"","/admin-reset-password");}else if(code){const {error}=await supabase.auth.exchangeCodeForSession(code);if(error)throw resetSessionError(error);globalThis.history.replaceState(null,"","/admin-reset-password");}const {data}=await supabase.auth.getSession();setReady(Boolean(data.session));if(!data.session&&showError)setError("Open the latest developer reset link from your email. This password reset session is missing or expired.");return Boolean(data.session);}catch(e){setReady(false);if(showError)setError(message(e));return false;}}
-  useEffect(()=>{let mounted=true;async function prepare(){setError("");await prepareResetSession(false);if(!mounted)return;}void prepare();const {data:{subscription}}=supabase.auth.onAuthStateChange((event,session)=>{if(!mounted)return;if(event==="PASSWORD_RECOVERY"||session){setReady(Boolean(session));setError("");}});return()=>{mounted=false;subscription.unsubscribe();};},[]);
-  async function submit(e:React.FormEvent){e.preventDefault();setError("");setNotice("");if(password.length<6){setError("Password must be at least 6 characters.");return;}if(password!==confirmPassword){setError("Passwords do not match.");return;}setBusy(true);try{const hasSession=ready||await prepareResetSession(true);if(!hasSession)return;await adminApi<Dashboard>({action:"dashboard"});const {error}=await supabase.auth.updateUser({password});if(error)throw error;await supabase.auth.signOut();setNotice("Developer password updated. You can now sign in to the admin portal with the new password.");setPassword("");setConfirmPassword("");setReady(false);}catch(e){setError(message(e));}finally{setBusy(false);}}
-  return <div className="login-page"><form className="login-panel" onSubmit={submit}><div className="brand-mark large"><img src="/app-icon.png" alt="TindaPOS"/></div><h1>Reset developer password</h1><p>For license admin portal owners only.</p>{error && <div className="error">{error}</div>}{notice && <div className="notice">{notice}</div>}<label>New password<input value={password} onChange={e=>setPassword(e.target.value)} type="password" minLength={6} required disabled={Boolean(notice)||busy}/></label><label>Confirm password<input value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} type="password" minLength={6} required disabled={Boolean(notice)||busy}/></label><button type="submit" className="primary wide" disabled={busy||Boolean(notice)}>{busy?"Updating...":"Update developer password"}</button><button type="button" className="text-button wide" onClick={()=>{globalThis.location.href="/";}}>Return to sign in</button></form></div>;
-}
 function DashboardView({ data, open }: { data: Dashboard; open: (id: string) => void }) {
   return <><section className="metrics"><Metric label="Active licenses" value={data.active} icon={<CheckCircle2/>}/><Metric label="Expiring soon" value={data.expiring} icon={<CalendarClock/>}/><Metric label="Expired" value={data.expired} icon={<ShieldAlert/>}/><Metric label="Active devices" value={data.activeDevices} icon={<Laptop/>}/></section><section className="panel"><div className="panel-title"><h2>Recent activity</h2><span>{data.total} total licenses</span></div><LicenseTable licenses={data.recent} open={open}/></section></>;
 }
 function Metric({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) { return <div className="metric"><div className="metric-icon">{icon}</div><span>{label}</span><strong>{value}</strong></div>; }
+function SettingsView() {
+  const [currentEmail,setCurrentEmail]=useState("");
+  const [email,setEmail]=useState("");
+  const [newPassword,setNewPassword]=useState("");
+  const [confirmPassword,setConfirmPassword]=useState("");
+  const [emailNotice,setEmailNotice]=useState("");
+  const [passwordNotice,setPasswordNotice]=useState("");
+  const [emailError,setEmailError]=useState("");
+  const [passwordError,setPasswordError]=useState("");
+  const [emailBusy,setEmailBusy]=useState(false);
+  const [passwordBusy,setPasswordBusy]=useState(false);
+  useEffect(()=>{let mounted=true;supabase.auth.getUser().then(({data,error})=>{if(!mounted)return;if(error){setEmailError(error.message);return;}const userEmail=data.user?.email??"";setCurrentEmail(userEmail);setEmail(userEmail);});return()=>{mounted=false};},[]);
+  async function updateEmail(e:React.FormEvent){
+    e.preventDefault();
+    setEmailError("");setEmailNotice("");
+    const cleanEmail=email.trim().toLowerCase();
+    if(!cleanEmail){setEmailError("Enter an admin email address.");return;}
+    if(cleanEmail===currentEmail.toLowerCase()){setEmailError("Enter a different email address.");return;}
+    setEmailBusy(true);
+    try{
+      const {error}=await supabase.auth.updateUser({email:cleanEmail});
+      if(error)throw error;
+      setEmailNotice(`Confirmation email sent to ${cleanEmail}. Open the link in that inbox to finish changing the admin email.`);
+    }catch(err){setEmailError(message(err));}
+    finally{setEmailBusy(false);}
+  }
+  async function updatePassword(e:React.FormEvent){
+    e.preventDefault();
+    setPasswordError("");setPasswordNotice("");
+    if(newPassword.length<6){setPasswordError("Password must be at least 6 characters.");return;}
+    if(newPassword!==confirmPassword){setPasswordError("Passwords do not match.");return;}
+    setPasswordBusy(true);
+    try{
+      const {error}=await supabase.auth.updateUser({password:newPassword});
+      if(error)throw error;
+      setNewPassword("");setConfirmPassword("");
+      setPasswordNotice("Admin password updated. Use the new password the next time you sign in.");
+    }catch(err){setPasswordError(message(err));}
+    finally{setPasswordBusy(false);}
+  }
+  return <section className="settings-grid">
+    <form className="panel settings-panel" onSubmit={updateEmail}>
+      <div className="panel-title"><div><h2>Admin email</h2><span>Change the email used to sign in and receive password reset links.</span></div><Mail size={18}/></div>
+      <div className="settings-form">{emailError&&<div className="error">{emailError}</div>}{emailNotice&&<div className="notice">{emailNotice}</div>}<label>Current email<input value={currentEmail||"Loading..."} disabled/></label><label>New email<input value={email} onChange={e=>setEmail(e.target.value)} type="email" required/></label><button type="submit" className="primary" disabled={emailBusy}>{emailBusy?"Sending confirmation...":"Update email"}</button></div>
+    </form>
+    <form className="panel settings-panel" onSubmit={updatePassword}>
+      <div className="panel-title"><div><h2>Admin password</h2><span>Set a new password for this admin portal account.</span></div><KeyRound size={18}/></div>
+      <div className="settings-form">{passwordError&&<div className="error">{passwordError}</div>}{passwordNotice&&<div className="notice">{passwordNotice}</div>}<label>New password<input value={newPassword} onChange={e=>setNewPassword(e.target.value)} type="password" minLength={6} required/></label><label>Confirm password<input value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} type="password" minLength={6} required/></label><button type="submit" className="primary" disabled={passwordBusy}>{passwordBusy?"Updating password...":"Update password"}</button></div>
+    </form>
+  </section>;
+}
 function LicenseList(p: { licenses: LicenseSummary[]; query: string; setQuery: (v: string) => void; status: string; setStatus: (v: string) => void; refresh: () => void; busy: boolean; open: (id: string) => void }) {
   return <section className="panel"><div className="toolbar"><div className="search"><Search size={17}/><input value={p.query} onChange={e=>p.setQuery(e.target.value)} placeholder="Search license, store, or account"/></div><select value={p.status} onChange={e=>p.setStatus(e.target.value)}><option value="">All statuses</option><option value="active">Active</option><option value="unused">Unused</option><option value="expired">Expired</option><option value="suspended">Suspended</option></select><button type="button" className="icon-button" title="Refresh" onClick={p.refresh}><RefreshCw size={17}/></button><button type="button" className="secondary" onClick={()=>exportCsv(p.licenses)}><Download/>CSV</button></div><LicenseTable licenses={p.licenses} open={p.open}/></section>;
 }
@@ -214,6 +254,7 @@ function CreateModal({ close, created }: { close:()=>void; created:()=>void }) {
   return <div className="overlay center"><form className="modal license-modal" onSubmit={submit}><div className="drawer-head"><div><h2>New license</h2><p>Create a customer activation code.</p></div><button type="button" className="icon-button" aria-label="Close" onClick={close}><X/></button></div>{code?<><div className="generated"><span>Generated license code</span><strong>{code}</strong><small>Shown once only. Send this code to the customer securely.</small></div><div className="modal-actions"><button type="button" className="secondary" onClick={()=>void copyCode()}><Copy/>{copied?"Copied":"Copy code"}</button><button type="button" className="primary" onClick={created}>Done</button></div></>:<>{error&&<div className="error">{error}</div>}<div className="license-form"><label className="full">Customer or license label<input required autoFocus maxLength={80} placeholder="e.g. Maria's Grocery" value={label} onChange={e=>setLabel(e.target.value)}/></label><label>Subscription term<select value={months} onChange={e=>setMonths(Number(e.target.value))}><option value={1}>1 month</option><option value={3}>3 months</option><option value={6}>6 months</option><option value={12}>1 year</option></select></label><label>Device slots<input type="number" min={1} max={100} value={slots} onChange={e=>setSlots(Number(e.target.value))}/></label></div><div className="license-summary"><span>License validity</span><strong>{months===12?"1 year":`${months} month${months===1?"":"s"}`}</strong><small>{slots} active device slot{slots===1?"":"s"}</small></div><button type="submit" className="primary wide" disabled={busy}>{busy?"Generating...":"Generate license"}</button></>}</form></div>;
 }
 function Loading(){return <div className="loading">Loading...</div>}
+function pageTitle(page:"dashboard"|"licenses"|"settings"){if(page==="dashboard")return"License overview";if(page==="licenses")return"Licenses";return"Settings"}
 function date(v:string|null){return v?new Intl.DateTimeFormat(undefined,{dateStyle:"medium"}).format(new Date(v)):"-"}
 function dateTime(v:string|null){return v?new Intl.DateTimeFormat(undefined,{dateStyle:"medium",timeStyle:"short"}).format(new Date(v)):"-"}
 function Expiry({ value }: { value: string|null }) {
