@@ -14,6 +14,10 @@ type ResetBody = {
 type StoreRow = {
   id: string | null;
 };
+type AuthenticatedUser = {
+  id: string;
+  email: string;
+};
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return json({ ok: true });
@@ -35,23 +39,25 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const userId = await authenticatedUserId(admin, req);
+    const user = await authenticatedUser(admin, req);
     const passwordHash = await sha256Hex(password);
 
     const { data: stores, error: storesError } = await admin
       .from("stores")
       .select("id")
-      .eq("owner_user_id", userId);
+      .eq("owner_user_id", user.id);
     if (storesError) throw storesError;
 
     const storeIds = ((stores ?? []) as StoreRow[])
       .map((store: StoreRow) => String(store.id ?? ""))
       .filter((id: string) => id.length > 0);
-    if (storeIds.length === 0) return json({ updated: 0 });
 
     let updated = 0;
     for (const storeId of storeIds) {
       updated += await updateOwnerRows(admin, storeId, passwordHash);
+    }
+    if (updated === 0 && user.email) {
+      updated += await updateOwnerRowsByEmail(admin, user.email, passwordHash);
     }
 
     return json({ updated });
@@ -64,7 +70,10 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function authenticatedUserId(admin: AdminClient, req: Request) {
+async function authenticatedUser(
+  admin: AdminClient,
+  req: Request,
+): Promise<AuthenticatedUser> {
   const token = (req.headers.get("authorization") ?? "")
     .replace(/^Bearer\s+/i, "")
     .trim();
@@ -74,7 +83,10 @@ async function authenticatedUserId(admin: AdminClient, req: Request) {
   if (error || !data.user) {
     throw new HttpError("Invalid or expired password reset session.", 401);
   }
-  return data.user.id;
+  return {
+    id: data.user.id,
+    email: data.user.email?.trim().toLowerCase() ?? "",
+  };
 }
 
 async function updateOwnerRows(
@@ -86,12 +98,36 @@ async function updateOwnerRows(
     .from("users")
     .select("id, revision, payload")
     .eq("store_id", storeId)
-    .or("role.eq.admin,local_role.eq.admin")
+    .or("role.eq.admin,local_role.eq.admin,role.eq.owner,local_role.eq.owner")
     .is("deleted_at", null);
   if (error) throw error;
 
+  return await updateRows(admin, rows ?? [], passwordHash);
+}
+
+async function updateOwnerRowsByEmail(
+  admin: AdminClient,
+  email: string,
+  passwordHash: string,
+) {
+  const { data: rows, error } = await admin
+    .from("users")
+    .select("id, revision, payload")
+    .or("role.eq.admin,local_role.eq.admin,role.eq.owner,local_role.eq.owner")
+    .or(`email.eq.${email},username.eq.${email}`)
+    .is("deleted_at", null);
+  if (error) throw error;
+
+  return await updateRows(admin, rows ?? [], passwordHash);
+}
+
+async function updateRows(
+  admin: AdminClient,
+  rows: Record<string, unknown>[],
+  passwordHash: string,
+) {
   let updated = 0;
-  for (const row of rows ?? []) {
+  for (const row of rows) {
     const payload = isRecord(row.payload) ? row.payload : {};
     const revision = Number(row.revision ?? 0) + 1;
     const { error: updateError } = await admin
