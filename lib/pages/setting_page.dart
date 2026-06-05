@@ -8,11 +8,11 @@ import 'package:intl/intl.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/main.dart';
 import 'package:pos_app/pages/discounts_settings_page.dart';
-import 'package:pos_app/pages/privacy_policy_page.dart';
 import 'package:pos_app/services/license_activation_service.dart';
 import 'package:pos_app/services/screen_awake_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // ─── Settings Page ────────────────────────────────────────────────────────────
 class SettingsPage extends StatefulWidget {
@@ -35,6 +35,9 @@ class _SettingsPageState extends State<SettingsPage> {
   static const _lastBackupKey = 'last_database_backup_at';
   static const _lastSalesExportKey = 'last_sales_export_at';
   static const _storeNameKey = 'store_name';
+  static final Uri _privacyPolicyUrl = Uri.parse(
+    'https://tindapos-legal.vercel.app/privacy-policy',
+  );
 
   // ── Design tokens ────────────────────────────────────────s──────────────────
   static const Color _primary = Color(0xFF5C6BC0);
@@ -115,6 +118,21 @@ class _SettingsPageState extends State<SettingsPage> {
     final storeName = prefs.getString(_storeNameKey)?.trim();
     if (!mounted || storeName == null || storeName.isEmpty) return;
     setState(() => _storeName = storeName);
+  }
+
+  Future<void> _openPrivacyPolicy() async {
+    final opened = await launchUrl(
+      _privacyPolicyUrl,
+      mode: LaunchMode.externalApplication,
+    );
+    if (opened || !mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Could not open the privacy policy link.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Future<void> _loadPinState() async {
@@ -419,14 +437,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           size: 16,
                           color: _tertiaryText,
                         ),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const PrivacyPolicyPage(),
-                            ),
-                          );
-                        },
+                        onTap: _openPrivacyPolicy,
                       ),
                       _SettingsRow(
                         icon: Icons.help_outline_rounded,
