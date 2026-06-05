@@ -7,10 +7,12 @@ class ShiftManagementPage extends StatefulWidget {
   const ShiftManagementPage({
     super.key,
     required this.currentUsername,
+    required this.currentRole,
     this.readOnly = false,
   });
 
   final String currentUsername;
+  final String currentRole;
   final bool readOnly;
 
   @override
@@ -24,6 +26,8 @@ class _ShiftManagementPageState extends State<ShiftManagementPage> {
   List<Map<String, Object?>> _history = const [];
   bool _loading = true;
   bool _busy = false;
+
+  bool get _isAdmin => widget.currentRole.toLowerCase() == 'admin';
 
   @override
   void initState() {
@@ -101,6 +105,13 @@ class _ShiftManagementPageState extends State<ShiftManagementPage> {
   }
 
   Future<void> _closeWithZReading() async {
+    if (!_isAdmin) {
+      _showSnack(
+        'Only admin users can close a shift with Z reading.',
+        isError: true,
+      );
+      return;
+    }
     final shift = _openShift;
     if (shift == null) return;
     final amount = await _askCashAmount(
@@ -223,6 +234,7 @@ class _ShiftManagementPageState extends State<ShiftManagementPage> {
             _ActionBar(
               open: open,
               busy: _busy,
+              canZReading: _isAdmin,
               onOpenShift: _openNewShift,
               onXReading: _createXReading,
               onZReading: _closeWithZReading,
@@ -373,6 +385,7 @@ class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.open,
     required this.busy,
+    required this.canZReading,
     required this.onOpenShift,
     required this.onXReading,
     required this.onZReading,
@@ -380,6 +393,7 @@ class _ActionBar extends StatelessWidget {
 
   final bool open;
   final bool busy;
+  final bool canZReading;
   final VoidCallback onOpenShift;
   final VoidCallback onXReading;
   final VoidCallback onZReading;
@@ -404,14 +418,16 @@ class _ActionBar extends StatelessWidget {
               label: const Text('X reading'),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: busy ? null : onZReading,
-              icon: const Icon(Icons.task_alt_rounded),
-              label: const Text('Z reading'),
+          if (canZReading) ...[
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: busy ? null : onZReading,
+                icon: const Icon(Icons.task_alt_rounded),
+                label: const Text('Z reading'),
+              ),
             ),
-          ),
+          ],
         ],
       ],
     );

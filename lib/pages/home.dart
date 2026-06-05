@@ -1117,6 +1117,7 @@ class _HomePageState extends State<HomePage> {
       case 11:
         return ShiftManagementPage(
           currentUsername: widget.username,
+          currentRole: widget.role,
           readOnly: widget.readOnly,
         );
     }
