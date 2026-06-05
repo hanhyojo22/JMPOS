@@ -57,6 +57,21 @@ Deno.serve(async (req: Request) => {
     const { token, userId } = await authenticatedUser(admin, req);
     await assertStoreMember(admin, storeId, userId);
     const device = await activeDevice(admin, storeId, userId, token);
+    const eventId = `${storeId}:${queueKey}`;
+
+    const { data: existingEvent, error: existingEventError } = await admin
+      .from("pos_sync_events")
+      .select("applied_revision")
+      .eq("event_id", eventId)
+      .maybeSingle();
+    if (existingEventError) throw existingEventError;
+    if (existingEvent?.applied_revision !== null && existingEvent?.applied_revision !== undefined) {
+      return json({
+        applied: true,
+        revision: Number(existingEvent.applied_revision),
+        alreadyApplied: true,
+      });
+    }
 
     const { data: current, error: currentError } = await admin
       .from(tableName)
@@ -81,7 +96,6 @@ Deno.serve(async (req: Request) => {
 
     const appliedRevision = currentRevision + 1;
     const now = new Date().toISOString();
-    const eventId = `${storeId}:${queueKey}`;
     if (operation === "delete") {
       if (current) {
         const { data: applied, error } = await admin

@@ -1895,7 +1895,7 @@ class _HomePageState extends State<HomePage> {
               if (!widget.readOnly && !_isStaff)
                 _NavItem(
                   icon: Icons.inventory_2_rounded,
-                  label: 'Products',
+                  label: 'Inventory',
                   selected: _selectedIndex == 1,
                   onTap: () => _onNavBarTapped(1),
                 ),

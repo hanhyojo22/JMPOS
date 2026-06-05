@@ -1270,7 +1270,7 @@ class DatabaseHelper {
     final queueKey = '$tableName:$localId';
     final existing = await db.query(
       'sync_queue',
-      columns: ['cloud_revision'],
+      columns: ['cloud_revision', 'created_at'],
       where: 'queue_key = ?',
       whereArgs: [queueKey],
       limit: 1,
@@ -1278,8 +1278,7 @@ class DatabaseHelper {
     final cloudRevision = existing.isEmpty
         ? 0
         : (existing.first['cloud_revision'] as num?)?.toInt() ?? 0;
-    await db.insert('sync_queue', {
-      'queue_key': queueKey,
+    final values = {
       'table_name': tableName,
       'local_id': localId,
       'operation': operation,
@@ -1291,10 +1290,25 @@ class DatabaseHelper {
       'last_error': null,
       'conflict_details': null,
       'next_retry_at': null,
-      'created_at': now,
       'updated_at': now,
       'synced_at': null,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    };
+
+    if (existing.isEmpty) {
+      await db.insert('sync_queue', {
+        'queue_key': queueKey,
+        ...values,
+        'created_at': now,
+      });
+      return;
+    }
+
+    await db.update(
+      'sync_queue',
+      values,
+      where: 'queue_key = ?',
+      whereArgs: [queueKey],
+    );
   }
 
   Future<int> syncPendingChanges({
@@ -1339,18 +1353,13 @@ class DatabaseHelper {
             final result = results.single;
             final syncedAt = DateTime.now().toIso8601String();
             if (result.conflicted) {
-              await db.update(
-                'sync_queue',
-                {
-                  'status': 'conflict',
-                  'cloud_revision': result.revision,
-                  'last_error': 'Sync conflict: ${result.message}',
-                  'conflict_details': result.message,
-                  'updated_at': syncedAt,
-                  'next_retry_at': null,
-                },
-                where: 'id = ?',
-                whereArgs: [row['id']],
+              await _markSyncQueueConflict(
+                db,
+                queueRowId: row['id'],
+                queueKey: row['queue_key']?.toString(),
+                revision: result.revision,
+                message: result.message ?? 'Cloud row changed.',
+                updatedAt: syncedAt,
               );
               onProgress?.call(
                 syncedTotal,
@@ -1359,20 +1368,12 @@ class DatabaseHelper {
               );
               continue;
             }
-            await db.update(
-              'sync_queue',
-              {
-                'status': 'synced',
-                'base_revision': result.revision,
-                'cloud_revision': result.revision,
-                'synced_at': syncedAt,
-                'updated_at': syncedAt,
-                'last_error': null,
-                'conflict_details': null,
-                'next_retry_at': null,
-              },
-              where: 'id = ?',
-              whereArgs: [row['id']],
+            await _markSyncQueueSynced(
+              db,
+              queueRowId: row['id'],
+              queueKey: row['queue_key']?.toString(),
+              revision: result.revision,
+              syncedAt: syncedAt,
             );
             syncedTotal += 1;
             onProgress?.call(
@@ -1423,6 +1424,73 @@ class DatabaseHelper {
     } finally {
       _syncInProgress = false;
     }
+  }
+
+  Future<void> _markSyncQueueConflict(
+    Database db, {
+    required Object? queueRowId,
+    required String? queueKey,
+    required int revision,
+    required String message,
+    required String updatedAt,
+  }) async {
+    final values = {
+      'status': 'conflict',
+      'cloud_revision': revision,
+      'last_error': 'Sync conflict: $message',
+      'conflict_details': message,
+      'updated_at': updatedAt,
+      'next_retry_at': null,
+    };
+
+    final updated = await db.update(
+      'sync_queue',
+      values,
+      where: 'id = ?',
+      whereArgs: [queueRowId],
+    );
+    if (updated > 0 || queueKey == null || queueKey.isEmpty) return;
+
+    await db.update(
+      'sync_queue',
+      values,
+      where: 'queue_key = ?',
+      whereArgs: [queueKey],
+    );
+  }
+
+  Future<void> _markSyncQueueSynced(
+    Database db, {
+    required Object? queueRowId,
+    required String? queueKey,
+    required int revision,
+    required String syncedAt,
+  }) async {
+    final values = {
+      'status': 'synced',
+      'base_revision': revision,
+      'cloud_revision': revision,
+      'synced_at': syncedAt,
+      'updated_at': syncedAt,
+      'last_error': null,
+      'conflict_details': null,
+      'next_retry_at': null,
+    };
+
+    final updated = await db.update(
+      'sync_queue',
+      values,
+      where: 'id = ?',
+      whereArgs: [queueRowId],
+    );
+    if (updated > 0 || queueKey == null || queueKey.isEmpty) return;
+
+    await db.update(
+      'sync_queue',
+      values,
+      where: 'queue_key = ?',
+      whereArgs: [queueKey],
+    );
   }
 
   Duration _syncRetryDelay(List<Map<String, Object?>> rows) {

@@ -395,14 +395,14 @@ class _HistoryPageState extends State<HistoryPage>
       child: Row(
         children: [
           _TabItem(
-            label: 'Completed Sales',
+            label: 'Sales',
             selected: _selectedTab == 'Completed',
             activeColor: _purple,
             alignment: Alignment.centerLeft,
             onTap: () => setState(() => _selectedTab = 'Completed'),
           ),
           _TabItem(
-            label: 'Void Sales',
+            label: 'Void',
             selected: _selectedTab == 'Void',
             activeColor: _red,
             alignment: Alignment.center,

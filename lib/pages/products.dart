@@ -149,7 +149,7 @@ class _ProductsPageState extends State<ProductsPage>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Failed to load products: $e';
+        _error = 'Failed to load inventory: $e';
         _loading = false;
       });
     }
@@ -693,7 +693,7 @@ class _ProductsPageState extends State<ProductsPage>
                   color: _secondaryText.withValues(alpha: 0.18),
                 ),
                 Tooltip(
-                  message: 'Sort products',
+                  message: 'Sort inventory',
                   child: GestureDetector(
                     onTap: _showSortSheet,
                     child: Container(
@@ -1078,7 +1078,7 @@ class _ProductsPageState extends State<ProductsPage>
           ),
           const SizedBox(height: 16),
           Text(
-            'Loading products...',
+            'Loading inventory...',
             style: TextStyle(fontSize: 14, color: _secondaryText),
           ),
         ],
@@ -1179,7 +1179,7 @@ class _ProductsPageState extends State<ProductsPage>
           ),
           const SizedBox(height: 16),
           Text(
-            _searchQuery.isNotEmpty ? 'No results found' : 'No products yet',
+            _searchQuery.isNotEmpty ? 'No results found' : 'No inventory yet',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
@@ -1190,7 +1190,7 @@ class _ProductsPageState extends State<ProductsPage>
           Text(
             _searchQuery.isNotEmpty
                 ? 'Try a different search term'
-                : 'Add your first product to get started',
+                : 'Add your first product to start tracking stock',
             style: TextStyle(fontSize: 13, color: _secondaryText),
           ),
         ],
@@ -1293,7 +1293,7 @@ class _SortSheetState extends State<_SortSheet> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Sort Products',
+                  'Sort Inventory',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
