@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/main.dart';
 import 'package:pos_app/pages/discounts_settings_page.dart';
+import 'package:pos_app/pages/privacy_policy_page.dart';
 import 'package:pos_app/services/license_activation_service.dart';
 import 'package:pos_app/services/screen_awake_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -418,7 +419,14 @@ class _SettingsPageState extends State<SettingsPage> {
                           size: 16,
                           color: _tertiaryText,
                         ),
-                        onTap: () {},
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const PrivacyPolicyPage(),
+                            ),
+                          );
+                        },
                       ),
                       _SettingsRow(
                         icon: Icons.help_outline_rounded,
