@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -55,11 +56,16 @@ class MyApp extends StatefulWidget {
 
 class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
   Timer? _cloudSyncTimer;
   Timer? _licenseRefreshTimer;
   Timer? _licenseExpiryTimer;
+  Timer? _internetStatusTimer;
   bool _backgroundCloudSyncRunning = false;
   bool _licenseRefreshRunning = false;
+  bool _internetCheckRunning = false;
+  bool? _internetAvailable;
   bool _showingBlockedLicense = false;
   bool _localSnapshotQueuedForCloudSync = false;
   bool isDarkMode = false;
@@ -73,7 +79,11 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       unawaited(_syncCloudInBackground());
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_checkInternetStatus());
       unawaited(_refreshLicenseEnforcement());
+    });
+    _internetStatusTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      unawaited(_checkInternetStatus());
     });
     _licenseRefreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       unawaited(_refreshLicenseEnforcement());
@@ -86,15 +96,147 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _cloudSyncTimer?.cancel();
     _licenseRefreshTimer?.cancel();
     _licenseExpiryTimer?.cancel();
+    _internetStatusTimer?.cancel();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(_checkInternetStatus());
       unawaited(_syncCloudInBackground());
       unawaited(_refreshLicenseEnforcement());
     }
+  }
+
+  Future<void> _checkInternetStatus() async {
+    if (_internetCheckRunning) return;
+    _internetCheckRunning = true;
+    try {
+      final online = await _hasInternetConnection();
+      final previous = _internetAvailable;
+      if (previous == online) return;
+      _internetAvailable = online;
+      if (!online) {
+        _showInternetLostMessage();
+      } else if (previous == false) {
+        _showInternetRestoredMessage();
+      }
+    } finally {
+      _internetCheckRunning = false;
+    }
+  }
+
+  Future<bool> _hasInternetConnection() async {
+    try {
+      final result = await InternetAddress.lookup(
+        'example.com',
+      ).timeout(const Duration(seconds: 3));
+      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _showInternetLostMessage() {
+    _showConnectionSnackBar(
+      icon: Icons.cloud_off_rounded,
+      title: 'Offline',
+      message: 'Cloud sync will resume when internet returns.',
+      accentColor: const Color(0xFFDC2626),
+      duration: const Duration(days: 1),
+    );
+  }
+
+  void _showInternetRestoredMessage() {
+    _showConnectionSnackBar(
+      icon: Icons.cloud_done_rounded,
+      title: 'Back online',
+      message: 'Internet connection restored.',
+      accentColor: const Color(0xFF059669),
+      duration: const Duration(seconds: 3),
+    );
+  }
+
+  void _showConnectionSnackBar({
+    required IconData icon,
+    required String title,
+    required String message,
+    required Color accentColor,
+    required Duration duration,
+  }) {
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: duration,
+          elevation: 10,
+          backgroundColor: Colors.transparent,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          padding: EdgeInsets.zero,
+          content: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFF111827),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: accentColor.withValues(alpha: 0.35)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 22,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: accentColor, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          message,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFFD1D5DB),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
   }
 
   Future<void> _refreshLicenseEnforcement() async {
@@ -230,6 +372,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       value: overlayStyle,
       child: MaterialApp(
         navigatorKey: _navigatorKey,
+        scaffoldMessengerKey: _scaffoldMessengerKey,
         debugShowCheckedModeBanner: false,
         themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
 

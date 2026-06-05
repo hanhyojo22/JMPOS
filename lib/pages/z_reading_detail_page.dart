@@ -59,7 +59,7 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
       );
 
       if (rows.isEmpty) {
-        throw Exception('Z reading was not found.');
+        throw Exception('Reading was not found.');
       }
 
       final shiftId = (rows.first['shift_id'] as num?)?.toInt();
@@ -100,7 +100,7 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
     return Scaffold(
       backgroundColor: _pageBg,
       appBar: AppBar(
-        title: const Text('Z Reading Details'),
+        title: Text(_pageTitle),
         backgroundColor: Colors.white,
         foregroundColor: _primaryText,
         elevation: 0,
@@ -139,8 +139,10 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
 
   Widget _headerCard() {
     final reading = _reading!;
-    final title =
-        reading['z_reading_number']?.toString().trim().isNotEmpty == true
+    final isXReading = _isXReading(reading);
+    final title = isXReading
+        ? 'X-${reading['id']}'
+        : reading['z_reading_number']?.toString().trim().isNotEmpty == true
         ? reading['z_reading_number'].toString()
         : 'Z-${reading['id']}';
     final createdAt = _parseDate(reading['created_at']);
@@ -190,7 +192,9 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
                   ],
                 ),
               ),
-              _statusPill(overShort),
+              isXReading
+                  ? _typePill('Snapshot', _blue)
+                  : _statusPill(overShort),
             ],
           ),
           const SizedBox(height: 22),
@@ -199,7 +203,7 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
             children: [
               Expanded(
                 child: _summaryText(
-                  label: 'Closed By',
+                  label: isXReading ? 'Created By' : 'Closed By',
                   value: reading['created_by']?.toString() ?? 'unknown',
                   valueColor: _primaryText,
                 ),
@@ -224,6 +228,7 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
 
   Widget _cashSummaryCard() {
     final reading = _reading!;
+    final isXReading = _isXReading(reading);
     final overShort = _money(reading['over_short']);
     final overShortColor = overShort == 0
         ? _primaryText
@@ -248,15 +253,17 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
             valueColor: _blue,
             large: true,
           ),
-          const SizedBox(height: 12),
-          _totalRow('Counted cash', _moneyText(reading['counted_cash'])),
-          const SizedBox(height: 12),
-          _totalRow(
-            'Over / Short',
-            _moneyText(reading['over_short']),
-            valueColor: overShortColor,
-            large: true,
-          ),
+          if (!isXReading) ...[
+            const SizedBox(height: 12),
+            _totalRow('Counted cash', _moneyText(reading['counted_cash'])),
+            const SizedBox(height: 12),
+            _totalRow(
+              'Over / Short',
+              _moneyText(reading['over_short']),
+              valueColor: overShortColor,
+              large: true,
+            ),
+          ],
         ],
       ),
     );
@@ -264,6 +271,7 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
 
   Widget _shiftInfoCard() {
     final reading = _reading!;
+    final isXReading = _isXReading(reading);
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -273,8 +281,13 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
           _infoRow('Shift ID', '#${reading['shift_id']}'),
           _infoRow('Opened by', reading['opened_by']?.toString() ?? 'unknown'),
           _infoRow('Opened at', _dateTimeText(reading['opened_at'])),
-          _infoRow('Closed by', reading['closed_by']?.toString() ?? 'unknown'),
-          _infoRow('Closed at', _dateTimeText(reading['closed_at'])),
+          if (!isXReading) ...[
+            _infoRow(
+              'Closed by',
+              reading['closed_by']?.toString() ?? 'unknown',
+            ),
+            _infoRow('Closed at', _dateTimeText(reading['closed_at'])),
+          ],
           _infoRow(
             'Receipts',
             '${(reading['receipt_count'] as num?)?.toInt() ?? 0}',
@@ -367,6 +380,24 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
         : overShort > 0
         ? 'Over'
         : 'Short';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _typePill(String label, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -507,6 +538,16 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
   String _moneyText(Object? value) => CurrencyFormatter.format(_money(value));
 
   double _money(Object? value) => (value as num?)?.toDouble() ?? 0;
+
+  String get _pageTitle {
+    final reading = _reading;
+    if (reading == null) return 'Reading Details';
+    return _isXReading(reading) ? 'X Reading Details' : 'Z Reading Details';
+  }
+
+  bool _isXReading(Map<String, Object?> reading) {
+    return reading['type']?.toString().toLowerCase() == 'x';
+  }
 
   DateTime? _parseDate(Object? value) {
     final text = value?.toString();

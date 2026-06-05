@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
+import 'z_reading_detail_page.dart';
 
 class ShiftManagementPage extends StatefulWidget {
   const ShiftManagementPage({
@@ -244,12 +245,24 @@ class _ShiftManagementPageState extends State<ShiftManagementPage> {
             title: open ? 'Current shift readings' : 'Recent shifts',
           ),
           if (open)
-            _ReadingList(readings: _readings)
+            _ReadingList(readings: _readings, onOpenReading: _openReading)
           else
             _ShiftHistoryList(history: _history),
         ],
       ),
     );
+  }
+
+  Future<void> _openReading(Map<String, Object?> reading) async {
+    final readingId = (reading['id'] as num?)?.toInt();
+    if (readingId == null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ZReadingDetailPage(readingId: readingId),
+      ),
+    );
+    if (mounted) await _load();
   }
 }
 
@@ -452,9 +465,10 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _ReadingList extends StatelessWidget {
-  const _ReadingList({required this.readings});
+  const _ReadingList({required this.readings, required this.onOpenReading});
 
   final List<Map<String, Object?>> readings;
+  final ValueChanged<Map<String, Object?>> onOpenReading;
 
   @override
   Widget build(BuildContext context) {
@@ -469,6 +483,7 @@ class _ReadingList extends StatelessWidget {
           subtitle:
               '${_formatDate(reading['created_at']?.toString())} by ${reading['created_by'] ?? 'unknown'}',
           trailing: CurrencyFormatter.format(_money(reading['expected_cash'])),
+          onTap: () => onOpenReading(reading),
         );
       }).toList(),
     );
@@ -506,39 +521,58 @@ class _ListCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.trailing,
+    this.onTap,
   });
 
   final String title;
   final String subtitle;
   final String trailing;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 4),
-                Text(subtitle, style: TextStyle(color: Colors.grey.shade600)),
-              ],
-            ),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
           ),
-          Text(trailing, style: const TextStyle(fontWeight: FontWeight.w800)),
-        ],
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                trailing,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              if (onTap != null) ...[
+                const SizedBox(width: 6),
+                Icon(Icons.chevron_right_rounded, color: Colors.grey.shade500),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
