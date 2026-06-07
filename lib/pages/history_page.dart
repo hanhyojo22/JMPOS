@@ -104,6 +104,7 @@ class _HistoryPageState extends State<HistoryPage>
         shift_readings.id,
         shift_readings.shift_id,
         shift_readings.created_by,
+        COALESCE(NULLIF(users.full_name, ''), shift_readings.created_by) AS created_by_display_name,
         shift_readings.created_at,
         shift_readings.opening_cash,
         shift_readings.sales_total,
@@ -116,6 +117,7 @@ class _HistoryPageState extends State<HistoryPage>
         shifts.z_reading_number
       FROM shift_readings
       LEFT JOIN shifts ON shifts.id = shift_readings.shift_id
+      LEFT JOIN users ON users.username = shift_readings.created_by
       WHERE shift_readings.type = 'z'
       ORDER BY shift_readings.created_at DESC, shift_readings.id DESC
     ''');
@@ -192,7 +194,10 @@ class _HistoryPageState extends State<HistoryPage>
               reading['z_reading_number']?.toString().trim().isNotEmpty == true
               ? reading['z_reading_number'].toString()
               : 'Z-${reading['id']}',
-          'createdBy': reading['created_by']?.toString() ?? 'unknown',
+          'createdBy':
+              reading['created_by_display_name']?.toString() ??
+              reading['created_by']?.toString() ??
+              'unknown',
           'createdAt': createdAt,
           'date': dateStr,
           'time': timeStr,

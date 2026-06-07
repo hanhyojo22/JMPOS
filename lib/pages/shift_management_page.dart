@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
@@ -142,7 +143,7 @@ class _ShiftManagementPageState extends State<ShiftManagementPage> {
     required String label,
     required String action,
   }) async {
-    final controller = TextEditingController(text: '0.00');
+    final controller = TextEditingController();
     final result = await showDialog<double>(
       context: context,
       builder: (context) {
@@ -160,8 +161,10 @@ class _ShiftManagementPageState extends State<ShiftManagementPage> {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
+                    inputFormatters: const [_AtmMoneyInputFormatter()],
                     decoration: InputDecoration(
                       labelText: label,
+                      hintText: '0.00',
                       prefixText: 'PHP ',
                       errorText: error,
                     ),
@@ -199,12 +202,24 @@ class _ShiftManagementPageState extends State<ShiftManagementPage> {
 
   void _showSnack(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade700,
-      ),
-    );
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          content: Text(message, maxLines: 2, overflow: TextOverflow.ellipsis),
+          backgroundColor: isError
+              ? Colors.red.shade700
+              : Colors.green.shade700,
+        ),
+      );
   }
 
   @override
@@ -223,7 +238,9 @@ class _ShiftManagementPageState extends State<ShiftManagementPage> {
         children: [
           _HeaderCard(
             open: open,
-            openedBy: _openShift?['opened_by']?.toString(),
+            openedBy:
+                _openShift?['opened_by_display_name']?.toString() ??
+                _openShift?['opened_by']?.toString(),
             openedAt: _openShift?['opened_at']?.toString(),
           ),
           const SizedBox(height: 16),
@@ -447,6 +464,32 @@ class _ActionBar extends StatelessWidget {
   }
 }
 
+class _AtmMoneyInputFormatter extends TextInputFormatter {
+  const _AtmMoneyInputFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) {
+      return const TextEditingValue(
+        selection: TextSelection.collapsed(offset: 0),
+      );
+    }
+
+    final cents = int.tryParse(digits) ?? 0;
+    final formatted =
+        '${cents ~/ 100}.${(cents % 100).toString().padLeft(2, '0')}';
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle({required this.title});
 
@@ -481,7 +524,7 @@ class _ReadingList extends StatelessWidget {
         return _ListCard(
           title: '$type reading',
           subtitle:
-              '${_formatDate(reading['created_at']?.toString())} by ${reading['created_by'] ?? 'unknown'}',
+              '${_formatDate(reading['created_at']?.toString())} by ${reading['created_by_display_name'] ?? reading['created_by'] ?? 'unknown'}',
           trailing: CurrencyFormatter.format(_money(reading['expected_cash'])),
           onTap: () => onOpenReading(reading),
         );
@@ -508,7 +551,7 @@ class _ShiftHistoryList extends StatelessWidget {
               ? 'Open shift'
               : shift['z_reading_number']?.toString() ?? 'Closed shift',
           subtitle:
-              'Opened ${_formatDate(shift['opened_at']?.toString())} by ${shift['opened_by'] ?? 'unknown'}',
+              'Opened ${_formatDate(shift['opened_at']?.toString())} by ${shift['opened_by_display_name'] ?? shift['opened_by'] ?? 'unknown'}',
           trailing: CurrencyFormatter.format(_money(shift['expected_cash'])),
         );
       }).toList(),

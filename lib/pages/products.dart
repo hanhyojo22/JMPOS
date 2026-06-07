@@ -639,6 +639,9 @@ class _ProductsPageState extends State<ProductsPage>
             fontWeight: FontWeight.w500,
           ),
           decoration: InputDecoration(
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
             hintText: 'Search by name or category...',
             hintStyle: TextStyle(
               fontSize: 14,

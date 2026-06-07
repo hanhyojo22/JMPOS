@@ -44,14 +44,20 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
         '''
         SELECT
           shift_readings.*,
+          COALESCE(NULLIF(created_user.full_name, ''), shift_readings.created_by) AS created_by_display_name,
           shifts.status AS shift_status,
           shifts.opened_by,
+          COALESCE(NULLIF(opened_user.full_name, ''), shifts.opened_by) AS opened_by_display_name,
           shifts.opened_at,
           shifts.closed_by,
+          COALESCE(NULLIF(closed_user.full_name, ''), shifts.closed_by) AS closed_by_display_name,
           shifts.closed_at,
           shifts.z_reading_number
         FROM shift_readings
         LEFT JOIN shifts ON shifts.id = shift_readings.shift_id
+        LEFT JOIN users AS created_user ON created_user.username = shift_readings.created_by
+        LEFT JOIN users AS opened_user ON opened_user.username = shifts.opened_by
+        LEFT JOIN users AS closed_user ON closed_user.username = shifts.closed_by
         WHERE shift_readings.id = ?
         LIMIT 1
         ''',
@@ -204,7 +210,10 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
               Expanded(
                 child: _summaryText(
                   label: isXReading ? 'Created By' : 'Closed By',
-                  value: reading['created_by']?.toString() ?? 'unknown',
+                  value:
+                      reading['created_by_display_name']?.toString() ??
+                      reading['created_by']?.toString() ??
+                      'unknown',
                   valueColor: _primaryText,
                 ),
               ),
@@ -279,12 +288,19 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
           _sectionTitle('Shift'),
           const SizedBox(height: 14),
           _infoRow('Shift ID', '#${reading['shift_id']}'),
-          _infoRow('Opened by', reading['opened_by']?.toString() ?? 'unknown'),
+          _infoRow(
+            'Opened by',
+            reading['opened_by_display_name']?.toString() ??
+                reading['opened_by']?.toString() ??
+                'unknown',
+          ),
           _infoRow('Opened at', _dateTimeText(reading['opened_at'])),
           if (!isXReading) ...[
             _infoRow(
               'Closed by',
-              reading['closed_by']?.toString() ?? 'unknown',
+              reading['closed_by_display_name']?.toString() ??
+                  reading['closed_by']?.toString() ??
+                  'unknown',
             ),
             _infoRow('Closed at', _dateTimeText(reading['closed_at'])),
           ],

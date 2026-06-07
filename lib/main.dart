@@ -66,6 +66,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   bool _licenseRefreshRunning = false;
   bool _internetCheckRunning = false;
   bool? _internetAvailable;
+  int _internetOfflineProbeCount = 0;
   bool _showingBlockedLicense = false;
   bool _localSnapshotQueuedForCloudSync = false;
   bool isDarkMode = false;
@@ -114,6 +115,13 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _internetCheckRunning = true;
     try {
       final online = await _hasInternetConnection();
+      if (!online) {
+        _internetOfflineProbeCount++;
+        if (_internetOfflineProbeCount < 2) return;
+      } else {
+        _internetOfflineProbeCount = 0;
+      }
+
       final previous = _internetAvailable;
       if (previous == online) return;
       _internetAvailable = online;
@@ -144,7 +152,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       title: 'Offline',
       message: 'Cloud sync will resume when internet returns.',
       accentColor: const Color(0xFFDC2626),
-      duration: const Duration(days: 1),
+      duration: const Duration(seconds: 3),
     );
   }
 
@@ -177,61 +185,72 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
           backgroundColor: Colors.transparent,
           margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
           padding: EdgeInsets.zero,
-          content: DecoratedBox(
-            decoration: BoxDecoration(
-              color: const Color(0xFF111827),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: accentColor.withValues(alpha: 0.35)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 22,
-                  offset: const Offset(0, 10),
+          content: Align(
+            alignment: Alignment.bottomCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111827),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: accentColor.withValues(alpha: 0.35),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 22,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: accentColor.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: accentColor, size: 22),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                          ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: accentColor.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          message,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFFD1D5DB),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        child: Icon(icon, color: accentColor, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              message,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFFD1D5DB),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),

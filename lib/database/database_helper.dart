@@ -959,12 +959,20 @@ class DatabaseHelper {
   Future<Map<String, Object?>?> getOpenShift() async {
     final db = await database;
     await ensureShiftSchema();
-    final rows = await db.query(
-      'shifts',
-      where: 'status = ?',
-      whereArgs: ['open'],
-      orderBy: 'opened_at DESC, id DESC',
-      limit: 1,
+    final rows = await db.rawQuery(
+      '''
+      SELECT
+        shifts.*,
+        COALESCE(NULLIF(opened_user.full_name, ''), shifts.opened_by) AS opened_by_display_name,
+        COALESCE(NULLIF(closed_user.full_name, ''), shifts.closed_by) AS closed_by_display_name
+      FROM shifts
+      LEFT JOIN users AS opened_user ON opened_user.username = shifts.opened_by
+      LEFT JOIN users AS closed_user ON closed_user.username = shifts.closed_by
+      WHERE shifts.status = ?
+      ORDER BY shifts.opened_at DESC, shifts.id DESC
+      LIMIT 1
+      ''',
+      ['open'],
     );
     if (rows.isEmpty) return null;
     return Map<String, Object?>.from(rows.first);
@@ -1074,21 +1082,33 @@ class DatabaseHelper {
   Future<List<Map<String, Object?>>> getShiftReadings({int? shiftId}) async {
     final db = await database;
     await ensureShiftSchema();
-    return await db.query(
-      'shift_readings',
-      where: shiftId == null ? null : 'shift_id = ?',
-      whereArgs: shiftId == null ? null : [shiftId],
-      orderBy: 'created_at DESC, id DESC',
-    );
+    return await db.rawQuery('''
+      SELECT
+        shift_readings.*,
+        COALESCE(NULLIF(users.full_name, ''), shift_readings.created_by) AS created_by_display_name
+      FROM shift_readings
+      LEFT JOIN users ON users.username = shift_readings.created_by
+      ${shiftId == null ? '' : 'WHERE shift_readings.shift_id = ?'}
+      ORDER BY shift_readings.created_at DESC, shift_readings.id DESC
+      ''', shiftId == null ? const [] : [shiftId]);
   }
 
   Future<List<Map<String, Object?>>> getShiftHistory({int limit = 30}) async {
     final db = await database;
     await ensureShiftSchema();
-    return await db.query(
-      'shifts',
-      orderBy: 'opened_at DESC, id DESC',
-      limit: limit,
+    return await db.rawQuery(
+      '''
+      SELECT
+        shifts.*,
+        COALESCE(NULLIF(opened_user.full_name, ''), shifts.opened_by) AS opened_by_display_name,
+        COALESCE(NULLIF(closed_user.full_name, ''), shifts.closed_by) AS closed_by_display_name
+      FROM shifts
+      LEFT JOIN users AS opened_user ON opened_user.username = shifts.opened_by
+      LEFT JOIN users AS closed_user ON closed_user.username = shifts.closed_by
+      ORDER BY shifts.opened_at DESC, shifts.id DESC
+      LIMIT ?
+      ''',
+      [limit],
     );
   }
 
