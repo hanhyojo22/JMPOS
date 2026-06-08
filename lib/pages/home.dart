@@ -13,6 +13,7 @@ import 'package:pos_app/utils/greetings.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/theme/app_typography.dart';
 import 'package:pos_app/utils/currency.dart';
+import 'package:pos_app/utils/product_discount.dart';
 import 'package:pos_app/utils/receipt_discount.dart';
 import 'edit_product_page.dart';
 import 'setting_page.dart';
@@ -748,12 +749,18 @@ class _HomePageState extends State<HomePage> {
           'id': productId,
           'title': row['product_name']?.toString() ?? 'Product',
           'price': row['price'],
+          'discount_percent': row['discount_percent'],
+          'discount_enabled': row['discount_enabled'],
           'stock': dbStock - refreshedQuantity,
           'barcode': row['barcode'] ?? '',
           'imagePath': row['image_url'] ?? '',
           'category': row['category'] ?? 'Other',
         },
         'quantity': refreshedQuantity,
+        if (item.containsKey('checkout_discount_enabled'))
+          'checkout_discount_enabled': item['checkout_discount_enabled'],
+        if (item.containsKey('checkout_discount_percent'))
+          'checkout_discount_percent': item['checkout_discount_percent'],
       });
     }
 
@@ -803,9 +810,8 @@ class _HomePageState extends State<HomePage> {
         0,
         (sum, item) =>
             sum +
-            (((item['product'] as Map<String, dynamic>)['price'] as num)
-                    .toDouble() *
-                ((item['quantity'] as num?)?.toInt() ?? 0)),
+            discountedCartItemPrice(item) *
+                ((item['quantity'] as num?)?.toInt() ?? 0),
       );
       final receiptDiscountAmount = discount.amountFor(receiptSubtotal);
       final receiptDiscountValue = discount.type == ReceiptDiscountType.percent
@@ -826,7 +832,14 @@ class _HomePageState extends State<HomePage> {
 
           final currentRows = await txn.query(
             'products',
-            columns: ['id', 'stock_quantity', 'cost_price'],
+            columns: [
+              'id',
+              'stock_quantity',
+              'price',
+              'discount_percent',
+              'discount_enabled',
+              'cost_price',
+            ],
             where: 'id = ?',
             whereArgs: [productId],
             limit: 1,
@@ -850,7 +863,20 @@ class _HomePageState extends State<HomePage> {
             throw Exception('$productName does not have enough stock.');
           }
 
-          final price = (product['price'] as num).toDouble();
+          final currentProduct = <String, dynamic>{
+            ...product,
+            'price': currentRows.first['price'],
+            'discount_percent': currentRows.first['discount_percent'],
+            'discount_enabled': currentRows.first['discount_enabled'],
+          };
+          final currentItem = <String, dynamic>{
+            ...item,
+            'product': currentProduct,
+          };
+          final originalPrice = (currentProduct['price'] as num).toDouble();
+          final discountPercent = cartItemDiscountPercent(currentItem);
+          final price = discountedCartItemPrice(currentItem);
+          final productDiscount = cartItemDiscountAmount(currentItem);
           final costPrice = (currentRows.first['cost_price'] as num?)
               ?.toDouble();
           final imagePath = product['imagePath']?.toString();
@@ -861,6 +887,13 @@ class _HomePageState extends State<HomePage> {
             'product_name': productName,
             'quantity': quantity,
             'price': price,
+            'original_price': originalPrice,
+            'product_discount_percent': discountPercent > 0
+                ? discountPercent
+                : null,
+            'product_discount_amount': productDiscount > 0
+                ? productDiscount
+                : null,
             'cost_price': costPrice,
             'total': price * quantity,
             'image_url': imagePath == null || imagePath.isEmpty

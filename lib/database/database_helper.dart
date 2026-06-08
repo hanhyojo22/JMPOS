@@ -39,7 +39,7 @@ class DatabaseHelper {
   static Database? _database;
   static bool _syncInProgress = false;
   static bool _cloudRestoreInProgress = false;
-  static const int _dbVersion = 12;
+  static const int _dbVersion = 13;
   static const saleCompletionGracePeriod = Duration(seconds: 10);
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
   static const int _productImageSize = 300;
@@ -509,6 +509,8 @@ class DatabaseHelper {
         category TEXT,
         description TEXT,
         price REAL NOT NULL,
+        discount_percent REAL,
+        discount_enabled INTEGER NOT NULL DEFAULT 0,
         cost_price REAL NOT NULL,
         stock_quantity INTEGER NOT NULL,
         image_url TEXT,
@@ -527,6 +529,9 @@ class DatabaseHelper {
         product_name TEXT NOT NULL,
         quantity INTEGER NOT NULL,
         price REAL NOT NULL,
+        original_price REAL,
+        product_discount_percent REAL,
+        product_discount_amount REAL,
         cost_price REAL,
         total REAL NOT NULL,
         image_url TEXT,
@@ -607,6 +612,10 @@ class DatabaseHelper {
       await _createShiftsTable(db);
       await _createShiftReadingsTable(db);
       await _createIndexes(db);
+    }
+    if (oldVersion < 13) {
+      await _ensureProductSchema(db);
+      await _ensureSalesSchema(db);
     }
   }
 
@@ -845,6 +854,14 @@ class DatabaseHelper {
         'ALTER TABLE products ADD COLUMN pending_delete_at TEXT',
       );
     }
+    if (!columnNames.contains('discount_percent')) {
+      await db.execute('ALTER TABLE products ADD COLUMN discount_percent REAL');
+    }
+    if (!columnNames.contains('discount_enabled')) {
+      await db.execute(
+        'ALTER TABLE products ADD COLUMN discount_enabled INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
   Future<void> ensureSalesSchema() async {
@@ -904,6 +921,24 @@ class DatabaseHelper {
     if (!columnNames.contains('receipt_discount_value')) {
       await db.execute(
         'ALTER TABLE sales ADD COLUMN receipt_discount_value REAL',
+      );
+    }
+    if (!columnNames.contains('original_price')) {
+      await db.execute('ALTER TABLE sales ADD COLUMN original_price REAL');
+      await db.execute('''
+        UPDATE sales
+        SET original_price = price
+        WHERE original_price IS NULL
+      ''');
+    }
+    if (!columnNames.contains('product_discount_percent')) {
+      await db.execute(
+        'ALTER TABLE sales ADD COLUMN product_discount_percent REAL',
+      );
+    }
+    if (!columnNames.contains('product_discount_amount')) {
+      await db.execute(
+        'ALTER TABLE sales ADD COLUMN product_discount_amount REAL',
       );
     }
     if (!columnNames.contains('shift_id')) {
@@ -1788,6 +1823,12 @@ class DatabaseHelper {
       'category': _cloudNullableString(payload, cloudRow, 'category'),
       'description': _cloudNullableString(payload, cloudRow, 'description'),
       'price': _cloudNumber(payload, cloudRow, 'price'),
+      'discount_percent': _cloudNullableNumber(
+        payload,
+        cloudRow,
+        'discount_percent',
+      ),
+      'discount_enabled': _cloudBoolInt(payload, cloudRow, 'discount_enabled'),
       'cost_price': _cloudNumber(payload, cloudRow, 'cost_price'),
       'stock_quantity': _cloudInt(payload, cloudRow, 'stock_quantity'),
       'image_url': await _localImagePathFromCloud(
@@ -1835,6 +1876,21 @@ class DatabaseHelper {
       'product_name': _cloudString(payload, cloudRow, 'product_name'),
       'quantity': _cloudInt(payload, cloudRow, 'quantity'),
       'price': _cloudNumber(payload, cloudRow, 'price'),
+      'original_price': _cloudNullableNumber(
+        payload,
+        cloudRow,
+        'original_price',
+      ),
+      'product_discount_percent': _cloudNullableNumber(
+        payload,
+        cloudRow,
+        'product_discount_percent',
+      ),
+      'product_discount_amount': _cloudNullableNumber(
+        payload,
+        cloudRow,
+        'product_discount_amount',
+      ),
       'cost_price': _cloudNullableNumber(payload, cloudRow, 'cost_price'),
       'total': _cloudNumber(payload, cloudRow, 'total'),
       'image_url': null,
@@ -2748,6 +2804,8 @@ class DatabaseHelper {
     required double costPrice,
     required int stockQuantity,
     String? imageUrl,
+    double? discountPercent,
+    bool discountEnabled = false,
     String? actorUsername,
   }) async {
     final db = await database;
@@ -2802,6 +2860,15 @@ class DatabaseHelper {
     if (stockQuantity < 0 || stockQuantity > 999999999) {
       throw Exception('Invalid stock quantity');
     }
+    final sanitizedDiscountPercent = discountEnabled
+        ? (discountPercent ?? 0)
+        : 0.0;
+    if (discountEnabled &&
+        (!sanitizedDiscountPercent.isFinite ||
+            sanitizedDiscountPercent <= 0 ||
+            sanitizedDiscountPercent >= 100)) {
+      throw Exception('Invalid product discount');
+    }
 
     if (await barcodeExists(trimmedBarcode)) {
       throw Exception('Barcode already exists');
@@ -2816,6 +2883,8 @@ class DatabaseHelper {
             ? null
             : trimmedDescription,
         'price': price,
+        'discount_percent': discountEnabled ? sanitizedDiscountPercent : null,
+        'discount_enabled': discountEnabled ? 1 : 0,
         'cost_price': costPrice,
         'stock_quantity': stockQuantity,
         'image_url': trimmedImageUrl?.isEmpty == true ? null : trimmedImageUrl,
@@ -2833,6 +2902,8 @@ class DatabaseHelper {
             ? null
             : trimmedDescription,
         'price': price,
+        'discount_percent': discountEnabled ? sanitizedDiscountPercent : null,
+        'discount_enabled': discountEnabled ? 1 : 0,
         'cost_price': costPrice,
         'stock_quantity': stockQuantity,
         'image_url': trimmedImageUrl?.isEmpty == true ? null : trimmedImageUrl,
@@ -2850,6 +2921,8 @@ class DatabaseHelper {
           'barcode': trimmedBarcode,
           'stock_quantity': stockQuantity,
           'price': price,
+          'discount_percent': discountEnabled ? sanitizedDiscountPercent : null,
+          'discount_enabled': discountEnabled,
         }),
       );
       unawaited(syncPendingChanges());
@@ -2891,9 +2964,27 @@ class DatabaseHelper {
       throw Exception('Barcode already exists');
     }
 
+    final discountEnabled =
+        product['discount_enabled'] == true ||
+        product['discount_enabled'] == 1 ||
+        product['discount_enabled']?.toString() == '1';
+    final discountPercent =
+        (product['discount_percent'] as num?)?.toDouble() ?? 0;
+    if (discountEnabled &&
+        (!discountPercent.isFinite ||
+            discountPercent <= 0 ||
+            discountPercent >= 100)) {
+      throw Exception('Invalid product discount');
+    }
+
     final result = await db.update(
       'products',
-      {...product, 'barcode': barcode},
+      {
+        ...product,
+        'barcode': barcode,
+        'discount_enabled': discountEnabled ? 1 : 0,
+        'discount_percent': discountEnabled ? discountPercent : null,
+      },
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -2921,6 +3012,9 @@ class DatabaseHelper {
           'new_price': product['price'],
           'old_cost_price': oldProduct['cost_price'],
           'new_cost_price': product['cost_price'],
+          'old_discount_percent': oldProduct['discount_percent'],
+          'new_discount_percent': discountEnabled ? discountPercent : null,
+          'discount_enabled': discountEnabled,
         }),
       );
       unawaited(syncPendingChanges());

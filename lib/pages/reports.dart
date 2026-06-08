@@ -149,6 +149,7 @@ class _ReportsPageState extends State<ReportsPage> {
     var coveredRevenue = 0.0;
     var costOfGoodsSold = 0.0;
     var legacyMissingCostCount = 0;
+    var productDiscountTotal = 0.0;
 
     for (final row in rows) {
       final createdAt = DateTime.tryParse(
@@ -168,6 +169,11 @@ class _ReportsPageState extends State<ReportsPage> {
       receipt.add(row, createdAt);
 
       if (_isVoided(row)) continue;
+      final productDiscount =
+          (row['product_discount_amount'] as num?)?.toDouble() ?? 0;
+      if (productDiscount.isFinite && productDiscount > 0) {
+        productDiscountTotal += productDiscount;
+      }
       final productId = (row['product_id'] as num?)?.toInt() ?? -1;
       final name = row['product_name']?.toString().trim();
       final stat = productStats.putIfAbsent(
@@ -246,6 +252,7 @@ class _ReportsPageState extends State<ReportsPage> {
       ),
       coveredRevenue: coveredRevenue,
       costOfGoodsSold: costOfGoodsSold,
+      productDiscountTotal: productDiscountTotal,
       legacyMissingCostCount: legacyMissingCostCount,
       receipts: completedReceipts.length,
       itemsSold: completedReceipts.fold(
@@ -432,6 +439,7 @@ class _ReportsPageState extends State<ReportsPage> {
       ..writeln('Sales Overview')
       ..writeln('Metric,Value')
       ..writeln('Net Sales,${_data.revenue}')
+      ..writeln('Product Discounts,${_data.productDiscountTotal}')
       ..writeln('Profit-covered Sales,${_data.coveredRevenue}')
       ..writeln('Excluded Sales,${_data.excludedRevenue}')
       ..writeln('Cost Of Goods Sold,${_data.costOfGoodsSold}')
@@ -2689,6 +2697,7 @@ class _ReportData {
     required this.revenue,
     required this.coveredRevenue,
     required this.costOfGoodsSold,
+    required this.productDiscountTotal,
     required this.legacyMissingCostCount,
     required this.receipts,
     required this.itemsSold,
@@ -2717,6 +2726,7 @@ class _ReportData {
       revenue: 0,
       coveredRevenue: 0,
       costOfGoodsSold: 0,
+      productDiscountTotal: 0,
       legacyMissingCostCount: 0,
       receipts: 0,
       itemsSold: 0,
@@ -2739,6 +2749,7 @@ class _ReportData {
   final double revenue;
   final double coveredRevenue;
   final double costOfGoodsSold;
+  final double productDiscountTotal;
   final int legacyMissingCostCount;
   final int receipts;
   final int itemsSold;

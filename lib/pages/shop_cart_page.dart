@@ -5,6 +5,7 @@ import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/theme/app_typography.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'package:pos_app/utils/message_banner.dart';
+import 'package:pos_app/utils/product_discount.dart';
 import 'package:pos_app/utils/receipt_discount.dart';
 import 'recent_sales.dart';
 
@@ -111,7 +112,7 @@ class _CartPageState extends State<CartPage> {
 
   double get _subtotal => _cart.fold(
     0.0,
-    (s, i) => s + (i['product']['price'] as num) * (i['quantity'] as int),
+    (s, i) => s + discountedCartItemPrice(i) * (i['quantity'] as int),
   );
 
   ReceiptDiscount get _receiptDiscount => ReceiptDiscount(
@@ -144,6 +145,21 @@ class _CartPageState extends State<CartPage> {
     }
     return _selectedDiscountName;
   }
+
+  List<_DiscountedItemSummary> get _discountedItemSummaries => _cart
+      .map((item) {
+        final product = item['product'] as Map<String, dynamic>;
+        final name = product['title']?.toString() ?? 'Product';
+        final percent = cartItemDiscountPercent(item);
+        final amount = cartItemDiscountAmount(item);
+        return _DiscountedItemSummary(
+          name: name,
+          percent: percent,
+          amount: amount,
+        );
+      })
+      .where((item) => item.amount > 0 && item.percent > 0)
+      .toList(growable: false);
 
   void _notifyCartChanged() => widget.onCartChanged?.call();
 
@@ -1057,6 +1073,7 @@ class _CartPageState extends State<CartPage> {
         builder: (ctx, setModal) {
           final cashAmt = _cashAmount();
           final subtotal = _subtotal;
+          final discountedItems = _discountedItemSummaries;
           final discount = _discountAmount;
           final discountActive = discount > 0;
           final totalCents = _moneyCents(_total);
@@ -1094,7 +1111,7 @@ class _CartPageState extends State<CartPage> {
           final media = MediaQuery.of(ctx);
           final keyboardInset = media.viewInsets.bottom;
           final systemNavInset = media.padding.bottom;
-          final sheetHeight = (media.size.height - keyboardInset) * 0.54;
+          final sheetHeight = (media.size.height - keyboardInset) * 0.62;
 
           return Padding(
             padding: EdgeInsets.only(bottom: keyboardInset),
@@ -1182,171 +1199,17 @@ class _CartPageState extends State<CartPage> {
 
                             const SizedBox(height: 12),
 
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: accentBg,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: accentBorder,
-                                  width: 0.5,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    discountActive ? 'Subtotal' : 'Total price',
-                                    style: TextStyle(
-                                      color: _secondaryText,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Text(
-                                    CurrencyFormatter.format(
-                                      discountActive ? subtotal : _total,
-                                    ),
-                                    style: TextStyle(
-                                      color: accentFg,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            _PaymentSummaryCard(
+                              discountedSubtotal: subtotal,
+                              total: _total,
+                              accentBg: accentBg,
+                              accentBorder: accentBorder,
+                              accentFg: accentFg,
+                              mutedSurface: _mutedSurface,
+                              lineColor: _lineColor,
+                              primaryText: _primaryText,
+                              secondaryText: _secondaryText,
                             ),
-
-                            const SizedBox(height: 12),
-
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: discountActive
-                                    ? (_isDark
-                                          ? _green.withValues(alpha: 0.16)
-                                          : _greenBg)
-                                    : _mutedSurface,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: discountActive
-                                      ? (_isDark
-                                            ? _green.withValues(alpha: 0.34)
-                                            : _greenBorder)
-                                      : _lineColor,
-                                  width: 0.5,
-                                ),
-                              ),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () => _showDiscountSelector(
-                                  refreshPaymentSheet: () => setModal(() {}),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 32,
-                                      height: 32,
-                                      decoration: BoxDecoration(
-                                        color: discountActive
-                                            ? successFg.withValues(alpha: 0.14)
-                                            : _lineColor.withValues(
-                                                alpha: 0.45,
-                                              ),
-                                        borderRadius: BorderRadius.circular(99),
-                                      ),
-                                      child: Icon(
-                                        Icons.local_offer_rounded,
-                                        size: 18,
-                                        color: discountActive
-                                            ? successFg
-                                            : _secondaryText,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Discount',
-                                            style: TextStyle(
-                                              color: _secondaryText,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            _discountSummary,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: discountActive
-                                                  ? successFg
-                                                  : _primaryText,
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    if (discountActive) ...[
-                                      Text(
-                                        '-${CurrencyFormatter.format(discount)}',
-                                        style: TextStyle(
-                                          color: dangerFg,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                    ],
-                                    Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      color: discountActive
-                                          ? successFg
-                                          : _secondaryText,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-
-                            if (discountActive) ...[
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Text(
-                                    'Total after discount',
-                                    style: TextStyle(
-                                      color: _secondaryText,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Text(
-                                    CurrencyFormatter.format(_total),
-                                    style: TextStyle(
-                                      color: successFg,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-
-                            const SizedBox(height: 12),
-
                             // Cash input + change
                             Row(
                               children: [
@@ -1550,6 +1413,25 @@ class _CartPageState extends State<CartPage> {
                                   ),
                                 );
                               }).toList(),
+                            ),
+
+                            const SizedBox(height: 10),
+
+                            _ReceiptDiscountCard(
+                              discountedItems: discountedItems,
+                              receiptDiscount: discount,
+                              discountSummary: _discountSummary,
+                              receiptDiscountActive: discountActive,
+                              successFg: successFg,
+                              dangerFg: dangerFg,
+                              mutedSurface: _mutedSurface,
+                              lineColor: _lineColor,
+                              primaryText: _primaryText,
+                              secondaryText: _secondaryText,
+                              tertiaryText: _tertiaryText,
+                              onTap: () => _showDiscountSelector(
+                                refreshPaymentSheet: () => setModal(() {}),
+                              ),
                             ),
 
                             const SizedBox(height: 14),
@@ -1827,9 +1709,11 @@ class _CartPageState extends State<CartPage> {
     final product = item['product'];
     final String name = product['title'] as String? ?? '';
     final double price = (product['price'] as num).toDouble();
+    final double salePrice = discountedCartItemPrice(item);
+    final double discountPercent = cartItemDiscountPercent(item);
     final int quantity = item['quantity'] as int;
-    final double discount = (item['discount'] as num?)?.toDouble() ?? 0;
-    final double itemTotal = (price * quantity) - discount;
+    final double discount = cartItemDiscountAmount(item);
+    final double itemTotal = salePrice * quantity;
     final String? path = product['imagePath'] as String?;
     final isSelected = _selectedCartIndexes.contains(i);
 
@@ -1886,20 +1770,50 @@ class _CartPageState extends State<CartPage> {
                     ),
                   ),
                   const SizedBox(height: 3),
-                  Text(
-                    '$quantity x ${CurrencyFormatter.format(price)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: _secondaryText,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  discountPercent > 0
+                      ? Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                '$quantity x ${CurrencyFormatter.format(salePrice)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: _secondaryText,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                CurrencyFormatter.format(price),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: _tertiaryText,
+                                  fontSize: 10,
+                                  decoration: TextDecoration.lineThrough,
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : Text(
+                          '$quantity x ${CurrencyFormatter.format(price)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _secondaryText,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                   const SizedBox(height: 3),
                   Text(
                     discount > 0
-                        ? '- ${CurrencyFormatter.format(discount)} discount'
+                        ? '- ${CurrencyFormatter.format(discount)} product discount'
                         : 'No discount',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1951,6 +1865,13 @@ class _CartPageState extends State<CartPage> {
   void _showCartItemSheet(int index) {
     if (index < 0 || index >= _cart.length) return;
 
+    final initialDiscountPercent = cartItemDiscountPercent(_cart[index]);
+    final discountCtrl = TextEditingController(
+      text: initialDiscountPercent > 0
+          ? _cashInputTextForAmount(initialDiscountPercent)
+          : '',
+    );
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1970,10 +1891,18 @@ class _CartPageState extends State<CartPage> {
             final name = product['title'] as String? ?? '';
             final category = product['category'] as String? ?? '';
             final price = (product['price'] as num).toDouble();
+            final salePrice = discountedCartItemPrice(item);
+            final discountPercent = cartItemDiscountPercent(item);
             final quantity = item['quantity'] as int;
+            final productDiscount = cartItemDiscountAmount(item);
             final stock = (product['stock'] as num?)?.toInt() ?? 0;
             final imagePath = product['imagePath'] as String?;
-            final subtotal = price * quantity;
+            final subtotal = salePrice * quantity;
+            final discountInput =
+                double.tryParse(_sanitizeMoneyInput(discountCtrl.text)) ?? 0;
+            final discountInputInvalid =
+                discountCtrl.text.trim().isNotEmpty &&
+                (discountInput <= 0 || discountInput >= 100);
 
             void refreshSheet() {
               if (!mounted) return;
@@ -2256,7 +2185,7 @@ class _CartPageState extends State<CartPage> {
                                 const SizedBox(height: 4),
 
                                 Text(
-                                  CurrencyFormatter.format(price),
+                                  CurrencyFormatter.format(salePrice),
                                   style: const TextStyle(
                                     color: _purple,
                                     fontWeight: FontWeight.w800,
@@ -2274,6 +2203,165 @@ class _CartPageState extends State<CartPage> {
                         label: 'Selling Price',
                         value: CurrencyFormatter.format(price),
                         icon: Icons.sell_outlined,
+                      ),
+                      if (discountPercent > 0) ...[
+                        const SizedBox(height: 8),
+                        _CartSheetField(
+                          label: 'Product Discount',
+                          value:
+                              '${discountPercent.toStringAsFixed(discountPercent % 1 == 0 ? 0 : 2)}% off',
+                          icon: Icons.local_offer_outlined,
+                          valueColor: _red,
+                        ),
+                        const SizedBox(height: 8),
+                        _CartSheetField(
+                          label: 'Sale Price',
+                          value: CurrencyFormatter.format(salePrice),
+                          icon: Icons.price_check_outlined,
+                          valueColor: _green,
+                        ),
+                        const SizedBox(height: 8),
+                        _CartSheetField(
+                          label: 'You Save',
+                          value: CurrencyFormatter.format(productDiscount),
+                          icon: Icons.savings_outlined,
+                          valueColor: _red,
+                        ),
+                      ],
+
+                      const SizedBox(height: 12),
+
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _mutedSurface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _lineColor, width: 0.5),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    color: _red.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(99),
+                                  ),
+                                  child: const Icon(
+                                    Icons.local_offer_outlined,
+                                    color: _red,
+                                    size: 18,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Checkout discount',
+                                        style: TextStyle(
+                                          color: _primaryText,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Applies only to this cart item',
+                                        style: TextStyle(
+                                          color: _secondaryText,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Switch.adaptive(
+                                  value:
+                                      discountPercent > 0 ||
+                                      item['checkout_discount_enabled'] == true,
+                                  activeThumbColor: _primary,
+                                  onChanged: (enabled) {
+                                    if (enabled) {
+                                      final fallback = productDiscountPercent(
+                                        product,
+                                      );
+                                      final percent =
+                                          discountInput > 0 &&
+                                              discountInput < 100
+                                          ? discountInput
+                                          : fallback > 0
+                                          ? fallback
+                                          : 10.0;
+                                      discountCtrl.text =
+                                          _cashInputTextForAmount(percent);
+                                      item['checkout_discount_enabled'] = true;
+                                      item['checkout_discount_percent'] =
+                                          percent;
+                                    } else {
+                                      item['checkout_discount_enabled'] = false;
+                                      item['checkout_discount_percent'] = null;
+                                      discountCtrl.clear();
+                                    }
+                                    refreshSheet();
+                                  },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: discountCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              inputFormatters: [
+                                TextInputFormatter.withFunction(
+                                  _formatMoneyEdit,
+                                ),
+                              ],
+                              style: TextStyle(
+                                color: _primaryText,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                labelText: 'Percent off',
+                                suffixText: '%',
+                                errorText: discountInputInvalid
+                                    ? 'Enter more than 0 and less than 100'
+                                    : null,
+                                filled: true,
+                                fillColor: _panelSurface,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onChanged: (value) {
+                                final percent =
+                                    double.tryParse(
+                                      _sanitizeMoneyInput(value),
+                                    ) ??
+                                    0;
+                                if (percent > 0 && percent < 100) {
+                                  item['checkout_discount_enabled'] = true;
+                                  item['checkout_discount_percent'] = percent;
+                                } else {
+                                  item['checkout_discount_enabled'] = false;
+                                  item['checkout_discount_percent'] = null;
+                                }
+                                refreshSheet();
+                              },
+                            ),
+                          ],
+                        ),
                       ),
 
                       const SizedBox(height: 12),
@@ -2383,7 +2471,7 @@ class _CartPageState extends State<CartPage> {
           },
         );
       },
-    );
+    ).whenComplete(discountCtrl.dispose);
   }
 
   Widget _buildEmpty() {
@@ -2638,6 +2726,290 @@ class _ConfirmRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PaymentSummaryCard extends StatelessWidget {
+  const _PaymentSummaryCard({
+    required this.discountedSubtotal,
+    required this.total,
+    required this.accentBg,
+    required this.accentBorder,
+    required this.accentFg,
+    required this.mutedSurface,
+    required this.lineColor,
+    required this.primaryText,
+    required this.secondaryText,
+  });
+
+  final double discountedSubtotal;
+  final double total;
+  final Color accentBg;
+  final Color accentBorder;
+  final Color accentFg;
+  final Color mutedSurface;
+  final Color lineColor;
+  final Color primaryText;
+  final Color secondaryText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: mutedSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: lineColor, width: 0.5),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: accentBg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: accentBorder, width: 0.5),
+                ),
+                child: Icon(
+                  Icons.receipt_long_outlined,
+                  size: 17,
+                  color: accentFg,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Payment summary',
+                  style: TextStyle(
+                    color: primaryText,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Text(
+                'Cash',
+                style: TextStyle(
+                  color: secondaryText,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _PaymentSummaryLine(
+            label: 'Items subtotal',
+            value: CurrencyFormatter.format(discountedSubtotal),
+            labelColor: secondaryText,
+            valueColor: primaryText,
+          ),
+          Divider(height: 16, color: lineColor),
+          Row(
+            children: [
+              Text(
+                'Amount due',
+                style: TextStyle(
+                  color: primaryText,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                CurrencyFormatter.format(total),
+                style: TextStyle(
+                  color: accentFg,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReceiptDiscountCard extends StatelessWidget {
+  const _ReceiptDiscountCard({
+    required this.discountedItems,
+    required this.receiptDiscount,
+    required this.discountSummary,
+    required this.receiptDiscountActive,
+    required this.successFg,
+    required this.dangerFg,
+    required this.mutedSurface,
+    required this.lineColor,
+    required this.primaryText,
+    required this.secondaryText,
+    required this.tertiaryText,
+    required this.onTap,
+  });
+
+  final List<_DiscountedItemSummary> discountedItems;
+  final double receiptDiscount;
+  final String discountSummary;
+  final bool receiptDiscountActive;
+  final Color successFg;
+  final Color dangerFg;
+  final Color mutedSurface;
+  final Color lineColor;
+  final Color primaryText;
+  final Color secondaryText;
+  final Color tertiaryText;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: mutedSurface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: lineColor, width: 0.5),
+      ),
+      child: Column(
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Receipt discount',
+                            style: TextStyle(
+                              color: primaryText,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            discountSummary,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: receiptDiscountActive
+                                  ? successFg
+                                  : tertiaryText,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (receiptDiscountActive)
+                      Text(
+                        '-${CurrencyFormatter.format(receiptDiscount)}',
+                        style: TextStyle(
+                          color: dangerFg,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: secondaryText,
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (discountedItems.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            for (final item in discountedItems)
+              _PaymentSummaryLine(
+                label: '${item.name} (${item.percentText} off)',
+                value: '-${CurrencyFormatter.format(item.amount)}',
+                labelColor: secondaryText,
+                valueColor: dangerFg,
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DiscountedItemSummary {
+  const _DiscountedItemSummary({
+    required this.name,
+    required this.percent,
+    required this.amount,
+  });
+
+  final String name;
+  final double percent;
+  final double amount;
+
+  String get percentText =>
+      '${percent.toStringAsFixed(percent % 1 == 0 ? 0 : 2)}%';
+}
+
+class _PaymentSummaryLine extends StatelessWidget {
+  const _PaymentSummaryLine({
+    required this.label,
+    required this.value,
+    required this.labelColor,
+    required this.valueColor,
+  });
+
+  final String label;
+  final String value;
+  final Color labelColor;
+  final Color valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: labelColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: valueColor,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

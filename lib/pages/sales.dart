@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/currency.dart';
 import 'package:pos_app/utils/message_banner.dart';
+import 'package:pos_app/utils/product_discount.dart';
 import 'package:pos_app/utils/receipt_discount.dart';
 import 'shop_cart_page.dart' as shop_cart;
 
@@ -137,6 +138,8 @@ class _SalesPageState extends State<SalesPage> {
               'id': p['id'],
               'title': p['product_name'],
               'price': p['price'],
+              'discount_percent': p['discount_percent'],
+              'discount_enabled': p['discount_enabled'],
               'stock': p['stock_quantity'],
               'barcode': p['barcode'] ?? '',
               'imagePath': p['image_url'] ?? '',
@@ -319,12 +322,18 @@ class _SalesPageState extends State<SalesPage> {
           'id': productId,
           'title': row['product_name']?.toString() ?? 'Product',
           'price': row['price'],
+          'discount_percent': row['discount_percent'],
+          'discount_enabled': row['discount_enabled'],
           'stock': dbStock - refreshedQuantity,
           'barcode': row['barcode'] ?? '',
           'imagePath': row['image_url'] ?? '',
           'category': row['category'] ?? 'Other',
         },
         'quantity': refreshedQuantity,
+        if (item.containsKey('checkout_discount_enabled'))
+          'checkout_discount_enabled': item['checkout_discount_enabled'],
+        if (item.containsKey('checkout_discount_percent'))
+          'checkout_discount_percent': item['checkout_discount_percent'],
       });
     }
 
@@ -357,9 +366,7 @@ class _SalesPageState extends State<SalesPage> {
       final receiptSubtotal = _cart.fold<double>(
         0,
         (sum, item) =>
-            sum +
-            ((item['product']['price'] as num).toDouble() *
-                (item['quantity'] as int)),
+            sum + discountedCartItemPrice(item) * (item['quantity'] as int),
       );
       final receiptDiscountAmount = discount.amountFor(receiptSubtotal);
       final receiptDiscountValue = discount.type == ReceiptDiscountType.percent
@@ -369,10 +376,14 @@ class _SalesPageState extends State<SalesPage> {
       for (final item in _cart) {
         final product = item['product'];
         final int quantity = item['quantity'];
-        final double price = (product['price'] as num).toDouble();
         final costProductRows = await db.query(
           'products',
-          columns: ['cost_price'],
+          columns: [
+            'cost_price',
+            'price',
+            'discount_percent',
+            'discount_enabled',
+          ],
           where: 'id = ?',
           whereArgs: [product['id']],
           limit: 1,
@@ -382,6 +393,21 @@ class _SalesPageState extends State<SalesPage> {
             '${product['title']} was deleted. Remove it from cart.',
           );
         }
+        final currentProduct = <String, dynamic>{
+          ...product,
+          'price': costProductRows.first['price'],
+          'discount_percent': costProductRows.first['discount_percent'],
+          'discount_enabled': costProductRows.first['discount_enabled'],
+        };
+        final currentItem = <String, dynamic>{
+          ...item,
+          'product': currentProduct,
+        };
+        final double originalPrice = (currentProduct['price'] as num)
+            .toDouble();
+        final double discountPercent = cartItemDiscountPercent(currentItem);
+        final double price = discountedCartItemPrice(currentItem);
+        final double productDiscount = cartItemDiscountAmount(currentItem);
         final costPrice = (costProductRows.first['cost_price'] as num?)
             ?.toDouble();
         final imagePath = product['imagePath']?.toString();
@@ -390,6 +416,13 @@ class _SalesPageState extends State<SalesPage> {
           'product_name': product['title'],
           'quantity': quantity,
           'price': price,
+          'original_price': originalPrice,
+          'product_discount_percent': discountPercent > 0
+              ? discountPercent
+              : null,
+          'product_discount_amount': productDiscount > 0
+              ? productDiscount
+              : null,
           'cost_price': costPrice,
           'total': price * quantity,
           'image_url': imagePath == null || imagePath.isEmpty
@@ -893,6 +926,9 @@ class _SalesPageState extends State<SalesPage> {
   }) {
     final int stock = product['stock'] as int;
     final double price = (product['price'] as num).toDouble();
+    final double salePrice = discountedProductPrice(product);
+    final double discountPercent = productDiscountPercent(product);
+    final bool hasDiscount = discountPercent > 0;
     final category = product['category']?.toString() ?? '';
 
     final _StockState ss = _toStockState(stock);
@@ -951,6 +987,29 @@ class _SalesPageState extends State<SalesPage> {
                 ),
               ),
 
+              if (hasDiscount)
+                Positioned(
+                  top: 7,
+                  left: 7,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFCE7F3),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      '${discountPercent.toStringAsFixed(discountPercent % 1 == 0 ? 0 : 2)}% OFF',
+                      style: const TextStyle(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFFBE185D),
+                      ),
+                    ),
+                  ),
+                ),
               Positioned(
                 top: 7,
                 right: 7,
@@ -1027,17 +1086,48 @@ class _SalesPageState extends State<SalesPage> {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  CurrencyFormatter.format(price),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    color: _primaryText,
-                    letterSpacing: 0,
-                  ),
-                ),
+                hasDiscount
+                    ? Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              CurrencyFormatter.format(salePrice),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                                color: _primaryText,
+                                letterSpacing: 0,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              CurrencyFormatter.format(price),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: _secondaryText,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        CurrencyFormatter.format(price),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          color: _primaryText,
+                          letterSpacing: 0,
+                        ),
+                      ),
 
                 const SizedBox(height: 4),
 

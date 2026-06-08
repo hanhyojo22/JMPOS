@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pos_app/database/database_helper.dart';
+import 'package:pos_app/utils/product_discount.dart';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const _primary = Color(0xFF5C6BC0);
@@ -92,6 +93,7 @@ class _EditProductPageState extends State<EditProductPage> {
   late TextEditingController _descCtrl;
   late TextEditingController _costCtrl;
   late TextEditingController _priceCtrl;
+  late TextEditingController _discountCtrl;
   late TextEditingController _stockCtrl;
 
   String? _category;
@@ -100,6 +102,7 @@ class _EditProductPageState extends State<EditProductPage> {
   bool _saving = false;
   String? _topWarning;
   bool _topWarningIsError = true;
+  bool _discountEnabled = false;
 
   static const _categories = [
     'Beverages',
@@ -122,6 +125,14 @@ class _EditProductPageState extends State<EditProductPage> {
     );
     _priceCtrl = TextEditingController(
       text: (p['price'] as num?)?.toStringAsFixed(2) ?? '0.00',
+    );
+    final discountPercent = (p['discount_percent'] as num?)?.toDouble() ?? 0;
+    _discountEnabled =
+        p['discount_enabled'] == true ||
+        p['discount_enabled'] == 1 ||
+        p['discount_enabled']?.toString() == '1';
+    _discountCtrl = TextEditingController(
+      text: discountPercent > 0 ? discountPercent.toStringAsFixed(2) : '',
     );
     _stockCtrl = TextEditingController(
       text: (p['stock_quantity'] as int?)?.toString() ?? '0',
@@ -155,6 +166,7 @@ class _EditProductPageState extends State<EditProductPage> {
     _descCtrl.dispose();
     _costCtrl.dispose();
     _priceCtrl.dispose();
+    _discountCtrl.dispose();
     _stockCtrl.dispose();
     super.dispose();
   }
@@ -176,6 +188,14 @@ class _EditProductPageState extends State<EditProductPage> {
   }
 
   int get _stock => int.tryParse(_stockCtrl.text) ?? 0;
+
+  double get _discountPercent => double.tryParse(_discountCtrl.text) ?? 0;
+
+  double get _discountedPrice => discountedProductPrice({
+    'price': double.tryParse(_priceCtrl.text) ?? 0,
+    'discount_enabled': _discountEnabled,
+    'discount_percent': _discountPercent,
+  });
 
   _Tone get _marginTone {
     if (_margin < 0) return _Tone.red;
@@ -266,6 +286,7 @@ class _EditProductPageState extends State<EditProductPage> {
       final savedImagePath = await DatabaseHelper.instance.saveProductImage(
         _imagePath,
       );
+      final discountPercent = _discountEnabled ? _discountPercent : 0.0;
 
       final updated = {
         'id': productId,
@@ -276,6 +297,8 @@ class _EditProductPageState extends State<EditProductPage> {
             ? null
             : _descCtrl.text.trim(),
         'price': double.parse(_priceCtrl.text),
+        'discount_enabled': _discountEnabled ? 1 : 0,
+        'discount_percent': _discountEnabled ? discountPercent : null,
         'cost_price': double.parse(_costCtrl.text),
         'stock_quantity': int.parse(_stockCtrl.text),
         'image_url': savedImagePath,
@@ -610,6 +633,73 @@ class _EditProductPageState extends State<EditProductPage> {
                   ? 'Below recommended 20%'
                   : 'Selling below cost',
               trailing: '₱${_profit.toStringAsFixed(2)} / item',
+            ),
+          ],
+          const SizedBox(height: 10),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _discountEnabled,
+            onChanged: (value) => setState(() {
+              _discountEnabled = value;
+              if (!value) _discountCtrl.clear();
+            }),
+            title: Text(
+              'Product discount',
+              style: TextStyle(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFFF8FAFC)
+                    : _textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            subtitle: Text(
+              'Apply percent off at checkout',
+              style: TextStyle(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFFCBD5E1)
+                    : _textSecondary,
+                fontSize: 12,
+              ),
+            ),
+            activeThumbColor: _primary,
+          ),
+          if (_discountEnabled) ...[
+            const SizedBox(height: 10),
+            _Field(
+              label: 'Discount percent',
+              controller: _discountCtrl,
+              icon: Icons.percent_rounded,
+              iconColor: const Color(0xFFE83E6F),
+              hint: '10',
+              suffix: const Padding(
+                padding: EdgeInsets.only(right: 4),
+                child: Text('%'),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+              ],
+              onChanged: (_) => setState(() {}),
+              validator: (v) {
+                if (!_discountEnabled) return null;
+                if (v == null || v.trim().isEmpty) return 'Required';
+                final percent = double.tryParse(v);
+                if (percent == null) return 'Invalid';
+                if (percent <= 0) return 'Must be greater than 0';
+                if (percent >= 100) return 'Must be less than 100';
+                return null;
+              },
+            ),
+            const SizedBox(height: 10),
+            _Banner(
+              tone: _Tone.amber,
+              icon: Icons.local_offer_rounded,
+              main: 'Sale price',
+              sub: '${_discountPercent.toStringAsFixed(2)}% off',
+              trailing: 'PHP ${_discountedPrice.toStringAsFixed(2)} / item',
             ),
           ],
         ],

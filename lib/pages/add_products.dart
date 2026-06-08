@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pos_app/utils/label_text.dart';
+import 'package:pos_app/utils/product_discount.dart';
 
 import 'package:pos_app/widgets/barcode_scanner_viewport.dart';
 
@@ -43,7 +44,9 @@ class _AddProductsPageState extends State<AddProductsPage>
   final _descriptionController = TextEditingController();
   final _costPriceController = TextEditingController();
   final _sellingPriceController = TextEditingController();
+  final _discountPercentController = TextEditingController();
   final _stockQuantityController = TextEditingController();
+  bool _discountEnabled = false;
 
   String? _selectedCategory;
   static const int _maxBarcodeLength = 18;
@@ -82,6 +85,15 @@ class _AddProductsPageState extends State<AddProductsPage>
   }
 
   int get _stockValue => _stockValueFromText(_stockQuantityController.text);
+
+  double get _discountPercent =>
+      double.tryParse(_sanitizeMoney(_discountPercentController.text)) ?? 0;
+
+  double get _discountedPrice => discountedProductPrice({
+    'price': _moneyValue(_sellingPriceController.text),
+    'discount_enabled': _discountEnabled,
+    'discount_percent': _discountPercent,
+  });
 
   String _sanitizeSingleLineText(
     String value, {
@@ -238,6 +250,17 @@ class _AddProductsPageState extends State<AddProductsPage>
     return null;
   }
 
+  String? _discountValidator(String? value) {
+    if (!_discountEnabled) return null;
+    final sanitized = _sanitizeMoney(value ?? '');
+    if (sanitized.isEmpty) return 'Required';
+    final percent = double.tryParse(sanitized);
+    if (percent == null) return 'Invalid';
+    if (percent <= 0) return 'Must be greater than 0';
+    if (percent >= 100) return 'Must be less than 100';
+    return null;
+  }
+
   String? _categoryValidator(String? value) {
     if (value == null || !_categories.contains(value)) {
       return 'Select a category';
@@ -332,6 +355,7 @@ class _AddProductsPageState extends State<AddProductsPage>
     _descriptionController.dispose();
     _costPriceController.dispose();
     _sellingPriceController.dispose();
+    _discountPercentController.dispose();
     _stockQuantityController.dispose();
     super.dispose();
   }
@@ -466,6 +490,9 @@ class _AddProductsPageState extends State<AddProductsPage>
     _nameController.text = name;
     _descriptionController.text = description;
     _sellingPriceController.text = _sanitizeMoney(_sellingPriceController.text);
+    _discountPercentController.text = _sanitizeMoney(
+      _discountPercentController.text,
+    );
     _costPriceController.text = _sanitizeMoney(_costPriceController.text);
     _stockQuantityController.text = _sanitizeStock(
       _stockQuantityController.text,
@@ -498,6 +525,8 @@ class _AddProductsPageState extends State<AddProductsPage>
         costPrice: costPrice,
         stockQuantity: stockQuantity,
         imageUrl: savedImagePath,
+        discountEnabled: _discountEnabled,
+        discountPercent: _discountEnabled ? _discountPercent : null,
         actorUsername: widget.currentUsername,
       );
 
@@ -522,12 +551,14 @@ class _AddProductsPageState extends State<AddProductsPage>
     setState(() {
       _pickedImage = null;
       _selectedCategory = null;
+      _discountEnabled = false;
     });
     _nameController.clear();
     _barcodeController.clear();
     _descriptionController.clear();
     _costPriceController.clear();
     _sellingPriceController.clear();
+    _discountPercentController.clear();
     _stockQuantityController.clear();
   }
 
@@ -931,6 +962,61 @@ class _AddProductsPageState extends State<AddProductsPage>
                           ),
                         ],
                       ),
+
+                      const SizedBox(height: 12),
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        value: _discountEnabled,
+                        onChanged: (value) => setState(() {
+                          _discountEnabled = value;
+                          if (!value) _discountPercentController.clear();
+                        }),
+                        title: Text(
+                          'Product discount',
+                          style: TextStyle(
+                            color: isDark
+                                ? const Color(0xFFF8FAFC)
+                                : Colors.black87,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Apply percent off at checkout',
+                          style: TextStyle(
+                            color: isDark
+                                ? const Color(0xFFCBD5E1)
+                                : Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
+                        activeThumbColor: const Color(0xFF667EEA),
+                      ),
+                      if (_discountEnabled) ...[
+                        const SizedBox(height: 10),
+                        _TF(
+                          controller: _discountPercentController,
+                          label: 'Discount Percent (%)',
+                          hint: '10',
+                          icon: Icons.percent_rounded,
+                          iconColor: const Color(0xFFE83E6F),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          inputFormatters: [
+                            TextInputFormatter.withFunction(_formatMoneyEdit),
+                          ],
+                          onChanged: (_) => setState(() {}),
+                          validator: _discountValidator,
+                        ),
+                        const SizedBox(height: 10),
+                        _InfoBanner(
+                          icon: Icons.local_offer_rounded,
+                          color: const Color(0xFFE83E6F),
+                          left: 'Sale price',
+                          right: '\u20B1${_discountedPrice.toStringAsFixed(2)}',
+                        ),
+                      ],
 
                       if (hasPrice) ...[
                         const SizedBox(height: 12),

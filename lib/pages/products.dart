@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pos_app/database/database_helper.dart';
 import 'package:pos_app/utils/message_banner.dart';
+import 'package:pos_app/utils/product_discount.dart';
 
 class ProductsPage extends StatefulWidget {
   final String? scannedBarcode;
@@ -846,6 +847,9 @@ class _ProductsPageState extends State<ProductsPage>
     final category = (p['category'] as String?)?.trim() ?? '';
 
     final price = (p['price'] as num?)?.toDouble() ?? 0.0;
+    final salePrice = discountedProductPrice(p);
+    final discountPercent = productDiscountPercent(p);
+    final hasDiscount = discountPercent > 0;
 
     final stock = (p['stock_quantity'] as int?) ?? 0;
 
@@ -950,6 +954,29 @@ class _ProductsPageState extends State<ProductsPage>
                         ),
                       ),
                     ),
+                    if (hasDiscount)
+                      Positioned(
+                        bottom: 7,
+                        left: 7,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFCE7F3),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Text(
+                            '${discountPercent.toStringAsFixed(discountPercent % 1 == 0 ? 0 : 2)}% OFF',
+                            style: const TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFFBE185D),
+                            ),
+                          ),
+                        ),
+                      ),
                     Positioned(
                       top: 7,
                       left: 7,
@@ -1003,17 +1030,49 @@ class _ProductsPageState extends State<ProductsPage>
                         ),
                       ),
                       const SizedBox(height: 3),
-                      Text(
-                        '\u20B1${price.toStringAsFixed(2)}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _primary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                          height: 1,
-                        ),
-                      ),
+                      hasDiscount
+                          ? Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    '\u20B1${salePrice.toStringAsFixed(2)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: _primary,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      height: 1,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    '\u20B1${price.toStringAsFixed(2)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: _secondaryText,
+                                      fontSize: 10,
+                                      decoration: TextDecoration.lineThrough,
+                                      height: 1,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Text(
+                              '\u20B1${price.toStringAsFixed(2)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _primary,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                                height: 1,
+                              ),
+                            ),
                     ],
                   ),
                 ),
