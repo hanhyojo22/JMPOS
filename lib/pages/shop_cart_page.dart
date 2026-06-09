@@ -21,8 +21,6 @@ const _purple = Color(0xFF534AB7);
 const _purpleBg = Color(0xFFEEEDFE);
 const _purpleBorder = Color(0xFFCECBF6);
 const _green = Color(0xFF3B6D11);
-const _greenBg = Color(0xFFEAF3DE);
-const _greenBorder = Color(0xFFC0DD97);
 const _red = Color(0xFFA32D2D);
 const _redBg = Color(0xFFFCEBEB);
 const _redBorder = Color(0xFFF7C1C1);
@@ -146,20 +144,8 @@ class _CartPageState extends State<CartPage> {
     return _selectedDiscountName;
   }
 
-  List<_DiscountedItemSummary> get _discountedItemSummaries => _cart
-      .map((item) {
-        final product = item['product'] as Map<String, dynamic>;
-        final name = product['title']?.toString() ?? 'Product';
-        final percent = cartItemDiscountPercent(item);
-        final amount = cartItemDiscountAmount(item);
-        return _DiscountedItemSummary(
-          name: name,
-          percent: percent,
-          amount: amount,
-        );
-      })
-      .where((item) => item.amount > 0 && item.percent > 0)
-      .toList(growable: false);
+  double get _productDiscountAmount =>
+      _cart.fold<double>(0, (sum, item) => sum + cartItemDiscountAmount(item));
 
   void _notifyCartChanged() => widget.onCartChanged?.call();
 
@@ -1063,375 +1049,288 @@ class _CartPageState extends State<CartPage> {
     );
   }
 
+  Future<void> _completeSaleFromPayment({
+    required double cashAmount,
+    required double change,
+    required double total,
+    required ReceiptDiscount discount,
+    VoidCallback? onConfirmed,
+  }) async {
+    if (_completing || !mounted) return;
+
+    final confirmed = await _confirmCompleteSale(
+      cashAmount: cashAmount,
+      change: change,
+    );
+    if (!confirmed || !mounted) return;
+
+    onConfirmed?.call();
+    if (!mounted) return;
+
+    setState(() => _completing = true);
+    try {
+      final completion = await widget.onCompleteSale(discount);
+      if (!mounted || completion == null) return;
+      _selectedDiscountName = 'No Discount';
+      _discountType = ReceiptDiscountType.amount;
+      _discountCtrl.clear();
+      await _showSaleSuccessSheet(total: total, completion: completion);
+    } catch (e) {
+      if (!mounted) return;
+      _showBanner('Error: $e', success: false);
+    } finally {
+      if (mounted) {
+        setState(() => _completing = false);
+      }
+    }
+  }
+
   void _showPaymentSheet() {
+    if (_completing || _cart.isEmpty) return;
     _cashCtrl.clear();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => StatefulBuilder(
         builder: (ctx, setModal) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
+          // Surface tokens
+          final panelBg = isDark ? const Color(0xFF111827) : Colors.white;
+          final mutedBg = isDark
+              ? const Color(0xFF1E293B)
+              : const Color(0xFFF4F5FF);
+          final fieldBg = isDark ? const Color(0xFF111827) : Colors.white;
+          final lineFaint = isDark
+              ? const Color(0xFF253047)
+              : const Color(0xFFEEEEEE);
+
+          // Text tokens
+          final textPri = isDark
+              ? const Color(0xFFF8FAFC)
+              : const Color(0xFF1A1F36);
+          final textSec = isDark
+              ? const Color(0xFFCBD5E1)
+              : const Color(0xFF6B7280);
+          final textTer = isDark
+              ? const Color(0xFF94A3B8)
+              : const Color(0xFFAAAAAA);
+
+          // Accent tokens
+          final accentFg = isDark
+              ? const Color(0xFFC4B5FD)
+              : const Color(0xFF534AB7);
+          final accentBg = isDark
+              ? _primary.withValues(alpha: 0.14)
+              : const Color(0xFFEEEDFE);
+          final accentBorder = isDark
+              ? _primary.withValues(alpha: 0.32)
+              : const Color(0xFFCECBF6);
+
+          // Semantic tokens
+          final successFg = isDark
+              ? const Color(0xFF86EFAC)
+              : const Color(0xFF3B6D11);
+          final dangerFg = isDark
+              ? const Color(0xFFFCA5A5)
+              : const Color(0xFFA32D2D);
+
+          // Computed values
           final cashAmt = _cashAmount();
           final subtotal = _subtotal;
-          final discountedItems = _discountedItemSummaries;
-          final discount = _discountAmount;
-          final discountActive = discount > 0;
+          final productDisc = _productDiscountAmount;
+          final receiptDisc = _discountAmount;
           final totalCents = _moneyCents(_total);
           final cashCents = _moneyCents(cashAmt);
           final changeCents = cashCents - totalCents;
           final change = _centsToMoney(changeCents);
-          final amountNeeded = _centsToMoney(-changeCents);
+          final needed = _centsToMoney(-changeCents);
           final sufficient = cashCents >= totalCents && cashCents > 0;
-          final quickAmounts = _quickCashOptions(_total);
-          final accentBg = _isDark
-              ? _primary.withValues(alpha: 0.14)
-              : _purpleBg;
-          final accentBorder = _isDark
-              ? _primary.withValues(alpha: 0.32)
-              : _purpleBorder;
-          final accentFg = _isDark ? const Color(0xFFC4B5FD) : _purple;
-          final successFg = _isDark ? const Color(0xFF86EFAC) : _green;
-          final dangerFg = _isDark ? const Color(0xFFFCA5A5) : _red;
-          final cashFieldBg = _isDark
-              ? const Color(0xFF1E293B)
-              : const Color(0xFFF8F9FF);
-          final cashFieldBorder = sufficient
-              ? _primary.withValues(alpha: _isDark ? 0.65 : 0.4)
-              : _lineColor;
-          final statusBg = sufficient
-              ? (_isDark ? _green.withValues(alpha: 0.16) : _greenBg)
-              : (_isDark ? _red.withValues(alpha: 0.16) : _redBg);
-          final statusBorder = sufficient
-              ? (_isDark ? _green.withValues(alpha: 0.34) : _greenBorder)
-              : (_isDark ? _red.withValues(alpha: 0.34) : _redBorder);
-          final disabledButtonBg = _isDark
-              ? const Color(0xFF253047)
-              : Colors.grey[200];
+          final quickAmts = _quickCashOptions(_total);
 
           final media = MediaQuery.of(ctx);
           final keyboardInset = media.viewInsets.bottom;
-          final systemNavInset = media.padding.bottom;
-          final sheetHeight = (media.size.height - keyboardInset) * 0.62;
+          final navInset = media.padding.bottom;
+          final maxHeight = (media.size.height - keyboardInset).clamp(
+            0.0,
+            640.0,
+          );
 
           return Padding(
             padding: EdgeInsets.only(bottom: keyboardInset),
-            child: SizedBox(
-              height: sheetHeight,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
               child: Container(
                 decoration: BoxDecoration(
-                  color: _panelSurface,
+                  color: panelBg,
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(24),
                   ),
                 ),
-                padding: EdgeInsets.fromLTRB(16, 0, 16, systemNavInset + 24),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Handle
-                    Center(
-                      child: Container(
-                        margin: const EdgeInsets.only(top: 10, bottom: 14),
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: _lineColor,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+                    // ── Drag handle ──────────────────────────────
+                    Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(top: 12, bottom: 4),
+                      decoration: BoxDecoration(
+                        color: lineFaint,
+                        borderRadius: BorderRadius.circular(99),
                       ),
                     ),
 
-                    Expanded(
+                    Flexible(
                       child: SingleChildScrollView(
                         keyboardDismissBehavior:
                             ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: EdgeInsets.fromLTRB(16, 8, 16, navInset + 8),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Sheet header
+                            // ── Header row ───────────────────────
+                            _PaySheetHeader(
+                              accentFg: accentFg,
+                              accentBg: accentBg,
+                              accentBorder: accentBorder,
+                              fieldBg: fieldBg,
+                              lineFaint: lineFaint,
+                              textPri: textPri,
+                              textSec: textSec,
+                              onBack: () => Navigator.pop(ctx),
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // ── Payment summary ──────────────────
+                            _PaymentSummaryCard(
+                              items: _totalUnits,
+                              subtotal: subtotal,
+                              productDiscount: productDisc,
+                              receiptDiscount: receiptDisc,
+                              receiptDiscountLabel: _discountSummary,
+                              total: _total,
+                              accentFg: accentFg,
+                              accentBg: accentBg,
+                              mutedSurface: mutedBg,
+                              lineColor: lineFaint,
+                              primaryText: textPri,
+                              secondaryText: textSec,
+                              dangerFg: dangerFg,
+                              onDiscountTap: () => _showDiscountSelector(
+                                refreshPaymentSheet: () => setModal(() {}),
+                              ),
+                              onClearDiscount: () => _clearReceiptDiscount(
+                                setModal: () => setModal(() {}),
+                              ),
+                            ),
+
+                            const SizedBox(height: 14),
+
+                            // ── Section label ────────────────────
                             Row(
                               children: [
-                                Container(
-                                  width: 34,
-                                  height: 34,
-                                  decoration: BoxDecoration(
-                                    color: accentBg,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: accentBorder,
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  child: Icon(
-                                    Icons.payments_outlined,
-                                    size: 18,
+                                Expanded(
+                                  child: _PaymentFieldLabel(
+                                    text: 'Cash received',
                                     color: accentFg,
                                   ),
                                 ),
                                 const SizedBox(width: 10),
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Cash payment',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w800,
-                                          color: _primaryText,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'Enter cash received',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500,
-                                          color: _secondaryText,
-                                        ),
-                                      ),
-                                    ],
+                                  child: _PaymentFieldLabel(
+                                    text: cashAmt > 0 && !sufficient
+                                        ? 'Still needed'
+                                        : 'Change',
+                                    color: accentFg,
                                   ),
                                 ),
                               ],
                             ),
 
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 8),
 
-                            _PaymentSummaryCard(
-                              discountedSubtotal: subtotal,
-                              total: _total,
-                              accentBg: accentBg,
-                              accentBorder: accentBorder,
-                              accentFg: accentFg,
-                              mutedSurface: _mutedSurface,
-                              lineColor: _lineColor,
-                              primaryText: _primaryText,
-                              secondaryText: _secondaryText,
-                            ),
-                            // Cash input + change
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: cashFieldBg,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: cashFieldBorder,
-                                      ),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 2,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Text(
-                                          'PHP ',
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w800,
-                                            color: _primary,
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: TextField(
-                                            controller: _cashCtrl,
-                                            keyboardType:
-                                                const TextInputType.numberWithOptions(
-                                                  decimal: true,
-                                                ),
-                                            inputFormatters: [
-                                              TextInputFormatter.withFunction(
-                                                _formatMoneyEdit,
-                                              ),
-                                            ],
-                                            style: TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.w700,
-                                              color: _primaryText,
-                                            ),
-                                            decoration: InputDecoration(
-                                              hintText: '0.00',
-                                              hintStyle: TextStyle(
-                                                color: _tertiaryText,
-                                                fontSize: 18,
-                                              ),
-                                              border: InputBorder.none,
-                                              isDense: true,
-                                              contentPadding:
-                                                  const EdgeInsets.symmetric(
-                                                    vertical: 9,
-                                                  ),
-                                            ),
-                                            onChanged: (v) => setModal(() {}),
-                                          ),
-                                        ),
-                                      ],
+                            // ── Cash input + Change ──────────────
+                            IntrinsicHeight(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Cash field
+                                  Expanded(
+                                    child: _CashInputField(
+                                      controller: _cashCtrl,
+                                      fieldBg: fieldBg,
+                                      accentFg: accentFg,
+                                      accentBorder: accentBorder,
+                                      textPri: textPri,
+                                      textTer: textTer,
+                                      lineFaint: lineFaint,
+                                      sufficient: sufficient,
+                                      onChanged: (_) => setModal(() {}),
+                                      formatMoneyEdit: _formatMoneyEdit,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 180),
-                                    height: 54,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: cashAmt > 0
-                                          ? statusBg
-                                          : _mutedSurface,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: cashAmt > 0
-                                            ? statusBorder
-                                            : _lineColor,
-                                        width: 0.5,
-                                      ),
-                                    ),
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          cashAmt <= 0
-                                              ? 'Change'
-                                              : sufficient
-                                              ? 'Change'
-                                              : 'Amount needed',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: cashAmt <= 0
-                                                ? _secondaryText
-                                                : sufficient
-                                                ? successFg
-                                                : dangerFg,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          cashAmt <= 0
-                                              ? CurrencyFormatter.format(0)
-                                              : sufficient
-                                              ? CurrencyFormatter.format(change)
-                                              : CurrencyFormatter.format(
-                                                  amountNeeded,
-                                                ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: cashAmt <= 0
-                                                ? _primaryText
-                                                : sufficient
-                                                ? successFg
-                                                : dangerFg,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                      ],
+
+                                  const SizedBox(width: 10),
+
+                                  // Change / needed field
+                                  Expanded(
+                                    child: _ChangeDisplay(
+                                      cashAmt: cashAmt,
+                                      sufficient: sufficient,
+                                      change: change,
+                                      needed: needed,
+                                      mutedBg: mutedBg,
+                                      lineFaint: lineFaint,
+                                      textSec: textSec,
+                                      successFg: successFg,
+                                      dangerFg: dangerFg,
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
 
                             const SizedBox(height: 10),
 
-                            // Quick amounts
+                            // ── Quick-amount pills ───────────────
                             Row(
-                              children: quickAmounts.asMap().entries.map((
-                                entry,
-                              ) {
-                                final i = entry.key;
-                                final amt = entry.value;
+                              children: quickAmts.asMap().entries.map((e) {
+                                final i = e.key;
+                                final amt = e.value;
                                 final cashText = _cashInputTextForAmount(amt);
-                                final isSelected =
+                                final isExact =
                                     _sanitizeMoneyInput(_cashCtrl.text) ==
                                     cashText;
                                 return Expanded(
                                   child: Padding(
                                     padding: EdgeInsets.only(
                                       left: i == 0 ? 0 : 3,
-                                      right: i == quickAmounts.length - 1
-                                          ? 0
-                                          : 3,
+                                      right: i == quickAmts.length - 1 ? 0 : 3,
                                     ),
-                                    child: GestureDetector(
+                                    child: _QuickAmountPill(
+                                      label: i == 0
+                                          ? CurrencyFormatter.format(amt)
+                                          : 'PHP ${amt.toStringAsFixed(0)}',
+                                      isSelected: isExact,
+                                      accentBg: accentBg,
+                                      accentBorder: accentBorder,
+                                      accentFg: accentFg,
                                       onTap: () {
-                                        _cashCtrl.text = _sanitizeMoneyInput(
-                                          cashText,
-                                        );
+                                        _cashCtrl.text = cashText;
                                         _cashCtrl.selection =
                                             TextSelection.collapsed(
                                               offset: _cashCtrl.text.length,
                                             );
                                         setModal(() {});
                                       },
-                                      child: Container(
-                                        height: 34,
-                                        alignment: Alignment.center,
-                                        decoration: BoxDecoration(
-                                          color: isSelected
-                                              ? _primary
-                                              : accentBg,
-                                          borderRadius: BorderRadius.circular(
-                                            99,
-                                          ),
-                                          border: Border.all(
-                                            color: isSelected
-                                                ? _primary
-                                                : accentBorder,
-                                            width: 0.5,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          i == 0
-                                              ? CurrencyFormatter.format(amt)
-                                              : 'PHP ${amt.toStringAsFixed(0)}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
-                                            color: isSelected
-                                                ? Colors.white
-                                                : accentFg,
-                                          ),
-                                        ),
-                                      ),
                                     ),
                                   ),
                                 );
                               }).toList(),
-                            ),
-
-                            const SizedBox(height: 10),
-
-                            _ReceiptDiscountCard(
-                              discountedItems: discountedItems,
-                              receiptDiscount: discount,
-                              discountSummary: _discountSummary,
-                              receiptDiscountActive: discountActive,
-                              successFg: successFg,
-                              dangerFg: dangerFg,
-                              mutedSurface: _mutedSurface,
-                              lineColor: _lineColor,
-                              primaryText: _primaryText,
-                              secondaryText: _secondaryText,
-                              tertiaryText: _tertiaryText,
-                              onTap: () => _showDiscountSelector(
-                                refreshPaymentSheet: () => setModal(() {}),
-                              ),
                             ),
 
                             const SizedBox(height: 14),
@@ -1440,85 +1339,27 @@ class _CartPageState extends State<CartPage> {
                       ),
                     ),
 
-                    // Confirm button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: sufficient && !_completing
-                            ? () async {
-                                final confirmed = await _confirmCompleteSale(
-                                  cashAmount: cashAmt,
-                                  change: change,
-                                );
-                                if (!confirmed) return;
-                                if (!mounted || !ctx.mounted) return;
-                                setModal(() {});
-                                setState(() => _completing = true);
-                                Navigator.pop(ctx);
-                                try {
-                                  final total = _total;
-                                  final discount = _receiptDiscount;
-                                  final completion = await widget
-                                      .onCompleteSale(discount);
-                                  if (!mounted || completion == null) return;
-                                  _selectedDiscountName = 'No Discount';
-                                  _discountType = ReceiptDiscountType.amount;
-                                  _discountCtrl.clear();
-                                  await _showSaleSuccessSheet(
-                                    total: total,
-                                    completion: completion,
-                                  );
-                                } catch (e) {
-                                  if (!mounted) return;
-                                  _showBanner('Error: $e', success: false);
-                                } finally {
-                                  if (mounted) {
-                                    setState(() => _completing = false);
-                                  }
-                                }
-                              }
-                            : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _primary,
-                          disabledBackgroundColor: disabledButtonBg,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: _completing
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(
-                                    Icons.check_circle_outline_rounded,
-                                    color: Colors.white,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    sufficient
-                                        ? 'Confirm sale'
-                                        : cashAmt > 0
-                                        ? 'Need ${CurrencyFormatter.format(amountNeeded)} more'
-                                        : 'Enter cash received',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                    // ── Confirm button ───────────────────────────
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, navInset + 16),
+                      child: _ConfirmSaleButton(
+                        sufficient: sufficient,
+                        completing: _completing,
+                        cashAmt: cashAmt,
+                        change: change,
+                        needed: needed,
+                        total: _total,
+                        onConfirm: () async {
+                          final total = _total;
+                          final discount = _receiptDiscount;
+                          await _completeSaleFromPayment(
+                            cashAmount: cashAmt,
+                            change: change,
+                            total: total,
+                            discount: discount,
+                            onConfirmed: () => Navigator.pop(ctx),
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -2642,6 +2483,350 @@ class _CartPageState extends State<CartPage> {
   }
 }
 
+class _PaySheetHeader extends StatelessWidget {
+  const _PaySheetHeader({
+    required this.accentFg,
+    required this.accentBg,
+    required this.accentBorder,
+    required this.fieldBg,
+    required this.lineFaint,
+    required this.textPri,
+    required this.textSec,
+    required this.onBack,
+  });
+
+  final Color accentFg, accentBg, accentBorder, fieldBg, lineFaint, textPri;
+  final Color textSec;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        // Back button
+        GestureDetector(
+          onTap: onBack,
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: fieldBg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: lineFaint, width: 0.5),
+            ),
+            child: Icon(
+              Icons.arrow_back_ios_new_rounded,
+              size: 16,
+              color: accentFg,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+
+        // Icon badge
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: accentBg,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(color: accentBorder, width: 0.5),
+          ),
+          child: Icon(Icons.payments_outlined, size: 20, color: accentFg),
+        ),
+        const SizedBox(width: 12),
+
+        // Title + subtitle
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Cash payment',
+                style: AppTypography.cardTitle.copyWith(color: textPri),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Enter cash received',
+                style: AppTypography.caption.copyWith(color: textSec),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CashInputField extends StatelessWidget {
+  const _CashInputField({
+    required this.controller,
+    required this.fieldBg,
+    required this.accentFg,
+    required this.accentBorder,
+    required this.textPri,
+    required this.textTer,
+    required this.lineFaint,
+    required this.sufficient,
+    required this.onChanged,
+    required this.formatMoneyEdit,
+  });
+
+  final TextEditingController controller;
+  final Color fieldBg, accentFg, accentBorder, textPri, textTer, lineFaint;
+  final bool sufficient;
+  final ValueChanged<String> onChanged;
+  final TextEditingValue Function(TextEditingValue, TextEditingValue)
+  formatMoneyEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeBorder = sufficient
+        ? _primary.withValues(alpha: 0.6)
+        : accentBorder;
+
+    return Container(
+      height: 72,
+      decoration: BoxDecoration(
+        color: fieldBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: controller.text.isEmpty ? lineFaint : activeBorder,
+          width: controller.text.isEmpty ? 0.5 : 1.5,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            'PHP',
+            style: AppTypography.label.copyWith(
+              color: accentFg,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              inputFormatters: [
+                TextInputFormatter.withFunction(formatMoneyEdit),
+              ],
+              style: AppTypography.total.copyWith(color: textPri),
+              decoration: InputDecoration(
+                hintText: '0',
+                hintStyle: AppTypography.total.copyWith(
+                  color: textTer,
+                  fontWeight: FontWeight.w400,
+                ),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChangeDisplay extends StatelessWidget {
+  const _ChangeDisplay({
+    required this.cashAmt,
+    required this.sufficient,
+    required this.change,
+    required this.needed,
+    required this.mutedBg,
+    required this.lineFaint,
+    required this.textSec,
+    required this.successFg,
+    required this.dangerFg,
+  });
+
+  final double cashAmt, change, needed;
+  final bool sufficient;
+  final Color mutedBg, lineFaint, textSec, successFg, dangerFg;
+
+  String get _value {
+    if (cashAmt <= 0) return '—';
+    if (sufficient) return CurrencyFormatter.format(change);
+    return '−${CurrencyFormatter.format(needed)}';
+  }
+
+  Color _valueColor(Color fallback) {
+    if (cashAmt <= 0) return fallback;
+    if (!sufficient) return dangerFg;
+    return successFg;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 72,
+      decoration: BoxDecoration(
+        color: mutedBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: lineFaint, width: 0.5),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      alignment: Alignment.centerLeft,
+      child: Text(
+        _value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTypography.total.copyWith(color: _valueColor(textSec)),
+      ),
+    );
+  }
+}
+
+class _PaymentFieldLabel extends StatelessWidget {
+  const _PaymentFieldLabel({required this.text, required this.color});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppTypography.label.copyWith(
+        color: color,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+}
+
+class _QuickAmountPill extends StatelessWidget {
+  const _QuickAmountPill({
+    required this.label,
+    required this.isSelected,
+    required this.accentBg,
+    required this.accentBorder,
+    required this.accentFg,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final Color accentBg, accentBorder, accentFg;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        height: 38,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected ? _primary : accentBg,
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(
+            color: isSelected ? _primary : accentBorder,
+            width: 0.5,
+          ),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.helperText.copyWith(
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : accentFg,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfirmSaleButton extends StatelessWidget {
+  const _ConfirmSaleButton({
+    required this.sufficient,
+    required this.completing,
+    required this.cashAmt,
+    required this.change,
+    required this.needed,
+    required this.total,
+    required this.onConfirm,
+  });
+
+  final bool sufficient, completing;
+  final double cashAmt, change, needed, total;
+  final VoidCallback onConfirm;
+
+  String get _label {
+    if (completing) return '';
+    if (cashAmt <= 0) return 'Enter cash received';
+    if (!sufficient) return 'Need ${CurrencyFormatter.format(needed)} more';
+    if (change == 0) return 'Confirm sale';
+    return 'Confirm sale';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final active = sufficient && !completing;
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton(
+        onPressed: active ? onConfirm : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _primary,
+          disabledBackgroundColor: Colors.grey[200],
+          elevation: active ? 4 : 0,
+          shadowColor: _primary.withValues(alpha: 0.28),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: completing
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: Colors.white,
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.check_circle_outline_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      _label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.button.copyWith(
+                        color: active ? Colors.white : Colors.grey[500],
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
 // Summary card
 class _BottomMetric extends StatelessWidget {
   const _BottomMetric({
@@ -2672,9 +2857,8 @@ class _BottomMetric extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: alignCenter ? TextAlign.center : TextAlign.start,
-          style: TextStyle(
+          style: AppTypography.helperText.copyWith(
             color: labelColor,
-            fontSize: 11,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -2684,11 +2868,7 @@ class _BottomMetric extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: alignCenter ? TextAlign.center : TextAlign.start,
-          style: TextStyle(
-            color: valueColor,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-          ),
+          style: AppTypography.price.copyWith(color: valueColor),
         ),
       ],
     );
@@ -2716,15 +2896,8 @@ class _ConfirmRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(fontSize: 13, color: labelColor)),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-            color: textColor,
-          ),
-        ),
+        Text(label, style: AppTypography.label.copyWith(color: labelColor)),
+        Text(value, style: AppTypography.button.copyWith(color: textColor)),
       ],
     );
   }
@@ -2732,32 +2905,50 @@ class _ConfirmRow extends StatelessWidget {
 
 class _PaymentSummaryCard extends StatelessWidget {
   const _PaymentSummaryCard({
-    required this.discountedSubtotal,
+    required this.items,
+    required this.subtotal,
+    required this.productDiscount,
+    required this.receiptDiscount,
+    required this.receiptDiscountLabel,
     required this.total,
-    required this.accentBg,
-    required this.accentBorder,
     required this.accentFg,
+    required this.accentBg,
     required this.mutedSurface,
     required this.lineColor,
     required this.primaryText,
     required this.secondaryText,
+    required this.dangerFg,
+    required this.onDiscountTap,
+    required this.onClearDiscount,
   });
 
-  final double discountedSubtotal;
+  final VoidCallback onDiscountTap;
+  final VoidCallback onClearDiscount;
+  final int items;
+  final double subtotal;
+  final double productDiscount;
+  final double receiptDiscount;
+  final String receiptDiscountLabel;
   final double total;
-  final Color accentBg;
-  final Color accentBorder;
   final Color accentFg;
+  final Color accentBg;
   final Color mutedSurface;
   final Color lineColor;
   final Color primaryText;
   final Color secondaryText;
+  final Color dangerFg;
+
+  String get _discountBadgeText {
+    final match = RegExp(r'\(([^)]+%)\)').firstMatch(receiptDiscountLabel);
+    final percent = match?.group(1);
+    return percent == null ? 'APPLIED' : '$percent OFF';
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       decoration: BoxDecoration(
         color: mutedSurface,
         borderRadius: BorderRadius.circular(16),
@@ -2767,183 +2958,164 @@ class _PaymentSummaryCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: accentBg,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: accentBorder, width: 0.5),
-                ),
-                child: Icon(
-                  Icons.receipt_long_outlined,
-                  size: 17,
-                  color: accentFg,
-                ),
+              _SummaryIcon(
+                icon: Icons.receipt_long_outlined,
+                bg: accentBg,
+                fg: accentFg,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Payment summary',
-                  style: TextStyle(
-                    color: primaryText,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
+              const SizedBox(width: 12),
               Text(
-                'Cash',
-                style: TextStyle(
-                  color: secondaryText,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+                'Payment summary',
+                style: AppTypography.button.copyWith(
+                  color: accentFg,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          Divider(height: 16, color: lineColor),
+
           _PaymentSummaryLine(
-            label: 'Items subtotal',
-            value: CurrencyFormatter.format(discountedSubtotal),
+            icon: Icons.shopping_bag_outlined,
+            iconBg: accentBg,
+            iconColor: accentFg,
+            label: 'Items',
+            value: '$items',
             labelColor: secondaryText,
             valueColor: primaryText,
           ),
-          Divider(height: 16, color: lineColor),
+          const SizedBox(height: 7),
+
+          _PaymentSummaryLine(
+            icon: Icons.receipt_long_outlined,
+            iconBg: accentBg,
+            iconColor: accentFg,
+            label: 'Subtotal',
+            value: CurrencyFormatter.format(subtotal),
+            labelColor: secondaryText,
+            valueColor: primaryText,
+          ),
+
+          if (productDiscount > 0) ...[
+            const SizedBox(height: 7),
+            _PaymentSummaryLine(
+              icon: Icons.local_offer_outlined,
+              iconBg: accentBg,
+              iconColor: accentFg,
+              label: 'Product discount',
+              value: '-${CurrencyFormatter.format(productDiscount)}',
+              labelColor: secondaryText,
+              valueColor: dangerFg,
+            ),
+          ],
+
+          if (receiptDiscount > 0) ...[
+            const SizedBox(height: 7),
+            _PaymentSummaryLine(
+              icon: Icons.percent_rounded,
+              iconBg: accentBg,
+              iconColor: accentFg,
+              label: 'Receipt discount',
+              value: '-${CurrencyFormatter.format(receiptDiscount)}',
+              labelColor: secondaryText,
+              valueColor: dangerFg,
+            ),
+          ],
+
+          Divider(height: 22, color: lineColor),
+
           Row(
             children: [
               Text(
-                'Amount due',
-                style: TextStyle(
-                  color: primaryText,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
+                'Total',
+                style: AppTypography.button.copyWith(
+                  color: accentFg,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               const Spacer(),
               Text(
                 CurrencyFormatter.format(total),
-                style: TextStyle(
-                  color: accentFg,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
+                style: AppTypography.total.copyWith(color: accentFg),
               ),
             ],
           ),
-        ],
-      ),
-    );
-  }
-}
+          const SizedBox(height: 10),
 
-class _ReceiptDiscountCard extends StatelessWidget {
-  const _ReceiptDiscountCard({
-    required this.discountedItems,
-    required this.receiptDiscount,
-    required this.discountSummary,
-    required this.receiptDiscountActive,
-    required this.successFg,
-    required this.dangerFg,
-    required this.mutedSurface,
-    required this.lineColor,
-    required this.primaryText,
-    required this.secondaryText,
-    required this.tertiaryText,
-    required this.onTap,
-  });
-
-  final List<_DiscountedItemSummary> discountedItems;
-  final double receiptDiscount;
-  final String discountSummary;
-  final bool receiptDiscountActive;
-  final Color successFg;
-  final Color dangerFg;
-  final Color mutedSurface;
-  final Color lineColor;
-  final Color primaryText;
-  final Color secondaryText;
-  final Color tertiaryText;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: mutedSurface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: lineColor, width: 0.5),
-      ),
-      child: Column(
-        children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Receipt discount',
-                            style: TextStyle(
-                              color: primaryText,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            discountSummary,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: receiptDiscountActive
-                                  ? successFg
-                                  : tertiaryText,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (receiptDiscountActive)
-                      Text(
-                        '-${CurrencyFormatter.format(receiptDiscount)}',
-                        style: TextStyle(
-                          color: dangerFg,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      color: secondaryText,
-                      size: 20,
-                    ),
-                  ],
-                ),
+          OutlinedButton.icon(
+            onPressed: onDiscountTap,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: accentFg,
+              side: BorderSide(color: accentFg, width: 1.1),
+              minimumSize: const Size.fromHeight(36),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(7),
+              ),
+            ),
+            icon: const Icon(Icons.add_circle_outline_rounded, size: 16),
+            label: Text(
+              'Add Discount',
+              style: AppTypography.label.copyWith(
+                color: accentFg,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          if (discountedItems.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            for (final item in discountedItems)
-              _PaymentSummaryLine(
-                label: '${item.name} (${item.percentText} off)',
-                value: '-${CurrencyFormatter.format(item.amount)}',
-                labelColor: secondaryText,
-                valueColor: dangerFg,
+          if (receiptDiscount > 0) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(10),
               ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: Color(0xFF3FA34D),
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Applied discount',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.label.copyWith(
+                        color: Color(0xFF3FA34D),
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDFF5DE),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      _discountBadgeText,
+                      style: AppTypography.helperText.copyWith(
+                        color: Color(0xFF3FA34D),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  GestureDetector(
+                    onTap: onClearDiscount,
+                    child: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Color(0xFF8B95A5),
+                      size: 18,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ],
       ),
@@ -2951,19 +3123,22 @@ class _ReceiptDiscountCard extends StatelessWidget {
   }
 }
 
-class _DiscountedItemSummary {
-  const _DiscountedItemSummary({
-    required this.name,
-    required this.percent,
-    required this.amount,
-  });
+class _SummaryIcon extends StatelessWidget {
+  const _SummaryIcon({required this.icon, required this.bg, required this.fg});
 
-  final String name;
-  final double percent;
-  final double amount;
+  final IconData icon;
+  final Color bg;
+  final Color fg;
 
-  String get percentText =>
-      '${percent.toStringAsFixed(percent % 1 == 0 ? 0 : 2)}%';
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 26,
+      height: 26,
+      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+      child: Icon(icon, size: 14, color: fg),
+    );
+  }
 }
 
 class _PaymentSummaryLine extends StatelessWidget {
@@ -2972,12 +3147,18 @@ class _PaymentSummaryLine extends StatelessWidget {
     required this.value,
     required this.labelColor,
     required this.valueColor,
+    this.icon,
+    this.iconBg,
+    this.iconColor,
   });
 
   final String label;
   final String value;
   final Color labelColor;
   final Color valueColor;
+  final IconData? icon;
+  final Color? iconBg;
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -2985,27 +3166,31 @@ class _PaymentSummaryLine extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
+          if (icon != null) ...[
+            _SummaryIcon(
+              icon: icon!,
+              bg: iconBg ?? Colors.transparent,
+              fg: iconColor ?? labelColor,
+            ),
+            const SizedBox(width: 10),
+          ],
           Expanded(
             child: Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: labelColor,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
+              style: AppTypography.label.copyWith(color: labelColor),
             ),
           ),
-          const SizedBox(width: 12),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: valueColor,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
+          const SizedBox(width: 10),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 132),
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: AppTypography.button.copyWith(color: valueColor),
             ),
           ),
         ],

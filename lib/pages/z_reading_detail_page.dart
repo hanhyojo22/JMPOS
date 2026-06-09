@@ -84,7 +84,7 @@ class _ZReadingDetailPageState extends State<ZReadingDetailPage> {
               FROM sales
               WHERE shift_id = ?
               GROUP BY COALESCE(NULLIF(receipt_number,''),substr(created_at,1,19))
-              ORDER BY MIN(created_at) ASC, MIN(id) ASC
+              ORDER BY MAX(created_at) DESC, MAX(id) DESC
               ''',
               [shiftId],
             );
