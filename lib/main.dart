@@ -41,7 +41,7 @@ Future<void> _initializeSupabase() async {
 
   if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) return;
 
-  await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
+  await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseAnonKey);
 }
 
 class MyApp extends StatefulWidget {
