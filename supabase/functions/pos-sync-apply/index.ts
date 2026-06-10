@@ -25,13 +25,16 @@ type SyncBody = {
   payload?: Record<string, unknown>;
   mirrorRow?: Record<string, unknown>;
   baseRevision?: number;
+  forceDelete?: boolean;
   localQueueId?: number;
   createdAt?: string;
   updatedAt?: string;
 };
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {
@@ -42,6 +45,7 @@ Deno.serve(async (req: Request) => {
     const localId = text(body.localId, 120);
     const operation = body.operation === "delete" ? "delete" : "upsert";
     const baseRevision = nonNegativeInt(body.baseRevision);
+    const forceDelete = operation === "delete" && body.forceDelete === true;
     if (!storeId || !queueKey || !allowedTables.has(tableName) || !localId) {
       return json({ error: "Valid sync event fields are required" }, 400);
     }
@@ -57,7 +61,8 @@ Deno.serve(async (req: Request) => {
     const { token, userId } = await authenticatedUser(admin, req);
     await assertStoreMember(admin, storeId, userId);
     const device = await activeDevice(admin, storeId, userId, token);
-    const eventId = `${storeId}:${queueKey}`;
+    const eventVersion = text(body.updatedAt, 80) || crypto.randomUUID();
+    const eventId = `${storeId}:${queueKey}:${eventVersion}`;
 
     const { data: existingEvent, error: existingEventError } = await admin
       .from("pos_sync_events")
@@ -65,7 +70,10 @@ Deno.serve(async (req: Request) => {
       .eq("event_id", eventId)
       .maybeSingle();
     if (existingEventError) throw existingEventError;
-    if (existingEvent?.applied_revision !== null && existingEvent?.applied_revision !== undefined) {
+    if (
+      existingEvent?.applied_revision !== null &&
+      existingEvent?.applied_revision !== undefined
+    ) {
       return json({
         applied: true,
         revision: Number(existingEvent.applied_revision),
@@ -82,7 +90,12 @@ Deno.serve(async (req: Request) => {
     if (currentError) throw currentError;
 
     const currentRevision = Number(current?.revision ?? 0);
-    if (currentRevision !== baseRevision) {
+    const currentIsDeleted = Boolean(current?.deleted_at);
+    const canReuseDeletedLocalId = operation === "upsert" && currentIsDeleted;
+    if (
+      !forceDelete && !canReuseDeletedLocalId &&
+      currentRevision !== baseRevision
+    ) {
       return await conflictResponse(admin, {
         storeId,
         deviceId: device.id,
@@ -122,22 +135,27 @@ Deno.serve(async (req: Request) => {
             localId,
             operation,
             baseRevision,
-            cloudRevision: await cloudRevision(admin, tableName, storeId, localId),
+            cloudRevision: await cloudRevision(
+              admin,
+              tableName,
+              storeId,
+              localId,
+            ),
           });
         }
       }
     } else {
       const mirrorRow = body.mirrorRow ?? {};
       const nextRow = {
-          ...mirrorRow,
-          store_id: storeId,
-          local_id: localId,
-          revision: appliedRevision,
-          deleted_at: null,
-          deleted_by_device_id: null,
-          operation,
-          sync_event_id: eventId,
-          cloud_updated_at: now,
+        ...mirrorRow,
+        store_id: storeId,
+        local_id: localId,
+        revision: appliedRevision,
+        deleted_at: null,
+        deleted_by_device_id: null,
+        operation,
+        sync_event_id: eventId,
+        cloud_updated_at: now,
       };
       if (current) {
         const { data: applied, error } = await admin
@@ -157,7 +175,12 @@ Deno.serve(async (req: Request) => {
             localId,
             operation,
             baseRevision,
-            cloudRevision: await cloudRevision(admin, tableName, storeId, localId),
+            cloudRevision: await cloudRevision(
+              admin,
+              tableName,
+              storeId,
+              localId,
+            ),
           });
         }
       } else {
@@ -170,7 +193,12 @@ Deno.serve(async (req: Request) => {
             localId,
             operation,
             baseRevision,
-            cloudRevision: await cloudRevision(admin, tableName, storeId, localId),
+            cloudRevision: await cloudRevision(
+              admin,
+              tableName,
+              storeId,
+              localId,
+            ),
           });
         }
         if (error) throw error;
@@ -195,8 +223,14 @@ Deno.serve(async (req: Request) => {
 
     return json({ applied: true, revision: appliedRevision });
   } catch (error) {
+    const details = errorDetails(error);
     return json(
-      { error: error instanceof Error ? error.message : String(error) },
+      {
+        error: details.message,
+        code: details.code,
+        details: details.details,
+        hint: details.hint,
+      },
       error instanceof HttpError ? error.status : 500,
     );
   }
@@ -255,7 +289,9 @@ async function authenticatedUser(admin: AdminClient, req: Request) {
     .trim();
   if (!token) throw new HttpError("Missing authorization token", 401);
   const { data, error } = await admin.auth.getUser(token);
-  if (error || !data.user) throw new HttpError("Invalid authorization token", 401);
+  if (error || !data.user) {
+    throw new HttpError("Invalid authorization token", 401);
+  }
   return { token, userId: data.user.id };
 }
 
@@ -294,10 +330,15 @@ async function activeDevice(
   const invite = Array.isArray(data?.store_invites)
     ? data.store_invites[0]
     : data?.store_invites;
-  if (!data || !invite || (invite.status !== "active" && invite.status !== "used")) {
+  if (
+    !data || !invite || (invite.status !== "active" && invite.status !== "used")
+  ) {
     throw new HttpError("This device is not authorized for cloud sync", 403);
   }
-  if (invite.license_expires_at && new Date(invite.license_expires_at) <= new Date()) {
+  if (
+    invite.license_expires_at &&
+    new Date(invite.license_expires_at) <= new Date()
+  ) {
     throw new HttpError("This license has expired", 403);
   }
   return data;
@@ -319,7 +360,8 @@ function jwtSessionId(token: string) {
 
 function uuid(value: unknown) {
   const result = String(value ?? "").trim();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(result)
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(result)
     ? result
     : "";
 }
@@ -336,6 +378,37 @@ function json(body: Record<string, unknown>, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+function errorDetails(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      message: error.message || "Cloud sync failed.",
+      code: "",
+      details: "",
+      hint: "",
+    };
+  }
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    return {
+      message: textOrEmpty(record.message) ||
+        textOrEmpty(record.error_description) ||
+        textOrEmpty(record.error) ||
+        "Cloud sync failed.",
+      code: textOrEmpty(record.code),
+      details: textOrEmpty(record.details),
+      hint: textOrEmpty(record.hint),
+    };
+  }
+  return {
+    message: String(error || "Cloud sync failed."),
+    code: "",
+    details: "",
+    hint: "",
+  };
+}
+function textOrEmpty(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 class HttpError extends Error {
   constructor(message: string, readonly status: number) {

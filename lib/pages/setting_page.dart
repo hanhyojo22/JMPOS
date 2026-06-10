@@ -59,6 +59,9 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _isSyncingCloud = false;
   bool _isRestoring = false;
   bool _isExportingSales = false;
+  bool _isResettingLocalData = false;
+  bool _isFactoryResetting = false;
+  String? _dangerZoneLoadingMessage;
   DateTime? _lastBackupAt;
   DateTime? _lastSalesExportAt;
   int _pendingSyncCount = 0;
@@ -179,281 +182,327 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _pageSurface,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildAppBar(context),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.only(bottom: 32),
-                children: [
-                  _buildSection(
-                    label: 'Store',
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                _buildAppBar(context),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.only(bottom: 32),
                     children: [
-                      _SettingsRow(
-                        icon: Icons.storefront_outlined,
-                        iconBg: const Color(0xFFEEEDFE),
-                        iconColor: const Color(0xFF534AB7),
-                        label: 'Store name',
-                        subtitle: _storeName,
-                        onTap: () {},
+                      _buildSection(
+                        label: 'Store',
+                        children: [
+                          _SettingsRow(
+                            icon: Icons.storefront_outlined,
+                            iconBg: const Color(0xFFEEEDFE),
+                            iconColor: const Color(0xFF534AB7),
+                            label: 'Store name',
+                            subtitle: _storeName,
+                            onTap: () {},
+                          ),
+                          _SettingsRow(
+                            icon: Icons.monetization_on_outlined,
+                            iconBg: const Color(0xFFE1F5EE),
+                            iconColor: const Color(0xFF0F6E56),
+                            label: 'Currency',
+                            subtitle: 'Philippine Peso (₱)',
+                            onTap: () {},
+                          ),
+                          _SettingsRow(
+                            icon: Icons.receipt_long_outlined,
+                            iconBg: const Color(0xFFFAEEDA),
+                            iconColor: const Color(0xFF854F0B),
+                            label: 'Receipt footer',
+                            subtitle: 'Thank you for shopping!',
+                            onTap: () {},
+                          ),
+                          _SettingsRow(
+                            icon: Icons.local_offer_outlined,
+                            iconBg: const Color(0xFFE1F5EE),
+                            iconColor: const Color(0xFF0F6E56),
+                            label: 'Discounts',
+                            subtitle: 'Senior, PWD, Employee, Promo',
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => DiscountsSettingsPage(
+                                    currentUsername: widget.currentUsername,
+                                  ),
+                                ),
+                              );
+                            },
+                            isLast: true,
+                          ),
+                        ],
                       ),
-                      _SettingsRow(
-                        icon: Icons.monetization_on_outlined,
-                        iconBg: const Color(0xFFE1F5EE),
-                        iconColor: const Color(0xFF0F6E56),
-                        label: 'Currency',
-                        subtitle: 'Philippine Peso (₱)',
-                        onTap: () {},
+                      _buildSection(
+                        label: 'License',
+                        children: [
+                          _LicenseStatusCard(activation: _licenseActivation),
+                        ],
                       ),
-                      _SettingsRow(
-                        icon: Icons.receipt_long_outlined,
-                        iconBg: const Color(0xFFFAEEDA),
-                        iconColor: const Color(0xFF854F0B),
-                        label: 'Receipt footer',
-                        subtitle: 'Thank you for shopping!',
-                        onTap: () {},
+                      _buildSection(
+                        label: 'Preferences',
+                        children: [
+                          _SettingsRow(
+                            icon: Icons.notifications_outlined,
+                            iconBg: const Color(0xFFEEEDFE),
+                            iconColor: const Color(0xFF534AB7),
+                            label: 'Notifications',
+                            trailing: _buildToggle(_notifications, (v) {
+                              HapticFeedback.lightImpact();
+                              setState(() => _notifications = v);
+                            }),
+                          ),
+                          _SettingsRow(
+                            icon: Icons.dark_mode_outlined,
+                            iconBg: const Color(0xFFF1EFE8),
+                            iconColor: const Color(0xFF5F5E5A),
+                            label: 'Dark mode',
+                            trailing: _buildToggle(_darkMode, (v) {
+                              HapticFeedback.lightImpact();
+                              setState(() => _darkMode = v);
+
+                              MyApp.of(context)?.toggleTheme(v);
+                            }),
+                          ),
+                          _SettingsRow(
+                            icon: Icons.barcode_reader,
+                            iconBg: const Color(0xFFE1F5EE),
+                            iconColor: const Color(0xFF0F6E56),
+                            label: 'Barcode scanner',
+                            trailing: _buildToggle(_barcodeScanner, (v) {
+                              HapticFeedback.lightImpact();
+                              setState(() => _barcodeScanner = v);
+                              widget.onBarcodeScannerChanged(v);
+                            }),
+                          ),
+                          _SettingsRow(
+                            icon: Icons.pin_outlined,
+                            iconBg: const Color(0xFFE6F1FB),
+                            iconColor: const Color(0xFF185FA5),
+                            label: 'PIN login',
+                            subtitle: _pinEnabled
+                                ? '6-digit PIN is enabled'
+                                : 'Set a 6-digit PIN',
+                            onTap: _showPinDialog,
+                          ),
+                          _SettingsRow(
+                            icon: Icons.tablet_outlined,
+                            iconBg: const Color(0xFFFAEEDA),
+                            iconColor: const Color(0xFF854F0B),
+                            label: 'Keep screen on',
+                            subtitle: 'Warning: may drain the battery faster',
+                            trailing: _buildToggle(_keepScreenOn, (v) {
+                              HapticFeedback.lightImpact();
+                              setState(() => _keepScreenOn = v);
+                              unawaited(
+                                ScreenAwakeService.instance.setKeepScreenOn(v),
+                              );
+                            }),
+                            isLast: true,
+                          ),
+                        ],
                       ),
-                      _SettingsRow(
-                        icon: Icons.local_offer_outlined,
-                        iconBg: const Color(0xFFE1F5EE),
-                        iconColor: const Color(0xFF0F6E56),
-                        label: 'Discounts',
-                        subtitle: 'Senior, PWD, Employee, Promo',
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => DiscountsSettingsPage(
-                                currentUsername: widget.currentUsername,
+                      _buildSection(
+                        label: 'Data',
+                        children: [
+                          _SettingsRow(
+                            icon: Icons.upload_file_outlined,
+                            iconBg: const Color(0xFFE6F1FB),
+                            iconColor: const Color(0xFF185FA5),
+                            label: 'Export sales report',
+                            subtitle: _lastSalesExportSubtitle,
+                            trailing: _isExportingSales
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : null,
+                            onTap: _isExportingSales
+                                ? null
+                                : _exportSalesReport,
+                          ),
+                          _SettingsRow(
+                            icon: Icons.backup_outlined,
+                            iconBg: const Color(0xFFEAF3DE),
+                            iconColor: const Color(0xFF3B6D11),
+                            label: 'Backup database',
+                            subtitle: _lastBackupSubtitle,
+                            trailing: _isBackingUp
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : null,
+                            onTap: _isBackingUp ? null : _backupDatabase,
+                          ),
+                          _SettingsRow(
+                            icon: Icons.cloud_sync_outlined,
+                            iconBg: _cloudSyncIssue == null
+                                ? const Color(0xFFEAF3FF)
+                                : _dangerBg,
+                            iconColor: _cloudSyncIssue == null
+                                ? const Color(0xFF5B3BB3)
+                                : _danger,
+                            label: 'Cloud sync',
+                            subtitle: _cloudSyncSubtitle,
+                            trailing: _isSyncingCloud
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : _conflictedSyncCount > 0
+                                ? _buildBadge(
+                                    '$_conflictedSyncCount conflict${_conflictedSyncCount == 1 ? '' : 's'}',
+                                    _dangerBg,
+                                    _danger,
+                                  )
+                                : _pendingSyncCount > 0
+                                ? _buildBadge(
+                                    '$_pendingSyncCount',
+                                    const Color(0xFFFFF4DE),
+                                    const Color(0xFF9A5B00),
+                                  )
+                                : _cloudSyncIssue != null
+                                ? _buildBadge('Paused', _dangerBg, _danger)
+                                : _buildBadge(
+                                    'Synced',
+                                    const Color(0xFFE1F5EE),
+                                    const Color(0xFF0F6E56),
+                                  ),
+                            onTap: _isSyncingCloud ? null : _handleCloudSyncTap,
+                          ),
+                          if (_isSyncingCloud)
+                            _CloudSyncProgressRow(
+                              done: _cloudSyncDone,
+                              total: _cloudSyncTotal,
+                              step: _cloudSyncStep,
+                            ),
+                          _SettingsRow(
+                            icon: Icons.restore_outlined,
+                            iconBg: const Color(0xFFFFF4DE),
+                            iconColor: const Color(0xFF9A5B00),
+                            label: 'Restore database',
+                            subtitle: 'Import a saved backup file',
+                            trailing: _isRestoring
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : null,
+                            onTap: _isRestoring ? null : _restoreDatabase,
+                            isLast: true,
+                          ),
+                        ],
+                      ),
+                      _buildSection(
+                        label: 'Danger Zone',
+                        children: [
+                          _SettingsRow(
+                            icon: Icons.restart_alt_rounded,
+                            iconBg: _dangerBg,
+                            iconColor: _danger,
+                            label: 'Reset Local Data',
+                            subtitle: 'Delete local POS data only',
+                            trailing: _isResettingLocalData
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : _buildBadge('Local', _dangerBg, _danger),
+                            onTap: _isResettingLocalData || _isFactoryResetting
+                                ? null
+                                : _showResetLocalDataDialog,
+                          ),
+                          _SettingsRow(
+                            icon: Icons.warning_amber_rounded,
+                            iconBg: _dangerBg,
+                            iconColor: _danger,
+                            label: 'Factory Reset',
+                            subtitle: 'Delete local and cloud business data',
+                            trailing: _isFactoryResetting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : _buildBadge('Danger', _dangerBg, _danger),
+                            onTap: _isResettingLocalData || _isFactoryResetting
+                                ? null
+                                : _showFactoryResetDialog,
+                            isLast: true,
+                          ),
+                        ],
+                      ),
+                      _buildSection(
+                        label: 'About',
+                        children: [
+                          _SettingsRow(
+                            icon: Icons.info_outline_rounded,
+                            iconBg: const Color(0xFFF1EFE8),
+                            iconColor: const Color(0xFF5F5E5A),
+                            label: 'App version',
+                            trailing: Text(
+                              'v1.4.2',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: _secondaryText,
                               ),
                             ),
-                          );
-                        },
-                        isLast: true,
+                          ),
+                          _SettingsRow(
+                            icon: Icons.shield_outlined,
+                            iconBg: const Color(0xFFF1EFE8),
+                            iconColor: const Color(0xFF5F5E5A),
+                            label: 'Privacy policy',
+                            trailing: Icon(
+                              Icons.open_in_new_rounded,
+                              size: 16,
+                              color: _tertiaryText,
+                            ),
+                            onTap: _openPrivacyPolicy,
+                          ),
+                          _SettingsRow(
+                            icon: Icons.help_outline_rounded,
+                            iconBg: const Color(0xFFF1EFE8),
+                            iconColor: const Color(0xFF5F5E5A),
+                            label: 'Help & support',
+                            onTap: () {},
+                            isLast: true,
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  _buildSection(
-                    label: 'License',
-                    children: [
-                      _LicenseStatusCard(activation: _licenseActivation),
-                    ],
-                  ),
-                  _buildSection(
-                    label: 'Preferences',
-                    children: [
-                      _SettingsRow(
-                        icon: Icons.notifications_outlined,
-                        iconBg: const Color(0xFFEEEDFE),
-                        iconColor: const Color(0xFF534AB7),
-                        label: 'Notifications',
-                        trailing: _buildToggle(_notifications, (v) {
-                          HapticFeedback.lightImpact();
-                          setState(() => _notifications = v);
-                        }),
-                      ),
-                      _SettingsRow(
-                        icon: Icons.dark_mode_outlined,
-                        iconBg: const Color(0xFFF1EFE8),
-                        iconColor: const Color(0xFF5F5E5A),
-                        label: 'Dark mode',
-                        trailing: _buildToggle(_darkMode, (v) {
-                          HapticFeedback.lightImpact();
-                          setState(() => _darkMode = v);
-
-                          MyApp.of(context)?.toggleTheme(v);
-                        }),
-                      ),
-                      _SettingsRow(
-                        icon: Icons.barcode_reader,
-                        iconBg: const Color(0xFFE1F5EE),
-                        iconColor: const Color(0xFF0F6E56),
-                        label: 'Barcode scanner',
-                        trailing: _buildToggle(_barcodeScanner, (v) {
-                          HapticFeedback.lightImpact();
-                          setState(() => _barcodeScanner = v);
-                          widget.onBarcodeScannerChanged(v);
-                        }),
-                      ),
-                      _SettingsRow(
-                        icon: Icons.pin_outlined,
-                        iconBg: const Color(0xFFE6F1FB),
-                        iconColor: const Color(0xFF185FA5),
-                        label: 'PIN login',
-                        subtitle: _pinEnabled
-                            ? '6-digit PIN is enabled'
-                            : 'Set a 6-digit PIN',
-                        onTap: _showPinDialog,
-                      ),
-                      _SettingsRow(
-                        icon: Icons.tablet_outlined,
-                        iconBg: const Color(0xFFFAEEDA),
-                        iconColor: const Color(0xFF854F0B),
-                        label: 'Keep screen on',
-                        subtitle: 'Warning: may drain the battery faster',
-                        trailing: _buildToggle(_keepScreenOn, (v) {
-                          HapticFeedback.lightImpact();
-                          setState(() => _keepScreenOn = v);
-                          unawaited(
-                            ScreenAwakeService.instance.setKeepScreenOn(v),
-                          );
-                        }),
-                        isLast: true,
-                      ),
-                    ],
-                  ),
-                  _buildSection(
-                    label: 'Data',
-                    children: [
-                      _SettingsRow(
-                        icon: Icons.upload_file_outlined,
-                        iconBg: const Color(0xFFE6F1FB),
-                        iconColor: const Color(0xFF185FA5),
-                        label: 'Export sales report',
-                        subtitle: _lastSalesExportSubtitle,
-                        trailing: _isExportingSales
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : null,
-                        onTap: _isExportingSales ? null : _exportSalesReport,
-                      ),
-                      _SettingsRow(
-                        icon: Icons.backup_outlined,
-                        iconBg: const Color(0xFFEAF3DE),
-                        iconColor: const Color(0xFF3B6D11),
-                        label: 'Backup database',
-                        subtitle: _lastBackupSubtitle,
-                        trailing: _isBackingUp
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : null,
-                        onTap: _isBackingUp ? null : _backupDatabase,
-                      ),
-                      _SettingsRow(
-                        icon: Icons.cloud_sync_outlined,
-                        iconBg: _cloudSyncIssue == null
-                            ? const Color(0xFFEAF3FF)
-                            : _dangerBg,
-                        iconColor: _cloudSyncIssue == null
-                            ? const Color(0xFF5B3BB3)
-                            : _danger,
-                        label: 'Cloud sync',
-                        subtitle: _cloudSyncSubtitle,
-                        trailing: _isSyncingCloud
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : _conflictedSyncCount > 0
-                            ? _buildBadge(
-                                '$_conflictedSyncCount conflict${_conflictedSyncCount == 1 ? '' : 's'}',
-                                _dangerBg,
-                                _danger,
-                              )
-                            : _pendingSyncCount > 0
-                            ? _buildBadge(
-                                '$_pendingSyncCount',
-                                const Color(0xFFFFF4DE),
-                                const Color(0xFF9A5B00),
-                              )
-                            : _cloudSyncIssue != null
-                            ? _buildBadge('Paused', _dangerBg, _danger)
-                            : _buildBadge(
-                                'Synced',
-                                const Color(0xFFE1F5EE),
-                                const Color(0xFF0F6E56),
-                              ),
-                        onTap: _isSyncingCloud ? null : _handleCloudSyncTap,
-                      ),
-                      if (_isSyncingCloud)
-                        _CloudSyncProgressRow(
-                          done: _cloudSyncDone,
-                          total: _cloudSyncTotal,
-                          step: _cloudSyncStep,
-                        ),
-                      _SettingsRow(
-                        icon: Icons.restore_outlined,
-                        iconBg: const Color(0xFFFFF4DE),
-                        iconColor: const Color(0xFF9A5B00),
-                        label: 'Restore database',
-                        subtitle: 'Import a saved backup file',
-                        trailing: _isRestoring
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : null,
-                        onTap: _isRestoring ? null : _restoreDatabase,
-                      ),
-                      _SettingsRow(
-                        icon: Icons.delete_outline_rounded,
-                        iconBg: const Color(0xFFFCEBEB),
-                        iconColor: const Color(0xFFA32D2D),
-                        label: 'Clear all data',
-                        subtitle: 'Irreversible — proceed with care',
-                        trailing: _buildBadge('Danger', _dangerBg, _danger),
-                        onTap: () => _showClearDataDialog(),
-                        isLast: true,
-                      ),
-                    ],
-                  ),
-                  _buildSection(
-                    label: 'About',
-                    children: [
-                      _SettingsRow(
-                        icon: Icons.info_outline_rounded,
-                        iconBg: const Color(0xFFF1EFE8),
-                        iconColor: const Color(0xFF5F5E5A),
-                        label: 'App version',
-                        trailing: Text(
-                          'v1.4.2',
-                          style: TextStyle(fontSize: 13, color: _secondaryText),
-                        ),
-                      ),
-                      _SettingsRow(
-                        icon: Icons.shield_outlined,
-                        iconBg: const Color(0xFFF1EFE8),
-                        iconColor: const Color(0xFF5F5E5A),
-                        label: 'Privacy policy',
-                        trailing: Icon(
-                          Icons.open_in_new_rounded,
-                          size: 16,
-                          color: _tertiaryText,
-                        ),
-                        onTap: _openPrivacyPolicy,
-                      ),
-                      _SettingsRow(
-                        icon: Icons.help_outline_rounded,
-                        iconBg: const Color(0xFFF1EFE8),
-                        iconColor: const Color(0xFF5F5E5A),
-                        label: 'Help & support',
-                        onTap: () {},
-                        isLast: true,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          if (_isResettingLocalData || _isFactoryResetting)
+            _buildDangerZoneLoadingOverlay(),
+        ],
       ),
     );
   }
@@ -482,6 +531,68 @@ class _SettingsPageState extends State<SettingsPage> {
   // ── Profile card ───────────────────────────────────────────────────────────
 
   // ── Section wrapper ────────────────────────────────────────────────────────
+  Widget _buildDangerZoneLoadingOverlay() {
+    final message =
+        _dangerZoneLoadingMessage ??
+        (_isFactoryResetting
+            ? 'Deleting local and cloud business data...'
+            : 'Deleting local business data...');
+
+    return Positioned.fill(
+      child: AbsorbPointer(
+        child: ColoredBox(
+          color: Colors.black.withValues(alpha: 0.42),
+          child: Center(
+            child: Container(
+              width: 280,
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: _cardSurface,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 34,
+                    height: 34,
+                    child: CircularProgressIndicator(strokeWidth: 3),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _isFactoryResetting
+                        ? 'Factory reset in progress'
+                        : 'Resetting local data',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _primaryText,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: _secondaryText, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSection({String? label, required List<Widget> children}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -656,6 +767,7 @@ class _SettingsPageState extends State<SettingsPage> {
         });
       }
       final synced = await DatabaseHelper.instance.syncPendingChanges(
+        forceRetry: true,
         onProgress: (done, total, status) {
           if (!mounted) return;
           setState(() {
@@ -757,8 +869,8 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             content: Text(
               '$_conflictedSyncCount sync conflict${_conflictedSyncCount == 1 ? '' : 's'} were found. '
-              'This reloads products, sales, users, and audit logs from Supabase. '
-              'Unresolved local edits on this phone will be replaced.',
+              'This reloads products, sales, shifts, shift readings, users, and audit logs from Supabase. '
+              'Unsynced local edits on this phone will be replaced by the cloud version.',
             ),
             actions: [
               TextButton(
@@ -829,7 +941,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   _SyncUiError _friendlySyncError(Object? error) {
     final raw = error?.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
-    final message = raw?.trim() ?? '';
+    final message = _normalizeSyncErrorDetails(raw?.trim() ?? '');
     if (message.isEmpty) {
       return const _SyncUiError(
         'Sync paused. Your local changes are still saved.',
@@ -880,11 +992,44 @@ class _SettingsPageState extends State<SettingsPage> {
         details: message,
       );
     }
+    if (lower.contains('cloud sync apply failed') ||
+        lower.contains('violates') ||
+        lower.contains('column') ||
+        lower.contains('constraint') ||
+        lower.contains('schema cache')) {
+      return _SyncUiError('Supabase rejected sync.', details: message);
+    }
 
     return _SyncUiError(
       'Sync paused. Your local changes are still saved.',
       details: message,
     );
+  }
+
+  String _normalizeSyncErrorDetails(String message) {
+    final trimmed = message.trim();
+    if (trimmed.isEmpty || trimmed == '[object Object]') return trimmed;
+    final jsonStart = trimmed.indexOf('{');
+    if (jsonStart < 0) return trimmed;
+    final prefix = trimmed.substring(0, jsonStart).trim();
+    final jsonText = trimmed.substring(jsonStart).trim();
+    try {
+      final decoded = jsonDecode(jsonText);
+      if (decoded is! Map) return trimmed;
+      final parts = <String>[];
+      if (prefix.isNotEmpty) parts.add(prefix);
+      for (final key in const ['error', 'message', 'details', 'hint', 'code']) {
+        final value = decoded[key];
+        if (value == null) continue;
+        final text = value is Map || value is List
+            ? jsonEncode(value)
+            : value.toString().trim();
+        if (text.isNotEmpty && !parts.contains(text)) parts.add(text);
+      }
+      return parts.isEmpty ? trimmed : parts.join(' ');
+    } catch (_) {
+      return trimmed;
+    }
   }
 
   Future<void> _showSyncIssueDetails(_SyncUiError error) async {
@@ -1255,36 +1400,327 @@ class _SettingsPageState extends State<SettingsPage> {
     return error.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
   }
 
-  void _showClearDataDialog() {
-    showDialog(
+  Future<void> _showResetLocalDataDialog() async {
+    final result = await _showResetLocalConfirmationDialog();
+    if (!mounted || result == null) return;
+
+    if (result.action == _ResetLocalAction.backupFirst) {
+      await _backupDatabase();
+      return;
+    }
+
+    await _resetLocalData(result.password);
+  }
+
+  Future<_ResetLocalDialogResult?> _showResetLocalConfirmationDialog() async {
+    final passwordController = TextEditingController();
+    try {
+      return await showDialog<_ResetLocalDialogResult>(
+        context: context,
+        builder: (_) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            final password = passwordController.text;
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: const Text(
+                'Reset local data?',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: _textPrimary,
+                ),
+              ),
+              content: SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'This will delete products, sales, shifts, audit logs, and product images from this device only. Cloud data is not affected.',
+                        style: TextStyle(color: _textSecondary),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Have you created a backup?',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: _textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: passwordController,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Owner password',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        onChanged: (_) => setDialogState(() {}),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: _textSecondary),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(
+                    context,
+                    const _ResetLocalDialogResult.backupFirst(),
+                  ),
+                  child: const Text('Backup First'),
+                ),
+                TextButton(
+                  onPressed: password.trim().isEmpty
+                      ? null
+                      : () => Navigator.pop(
+                          context,
+                          _ResetLocalDialogResult.resetAnyway(password.trim()),
+                        ),
+                  child: const Text(
+                    'Reset Anyway',
+                    style: TextStyle(
+                      color: _danger,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } finally {
+      passwordController.dispose();
+    }
+  }
+
+  Future<void> _showFactoryResetDialog() async {
+    final password = await _showFactoryResetConfirmationDialog();
+    if (!mounted || password == null) return;
+
+    await _factoryReset(password);
+  }
+
+  Future<String?> _showFactoryResetConfirmationDialog() async {
+    return showDialog<String>(
       context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Clear all data?',
-          style: TextStyle(fontWeight: FontWeight.w700, color: _textPrimary),
+      builder: (_) => const _FactoryResetConfirmationDialog(),
+    );
+  }
+
+  Future<void> _resetLocalData(String ownerPassword) async {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _isResettingLocalData = true;
+      _dangerZoneLoadingMessage =
+          'Deleting local products, sales, shifts, and images...';
+    });
+
+    try {
+      await DatabaseHelper.instance.resetLocalBusinessData(
+        ownerPassword: ownerPassword,
+      );
+      await _loadPendingSyncCount();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Local data was reset. Cloud data was not changed.'),
+          behavior: SnackBarBehavior.floating,
         ),
-        content: const Text(
-          'This will permanently delete all products, sales, and settings. This action cannot be undone.',
-          style: TextStyle(color: _textSecondary),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_resetErrorMessage(e)),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _danger,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: _textSecondary),
-            ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResettingLocalData = false;
+          _dangerZoneLoadingMessage = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _factoryReset(String ownerPassword) async {
+    HapticFeedback.heavyImpact();
+    setState(() {
+      _isFactoryResetting = true;
+      _dangerZoneLoadingMessage =
+          'Soft-deleting cloud records and removing product images...';
+    });
+
+    try {
+      await DatabaseHelper.instance.factoryResetBusinessData(
+        ownerPassword: ownerPassword,
+      );
+      if (mounted) {
+        setState(() {
+          _dangerZoneLoadingMessage = 'Clearing local business data...';
+        });
+      }
+      await _loadPendingSyncCount();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Factory reset complete. Local and cloud business data were cleared.',
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Clear data',
-              style: TextStyle(color: _danger, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_resetErrorMessage(e)),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _danger,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFactoryResetting = false;
+          _dangerZoneLoadingMessage = null;
+        });
+      }
+    }
+  }
+
+  String _resetErrorMessage(Object error) {
+    return error.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+  }
+}
+
+enum _ResetLocalAction { backupFirst, resetAnyway }
+
+class _ResetLocalDialogResult {
+  const _ResetLocalDialogResult.backupFirst()
+    : action = _ResetLocalAction.backupFirst,
+      password = '';
+
+  const _ResetLocalDialogResult.resetAnyway(this.password)
+    : action = _ResetLocalAction.resetAnyway;
+
+  final _ResetLocalAction action;
+  final String password;
+}
+
+class _FactoryResetConfirmationDialog extends StatefulWidget {
+  const _FactoryResetConfirmationDialog();
+
+  @override
+  State<_FactoryResetConfirmationDialog> createState() =>
+      _FactoryResetConfirmationDialogState();
+}
+
+class _FactoryResetConfirmationDialogState
+    extends State<_FactoryResetConfirmationDialog> {
+  static const Color _textSecondary = Color(0xFF6B7280);
+  static const Color _danger = Color(0xFFDC2626);
+
+  final _passwordController = TextEditingController();
+  final _confirmationController = TextEditingController();
+  bool _isClosing = false;
+
+  bool get _canReset =>
+      _passwordController.text.trim().isNotEmpty &&
+      _confirmationController.text.trim() == 'FACTORY RESET';
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    _confirmationController.dispose();
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  void _close([String? result]) {
+    if (_isClosing) return;
+    _isClosing = true;
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).pop(result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text(
+        'Factory reset?',
+        style: TextStyle(fontWeight: FontWeight.w700, color: _danger),
       ),
+      content: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'This will soft-delete cloud business records, remove synced product images from cloud storage, and clear local POS data from this device.',
+                style: TextStyle(color: _textSecondary),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Owner password',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onChanged: (_) => _refresh(),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _confirmationController,
+                decoration: const InputDecoration(
+                  labelText: 'Type FACTORY RESET',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onChanged: (_) => _refresh(),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _close(),
+          child: const Text('Cancel', style: TextStyle(color: _textSecondary)),
+        ),
+        TextButton(
+          onPressed: _canReset
+              ? () => _close(_passwordController.text.trim())
+              : null,
+          child: const Text(
+            'Factory Reset',
+            style: TextStyle(color: _danger, fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
     );
   }
 }

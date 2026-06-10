@@ -52,10 +52,29 @@ class SupabaseSyncService {
           .order('local_id', ascending: true);
       snapshot[table] = rows
           .map((row) => Map<String, dynamic>.from(row as Map))
+          .where((row) => !_isSoftDeletedSnapshotRow(table, row))
           .toList(growable: false);
     }
 
     return snapshot;
+  }
+
+  bool _isSoftDeletedSnapshotRow(String table, Map<String, dynamic> row) {
+    if ((row['deleted_at']?.toString().trim() ?? '').isNotEmpty) return true;
+    if (table != 'products') return false;
+
+    final payload = row['payload'];
+    Object? pendingDelete = row['pending_delete'];
+    if (payload is Map && payload.containsKey('pending_delete')) {
+      pendingDelete = payload['pending_delete'];
+    } else if (payload is String && payload.trim().isNotEmpty) {
+      final decoded = _decodePayload(payload);
+      if (decoded is Map && decoded.containsKey('pending_delete')) {
+        pendingDelete = decoded['pending_delete'];
+      }
+    }
+
+    return _truthy(pendingDelete);
   }
 
   Future<int> deleteLegacySalesImageFolder() async {
@@ -175,6 +194,7 @@ class SupabaseSyncService {
         'payload': payload is Map ? payload : <String, Object?>{},
         'mirrorRow': mirrorRow,
         'baseRevision': (event['base_revision'] as num?)?.toInt() ?? 0,
+        'forceDelete': payload is Map && payload['_force_cloud_delete'] == true,
         'createdAt': event['created_at']?.toString(),
         'updatedAt': event['updated_at']?.toString(),
       }),
@@ -197,10 +217,28 @@ class SupabaseSyncService {
         revision: (body['currentRevision'] as num?)?.toInt() ?? 0,
       );
     }
-    final message = body is Map
-        ? body['error']?.toString() ?? response.body
-        : response.body;
+    final message = _errorMessageFromBody(body, response.body);
     throw Exception('Cloud sync apply failed: $message');
+  }
+
+  String _errorMessageFromBody(Object body, String fallback) {
+    if (body is! Map) {
+      return fallback.trim().isEmpty ? 'Unknown error' : fallback;
+    }
+    final parts = <String>[];
+    for (final key in const ['error', 'message', 'details', 'hint', 'code']) {
+      final value = body[key];
+      if (value == null) continue;
+      final text = value is Map || value is List
+          ? jsonEncode(value)
+          : value.toString().trim();
+      if (text.isNotEmpty && !parts.contains(text)) parts.add(text);
+    }
+    if (parts.isEmpty) {
+      final text = fallback.trim();
+      return text.isEmpty ? 'Unknown error' : text;
+    }
+    return parts.join(' ');
   }
 
   Future<void> _cleanupUnusedSyncedImages({

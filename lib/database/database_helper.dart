@@ -1302,15 +1302,19 @@ class DatabaseHelper {
     Object localId,
     Map<String, Object?> oldRow, {
     DatabaseExecutor? executor,
+    bool forceCloudDelete = false,
   }) async {
     final db = executor ?? await database;
     await _createSyncQueueTable(db);
+    final payload = forceCloudDelete
+        ? <String, Object?>{...oldRow, '_force_cloud_delete': true}
+        : oldRow;
     await _queueSyncEvent(
       db,
       tableName: tableName,
       localId: localId.toString(),
       operation: 'delete',
-      payload: oldRow,
+      payload: payload,
     );
   }
 
@@ -1369,6 +1373,7 @@ class DatabaseHelper {
   Future<int> syncPendingChanges({
     int limit = 100,
     int maxBatches = 100,
+    bool forceRetry = false,
     void Function(int synced, int total, String status)? onProgress,
   }) async {
     if (_syncInProgress || _cloudRestoreInProgress) return 0;
@@ -1387,11 +1392,15 @@ class DatabaseHelper {
         final now = DateTime.now().toIso8601String();
         final pending = await db.query(
           'sync_queue',
-          where: '''
+          where: forceRetry
+              ? 'status IN (?, ?)'
+              : '''
             status IN (?, ?)
             AND (next_retry_at IS NULL OR next_retry_at = '' OR next_retry_at <= ?)
           ''',
-          whereArgs: ['pending', 'failed', now],
+          whereArgs: forceRetry
+              ? ['pending', 'failed']
+              : ['pending', 'failed', now],
           orderBy: 'updated_at ASC',
           limit: limit,
         );
@@ -1760,7 +1769,7 @@ class DatabaseHelper {
   ) async {
     var imported = 0;
     for (final cloudRow in cloudRows) {
-      if ((cloudRow['deleted_at']?.toString() ?? '').isNotEmpty) continue;
+      if (_shouldSkipCloudRestoreRow(tableName, cloudRow)) continue;
       final row = await mapper(cloudRow);
       final id = row['id'];
       if (id == null) continue;
@@ -1772,6 +1781,19 @@ class DatabaseHelper {
       imported += 1;
     }
     return imported;
+  }
+
+  bool _shouldSkipCloudRestoreRow(
+    String tableName,
+    Map<String, dynamic> cloudRow,
+  ) {
+    if ((cloudRow['deleted_at']?.toString().trim() ?? '').isNotEmpty) {
+      return true;
+    }
+    if (tableName != 'products') return false;
+
+    final payload = _cloudPayloadMap(cloudRow);
+    return _cloudBoolInt(payload, cloudRow, 'pending_delete') == 1;
   }
 
   Future<void> _markCloudSnapshotSynced(
@@ -1895,7 +1917,9 @@ class DatabaseHelper {
       'total': _cloudNumber(payload, cloudRow, 'total'),
       'image_url': null,
       'voided_at': _cloudNullableString(payload, cloudRow, 'voided_at'),
-      'voided_by': _cloudNullableString(payload, cloudRow, 'voided_by'),
+      'voided_by':
+          _cloudNullableString(payload, cloudRow, 'voided_by') ??
+          _cloudNullableString(payload, cloudRow, 'local_voided_by'),
       'void_reason': _cloudNullableString(payload, cloudRow, 'void_reason'),
       'completion_due_at': _cloudNullableString(
         payload,
@@ -2418,6 +2442,113 @@ class DatabaseHelper {
       limit: 1,
     );
     return result.isNotEmpty;
+  }
+
+  Future<bool> verifyOwnerPassword(String password) async {
+    final db = await database;
+    final normalizedPassword = _sanitizeAuthSecret(password);
+    if (!LoginInputValidator.isValidPassword(normalizedPassword)) return false;
+
+    final result = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'role = ? AND password_hash = ?',
+      whereArgs: ['admin', _hashPassword(normalizedPassword)],
+      limit: 1,
+    );
+    return result.isNotEmpty;
+  }
+
+  Future<void> resetLocalBusinessData({required String ownerPassword}) async {
+    if (!await verifyOwnerPassword(ownerPassword)) {
+      throw Exception('Owner password is incorrect.');
+    }
+
+    await runWithCloudRestoreGuard(() async {
+      final db = await database;
+      await _ensureBusinessDataSchema(db);
+      await db.transaction(_clearLocalBusinessRows);
+      await _clearLocalProductImages();
+    });
+  }
+
+  Future<void> factoryResetBusinessData({required String ownerPassword}) async {
+    if (!await verifyOwnerPassword(ownerPassword)) {
+      throw Exception('Owner password is incorrect.');
+    }
+
+    while (_cloudRestoreInProgress || _syncInProgress) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+
+    final db = await database;
+    await _ensureBusinessDataSchema(db);
+    await db.transaction((txn) async {
+      await _queueBusinessDeletesForFactoryReset(txn);
+    });
+
+    await syncPendingChanges(forceRetry: true, maxBatches: 1000);
+    final remaining = await pendingSyncCount();
+    if (remaining > 0) {
+      final lastError = await lastSyncError();
+      throw Exception(
+        lastError == null || lastError.trim().isEmpty
+            ? 'Cloud reset could not finish. Resolve cloud sync issues and try again.'
+            : 'Cloud reset could not finish: $lastError',
+      );
+    }
+
+    await db.transaction(_clearLocalBusinessRows);
+    await _clearLocalProductImages();
+  }
+
+  Future<void> _ensureBusinessDataSchema(Database db) async {
+    await _ensureProductSchema(db);
+    await _ensureSalesSchema(db);
+    await _createShiftsTable(db);
+    await _createShiftReadingsTable(db);
+    await _createAuditLogTable(db);
+    await _createSyncQueueTable(db);
+  }
+
+  Future<void> _clearLocalBusinessRows(DatabaseExecutor db) async {
+    await db.delete('sync_queue');
+    await db.delete('shift_readings');
+    await db.delete('shifts');
+    await db.delete('sales');
+    await db.delete('products');
+    await db.delete('audit_logs');
+  }
+
+  Future<void> _clearLocalProductImages() async {
+    final imageDir = Directory(await productImagesDirectoryPath());
+    if (await imageDir.exists()) {
+      await imageDir.delete(recursive: true);
+    }
+    await imageDir.create(recursive: true);
+  }
+
+  Future<void> _queueBusinessDeletesForFactoryReset(DatabaseExecutor db) async {
+    for (final tableName in const [
+      'products',
+      'sales',
+      'shifts',
+      'shift_readings',
+      'audit_logs',
+    ]) {
+      final rows = await db.query(tableName);
+      for (final row in rows) {
+        final id = row['id'];
+        if (id == null) continue;
+        await queueSyncDelete(
+          tableName,
+          id,
+          row,
+          executor: db,
+          forceCloudDelete: true,
+        );
+      }
+    }
   }
 
   Future<int> createOwner({

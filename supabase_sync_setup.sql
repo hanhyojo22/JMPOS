@@ -45,10 +45,11 @@ create table if not exists public.product_image_deletions (
   status text not null default 'pending',
   requested_by uuid references auth.users(id),
   requested_at timestamptz not null default now(),
+  purge_after_at timestamptz,
   completed_at timestamptz,
   last_error text,
   constraint product_image_deletions_status_check
-    check (status in ('pending', 'completed', 'failed'))
+    check (status in ('pending', 'soft_deleted', 'completed', 'failed'))
 );
 
 alter table public.products
@@ -100,6 +101,97 @@ add column if not exists payload jsonb not null default '{}'::jsonb,
 add column if not exists local_updated_at timestamptz,
 add column if not exists cloud_updated_at timestamptz not null default now();
 
+-- Required by pos-sync-apply for revision-safe sync and soft-delete restores.
+alter table public.pos_sync_events
+add column if not exists device_id uuid references public.store_devices(id) on delete set null,
+add column if not exists base_revision bigint not null default 0,
+add column if not exists applied_revision bigint;
+
+alter table public.products
+add column if not exists revision bigint not null default 0,
+add column if not exists deleted_at timestamptz,
+add column if not exists deleted_by_device_id uuid references public.store_devices(id) on delete set null;
+
+alter table public.sales
+add column if not exists revision bigint not null default 0,
+add column if not exists deleted_at timestamptz,
+add column if not exists deleted_by_device_id uuid references public.store_devices(id) on delete set null,
+add column if not exists shift_id bigint;
+
+alter table public.users
+add column if not exists revision bigint not null default 0,
+add column if not exists deleted_at timestamptz,
+add column if not exists deleted_by_device_id uuid references public.store_devices(id) on delete set null;
+
+alter table public.audit_logs
+add column if not exists revision bigint not null default 0,
+add column if not exists deleted_at timestamptz,
+add column if not exists deleted_by_device_id uuid references public.store_devices(id) on delete set null;
+
+create table if not exists public.shifts (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid not null references public.stores(id) on delete cascade,
+  local_id text not null,
+  status text not null default 'open',
+  opened_by text not null,
+  opened_at timestamptz not null,
+  opening_cash numeric not null default 0,
+  closed_by text,
+  closed_at timestamptz,
+  closing_cash numeric,
+  expected_cash numeric,
+  over_short numeric,
+  z_reading_number text,
+  source_table text not null default 'shifts',
+  sync_event_id text,
+  operation text not null default 'upsert',
+  payload jsonb not null default '{}'::jsonb,
+  local_updated_at timestamptz,
+  cloud_updated_at timestamptz not null default now(),
+  revision bigint not null default 0,
+  deleted_at timestamptz,
+  deleted_by_device_id uuid references public.store_devices(id) on delete set null
+);
+
+create table if not exists public.shift_readings (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid not null references public.stores(id) on delete cascade,
+  local_id text not null,
+  shift_id bigint not null,
+  type text not null,
+  created_by text not null,
+  created_at timestamptz not null,
+  opening_cash numeric not null default 0,
+  sales_total numeric not null default 0,
+  void_total numeric not null default 0,
+  receipt_count integer not null default 0,
+  item_count integer not null default 0,
+  expected_cash numeric not null default 0,
+  counted_cash numeric,
+  over_short numeric,
+  source_table text not null default 'shift_readings',
+  sync_event_id text,
+  operation text not null default 'upsert',
+  payload jsonb not null default '{}'::jsonb,
+  local_updated_at timestamptz,
+  cloud_updated_at timestamptz not null default now(),
+  revision bigint not null default 0,
+  deleted_at timestamptz,
+  deleted_by_device_id uuid references public.store_devices(id) on delete set null
+);
+
+create table if not exists public.pos_sync_conflicts (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid not null references public.stores(id) on delete cascade,
+  device_id uuid references public.store_devices(id) on delete set null,
+  table_name text not null,
+  local_id text not null,
+  operation text not null,
+  base_revision bigint not null,
+  cloud_revision bigint not null,
+  created_at timestamptz not null default now()
+);
+
 do $$
 declare
   missing_count integer;
@@ -122,7 +214,10 @@ begin
     'product_image_deletions',
     'sales',
     'users',
-    'audit_logs'
+    'audit_logs',
+    'shifts',
+    'shift_readings',
+    'pos_sync_conflicts'
   ]
   loop
     execute format('select count(*) from public.%I where store_id is null', table_name)
@@ -177,10 +272,18 @@ alter column store_id set not null;
 alter table public.audit_logs
 alter column store_id set not null;
 
+alter table public.shifts
+alter column store_id set not null;
+
+alter table public.shift_readings
+alter column store_id set not null;
+
 alter table public.products drop constraint if exists products_local_id_key;
 alter table public.sales drop constraint if exists sales_local_id_key;
 alter table public.users drop constraint if exists users_local_id_key;
 alter table public.audit_logs drop constraint if exists audit_logs_local_id_key;
+alter table public.shifts drop constraint if exists shifts_local_id_key;
+alter table public.shift_readings drop constraint if exists shift_readings_local_id_key;
 
 create unique index if not exists products_store_local_id_unique_idx
 on public.products (store_id, local_id);
@@ -191,6 +294,10 @@ on public.product_image_deletions (store_id, bucket_id, object_path);
 create index if not exists product_image_deletions_pending_idx
 on public.product_image_deletions (store_id, status, requested_at);
 
+create index if not exists product_image_deletions_purge_idx
+on public.product_image_deletions (store_id, status, purge_after_at)
+where status = 'soft_deleted';
+
 create unique index if not exists sales_store_local_id_unique_idx
 on public.sales (store_id, local_id);
 
@@ -200,12 +307,45 @@ on public.users (store_id, local_id);
 create unique index if not exists audit_logs_store_local_id_unique_idx
 on public.audit_logs (store_id, local_id);
 
+create unique index if not exists shifts_store_local_id_unique_idx
+on public.shifts (store_id, local_id);
+
+create unique index if not exists shift_readings_store_local_id_unique_idx
+on public.shift_readings (store_id, local_id);
+
+create index if not exists products_store_deleted_idx
+on public.products (store_id, deleted_at);
+
+create index if not exists sales_store_deleted_idx
+on public.sales (store_id, deleted_at);
+
+create index if not exists users_store_deleted_idx
+on public.users (store_id, deleted_at);
+
+create index if not exists audit_logs_store_deleted_idx
+on public.audit_logs (store_id, deleted_at);
+
+create index if not exists shifts_store_deleted_idx
+on public.shifts (store_id, deleted_at);
+
+create index if not exists shift_readings_store_deleted_idx
+on public.shift_readings (store_id, deleted_at);
+
+create index if not exists sales_store_shift_id_idx
+on public.sales (store_id, shift_id);
+
+create index if not exists pos_sync_conflicts_store_created_idx
+on public.pos_sync_conflicts (store_id, created_at desc);
+
 alter table public.pos_sync_events enable row level security;
 alter table public.products enable row level security;
 alter table public.product_image_deletions enable row level security;
 alter table public.sales enable row level security;
 alter table public.users enable row level security;
 alter table public.audit_logs enable row level security;
+alter table public.shifts enable row level security;
+alter table public.shift_readings enable row level security;
+alter table public.pos_sync_conflicts enable row level security;
 
 drop policy if exists "Allow POS sync event inserts" on public.pos_sync_events;
 drop policy if exists "Allow POS sync event updates" on public.pos_sync_events;
@@ -482,5 +622,26 @@ drop policy if exists "Allow POS audit sync reads" on public.audit_logs;
 drop policy if exists "Allow active POS device audit logs" on public.audit_logs;
 create policy "Allow active POS device audit logs"
 on public.audit_logs for all to authenticated
+using (public.has_active_pos_device(store_id))
+with check (public.has_active_pos_device(store_id));
+
+drop policy if exists "Allow active POS device shifts" on public.shifts;
+drop policy if exists "Allow active POS device shift reads" on public.shifts;
+create policy "Allow active POS device shifts"
+on public.shifts for all to authenticated
+using (public.has_active_pos_device(store_id))
+with check (public.has_active_pos_device(store_id));
+
+drop policy if exists "Allow active POS device shift readings" on public.shift_readings;
+drop policy if exists "Allow active POS device shift reading reads" on public.shift_readings;
+create policy "Allow active POS device shift readings"
+on public.shift_readings for all to authenticated
+using (public.has_active_pos_device(store_id))
+with check (public.has_active_pos_device(store_id));
+
+drop policy if exists "Allow active POS device conflicts" on public.pos_sync_conflicts;
+drop policy if exists "Allow active POS device conflict reads" on public.pos_sync_conflicts;
+create policy "Allow active POS device conflicts"
+on public.pos_sync_conflicts for all to authenticated
 using (public.has_active_pos_device(store_id))
 with check (public.has_active_pos_device(store_id));

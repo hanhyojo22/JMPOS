@@ -1498,7 +1498,7 @@ class _CartPageState extends State<CartPage> {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: _primaryText,
-                            fontSize: 20,
+                            fontSize: 18,
                             fontWeight: FontWeight.w900,
                           ),
                         ),

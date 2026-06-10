@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const cloudImagePrefix = "supabase-storage://";
 const productImagePrefix = "sync_images/products";
+const imageRetentionDays = 30;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,13 +37,20 @@ Deno.serve(async (req: Request) => {
     const storeId = sanitizeUuid(body.storeId);
     const bucket = sanitizeBucket(body.bucket) || "backupfiles";
 
-    if (!operation) return jsonResponse({ error: "Operation is required" }, 400);
-    if (!storeId) return jsonResponse({ error: "Valid store id is required" }, 400);
+    if (!operation) {
+      return jsonResponse({ error: "Operation is required" }, 400);
+    }
+    if (!storeId) {
+      return jsonResponse({ error: "Valid store id is required" }, 400);
+    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY") ?? "";
     if (!supabaseUrl || !serviceRoleKey) {
-      return jsonResponse({ error: "Image delete service is not configured" }, 500);
+      return jsonResponse(
+        { error: "Image delete service is not configured" },
+        500,
+      );
     }
 
     const admin = createClient(supabaseUrl, serviceRoleKey, {
@@ -54,7 +62,9 @@ Deno.serve(async (req: Request) => {
 
     if (operation === "delete_product_image") {
       const localId = sanitizeLocalId(body.localId);
-      if (!localId) return jsonResponse({ error: "Valid local id is required" }, 400);
+      if (!localId) {
+        return jsonResponse({ error: "Valid local id is required" }, 400);
+      }
       const result = await deleteProductImage({
         admin,
         storeId,
@@ -68,7 +78,12 @@ Deno.serve(async (req: Request) => {
     }
 
     if (operation === "cleanup_unused_images") {
-      const result = await cleanupUnusedImages({ admin, storeId, bucket, userId });
+      const result = await cleanupUnusedImages({
+        admin,
+        storeId,
+        bucket,
+        userId,
+      });
       return jsonResponse(result);
     }
 
@@ -98,6 +113,7 @@ async function deleteProductImage(args: {
   );
   if (!objectPath) return { deleted: 0, status: "no_image" };
 
+  const purgeAfterAt = purgeAfterDate();
   await markProductPendingDelete(args.admin, args.storeId, args.localId);
   await upsertDeletion(args.admin, {
     storeId: args.storeId,
@@ -107,28 +123,18 @@ async function deleteProductImage(args: {
     imageReference: args.imagePath ?? null,
     syncEventId: args.syncEventId,
     reason: "product_delete",
-    status: "pending",
+    status: "soft_deleted",
     userId: args.userId,
+    purgeAfterAt,
   });
 
-  const { error: removeError } = await args.admin.storage
-    .from(args.bucket)
-    .remove([objectPath]);
-
-  if (removeError) {
-    await setDeletionStatus(args.admin, args.storeId, args.bucket, objectPath, {
-      status: "failed",
-      last_error: removeError.message,
-    });
-    throw removeError;
-  }
-
-  await setDeletionStatus(args.admin, args.storeId, args.bucket, objectPath, {
-    status: "completed",
-    completed_at: new Date().toISOString(),
-    last_error: null,
-  });
-  return { deleted: 1, objectPath };
+  return {
+    deleted: 0,
+    softDeleted: 1,
+    status: "soft_deleted",
+    objectPath,
+    purgeAfterAt: purgeAfterAt.toISOString(),
+  };
 }
 
 async function cleanupUnusedImages(args: {
@@ -154,8 +160,6 @@ async function cleanupUnusedImages(args: {
     .map((name: string) => `${folder}/${name}`)
     .filter((path: string) => !referenced.has(path));
 
-  if (stalePaths.length === 0) return { deleted: 0 };
-
   for (const path of stalePaths) {
     await upsertDeletion(args.admin, {
       storeId: args.storeId,
@@ -165,25 +169,15 @@ async function cleanupUnusedImages(args: {
       imageReference: `${cloudImagePrefix}${args.bucket}/${path}`,
       syncEventId: "",
       reason: "cleanup_unused",
-      status: "pending",
+      status: "soft_deleted",
       userId: args.userId,
+      purgeAfterAt: purgeAfterDate(),
     });
   }
 
-  const { error: removeError } = await args.admin.storage
-    .from(args.bucket)
-    .remove(stalePaths);
-  if (removeError) throw removeError;
+  const purged = await purgeExpiredImageDeletions(args);
 
-  for (const path of stalePaths) {
-    await setDeletionStatus(args.admin, args.storeId, args.bucket, path, {
-      status: "completed",
-      completed_at: new Date().toISOString(),
-      last_error: null,
-    });
-  }
-
-  return { deleted: stalePaths.length };
+  return { softDeleted: stalePaths.length, purged };
 }
 
 async function referencedProductImagePaths(
@@ -202,7 +196,10 @@ async function referencedProductImagePaths(
   for (const row of data ?? []) {
     const imageUrl = imageReferenceFromRow(row);
     const parsed = parseStorageReference(imageUrl);
-    if (parsed && parsed.bucket === bucket && belongsToStore(storeId, parsed.objectPath)) {
+    if (
+      parsed && parsed.bucket === bucket &&
+      belongsToStore(storeId, parsed.objectPath)
+    ) {
       paths.add(parsed.objectPath);
     }
   }
@@ -246,10 +243,12 @@ async function upsertDeletion(
     imageReference: string | null;
     syncEventId: string;
     reason: string;
-    status: "pending" | "completed" | "failed";
+    status: "pending" | "soft_deleted" | "completed" | "failed";
     userId: string;
+    purgeAfterAt?: Date;
   },
 ) {
+  const now = new Date().toISOString();
   const { error } = await admin.from("product_image_deletions").upsert(
     {
       store_id: row.storeId,
@@ -261,12 +260,65 @@ async function upsertDeletion(
       reason: row.reason,
       status: row.status,
       requested_by: row.userId,
-      requested_at: new Date().toISOString(),
+      requested_at: now,
+      purge_after_at: row.purgeAfterAt?.toISOString() ?? null,
+      completed_at: row.status === "completed" ? now : null,
       last_error: null,
     },
     { onConflict: "store_id,bucket_id,object_path" },
   );
   if (error) throw error;
+}
+
+async function purgeExpiredImageDeletions(args: {
+  admin: AdminClient;
+  storeId: string;
+  bucket: string;
+}) {
+  const { data, error } = await args.admin
+    .from("product_image_deletions")
+    .select("object_path")
+    .eq("store_id", args.storeId)
+    .eq("bucket_id", args.bucket)
+    .eq("status", "soft_deleted")
+    .lte("purge_after_at", new Date().toISOString())
+    .limit(1000);
+  if (error) throw error;
+
+  const paths = ((data ?? []) as Array<{ object_path?: string }>)
+    .map((row) => sanitizeText(row.object_path, 2000))
+    .filter((path) => path && belongsToStore(args.storeId, path));
+  if (paths.length === 0) return 0;
+
+  const { error: removeError } = await args.admin.storage
+    .from(args.bucket)
+    .remove(paths);
+
+  if (removeError) {
+    for (const path of paths) {
+      await setDeletionStatus(args.admin, args.storeId, args.bucket, path, {
+        status: "failed",
+        last_error: removeError.message,
+      });
+    }
+    throw removeError;
+  }
+
+  for (const path of paths) {
+    await setDeletionStatus(args.admin, args.storeId, args.bucket, path, {
+      status: "completed",
+      completed_at: new Date().toISOString(),
+      last_error: null,
+    });
+  }
+
+  return paths.length;
+}
+
+function purgeAfterDate() {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + imageRetentionDays);
+  return date;
 }
 
 async function setDeletionStatus(
@@ -293,7 +345,9 @@ function objectPathForProductImage(
 ) {
   const parsed = parseStorageReference(imagePath);
   if (parsed) {
-    if (parsed.bucket !== bucket) throw new Error("Image bucket does not match");
+    if (parsed.bucket !== bucket) {
+      throw new Error("Image bucket does not match");
+    }
     if (!belongsToStore(storeId, parsed.objectPath)) {
       throw new Error("Image path does not belong to this store");
     }
@@ -331,7 +385,9 @@ async function authenticatedUser(
   if (!token) throw new AuthError("Missing authorization token", 401);
 
   const { data, error } = await admin.auth.getUser(token);
-  if (error || !data.user) throw new AuthError("Invalid authorization token", 401);
+  if (error || !data.user) {
+    throw new AuthError("Invalid authorization token", 401);
+  }
   return { token, userId: data.user.id };
 }
 
@@ -370,7 +426,9 @@ async function assertActiveStoreDevice(
   const invite = Array.isArray(data?.store_invites)
     ? data.store_invites[0]
     : data?.store_invites;
-  if (!data || !invite || (invite.status !== "active" && invite.status !== "used")) {
+  if (
+    !data || !invite || (invite.status !== "active" && invite.status !== "used")
+  ) {
     throw new AuthError("An active POS device is required", 403);
   }
   if (
@@ -384,7 +442,7 @@ async function assertActiveStoreDevice(
 function sanitizeUuid(value: unknown) {
   const text = sanitizeText(value, 80);
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-    .test(text)
+      .test(text)
     ? text
     : "";
 }
@@ -409,7 +467,9 @@ function jwtSessionId(token: string) {
     const payload = token.split(".")[1];
     if (!payload) return "";
     const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const decoded = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="))) as Record<string, unknown>;
+    const decoded = JSON.parse(
+      atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")),
+    ) as Record<string, unknown>;
     return sanitizeUuid(decoded.session_id);
   } catch (_) {
     return "";

@@ -989,8 +989,8 @@ class _SalesPageState extends State<SalesPage> {
 
               if (hasDiscount)
                 Positioned(
-                  top: 7,
-                  left: 7,
+                  bottom: 7,
+                  right: 7,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 6,
