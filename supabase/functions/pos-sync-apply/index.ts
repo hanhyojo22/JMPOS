@@ -21,6 +21,7 @@ type SyncBody = {
   queueKey?: string;
   tableName?: string;
   localId?: string;
+  cloudId?: string;
   operation?: string;
   payload?: Record<string, unknown>;
   mirrorRow?: Record<string, unknown>;
@@ -43,10 +44,14 @@ Deno.serve(async (req: Request) => {
     const queueKey = text(body.queueKey, 240);
     const tableName = text(body.tableName, 40);
     const localId = text(body.localId, 120);
+    const cloudId = text(body.cloudId, 120);
     const operation = body.operation === "delete" ? "delete" : "upsert";
     const baseRevision = nonNegativeInt(body.baseRevision);
     const forceDelete = operation === "delete" && body.forceDelete === true;
-    if (!storeId || !queueKey || !allowedTables.has(tableName) || !localId) {
+    if (
+      !storeId || !queueKey || !allowedTables.has(tableName) ||
+      (!cloudId && !localId)
+    ) {
       return json({ error: "Valid sync event fields are required" }, 400);
     }
 
@@ -81,12 +86,18 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { data: current, error: currentError } = await admin
-      .from(tableName)
-      .select("revision, deleted_at")
-      .eq("store_id", storeId)
-      .eq("local_id", localId)
-      .maybeSingle();
+    const currentResult = await currentMirrorRow(
+      admin,
+      tableName,
+      storeId,
+      cloudId,
+      localId,
+      baseRevision,
+    );
+    const current = currentResult.row;
+    const matchColumn = currentResult.matchColumn;
+    const matchValue = currentResult.matchValue;
+    const { error: currentError } = currentResult;
     if (currentError) throw currentError;
 
     const currentRevision = Number(current?.revision ?? 0);
@@ -100,6 +111,7 @@ Deno.serve(async (req: Request) => {
         storeId,
         deviceId: device.id,
         tableName,
+        cloudId,
         localId,
         operation,
         baseRevision,
@@ -122,7 +134,7 @@ Deno.serve(async (req: Request) => {
             cloud_updated_at: now,
           })
           .eq("store_id", storeId)
-          .eq("local_id", localId)
+          .eq(matchColumn, matchValue)
           .eq("revision", currentRevision)
           .select("revision")
           .maybeSingle();
@@ -132,6 +144,7 @@ Deno.serve(async (req: Request) => {
             storeId,
             deviceId: device.id,
             tableName,
+            cloudId,
             localId,
             operation,
             baseRevision,
@@ -139,7 +152,8 @@ Deno.serve(async (req: Request) => {
               admin,
               tableName,
               storeId,
-              localId,
+              matchColumn,
+              matchValue,
             ),
           });
         }
@@ -150,6 +164,7 @@ Deno.serve(async (req: Request) => {
         ...mirrorRow,
         store_id: storeId,
         local_id: localId,
+        cloud_id: cloudId || mirrorRow.cloud_id,
         revision: appliedRevision,
         deleted_at: null,
         deleted_by_device_id: null,
@@ -162,7 +177,7 @@ Deno.serve(async (req: Request) => {
           .from(tableName)
           .update(nextRow)
           .eq("store_id", storeId)
-          .eq("local_id", localId)
+          .eq(matchColumn, matchValue)
           .eq("revision", currentRevision)
           .select("revision")
           .maybeSingle();
@@ -172,6 +187,7 @@ Deno.serve(async (req: Request) => {
             storeId,
             deviceId: device.id,
             tableName,
+            cloudId,
             localId,
             operation,
             baseRevision,
@@ -179,7 +195,8 @@ Deno.serve(async (req: Request) => {
               admin,
               tableName,
               storeId,
-              localId,
+              matchColumn,
+              matchValue,
             ),
           });
         }
@@ -190,6 +207,7 @@ Deno.serve(async (req: Request) => {
             storeId,
             deviceId: device.id,
             tableName,
+            cloudId,
             localId,
             operation,
             baseRevision,
@@ -197,7 +215,8 @@ Deno.serve(async (req: Request) => {
               admin,
               tableName,
               storeId,
-              localId,
+              cloudId ? "cloud_id" : "local_id",
+              cloudId || localId,
             ),
           });
         }
@@ -211,6 +230,7 @@ Deno.serve(async (req: Request) => {
       device_id: device.id,
       local_queue_id: body.localQueueId ?? null,
       table_name: tableName,
+      cloud_id: cloudId || null,
       local_id: localId,
       operation,
       payload: JSON.stringify(body.payload ?? {}),
@@ -240,16 +260,64 @@ async function cloudRevision(
   admin: AdminClient,
   tableName: string,
   storeId: string,
-  localId: string,
+  matchColumn: string,
+  matchValue: string,
 ) {
   const { data, error } = await admin
     .from(tableName)
     .select("revision")
     .eq("store_id", storeId)
-    .eq("local_id", localId)
+    .eq(matchColumn, matchValue)
     .maybeSingle();
   if (error) throw error;
   return Number(data?.revision ?? 0);
+}
+
+async function currentMirrorRow(
+  admin: AdminClient,
+  tableName: string,
+  storeId: string,
+  cloudId: string,
+  localId: string,
+  baseRevision: number,
+) {
+  if (cloudId) {
+    const byCloud = await admin
+      .from(tableName)
+      .select("revision, deleted_at, cloud_id, local_id")
+      .eq("store_id", storeId)
+      .eq("cloud_id", cloudId)
+      .maybeSingle();
+    if (byCloud.error) {
+      return {
+        ...byCloud,
+        row: null,
+        matchColumn: "cloud_id",
+        matchValue: cloudId,
+      };
+    }
+    if (byCloud.data || baseRevision === 0 || !localId) {
+      return {
+        ...byCloud,
+        row: byCloud.data,
+        matchColumn: "cloud_id",
+        matchValue: cloudId,
+      };
+    }
+  }
+
+  const byLocal = await admin
+    .from(tableName)
+    .select("revision, deleted_at, cloud_id, local_id")
+    .eq("store_id", storeId)
+    .eq("local_id", localId)
+    .maybeSingle();
+  return {
+    ...byLocal,
+    row: byLocal.data,
+    matchColumn: "local_id",
+    matchValue: localId,
+  };
 }
 
 async function conflictResponse(
@@ -258,6 +326,7 @@ async function conflictResponse(
     storeId: string;
     deviceId: string;
     tableName: string;
+    cloudId: string;
     localId: string;
     operation: string;
     baseRevision: number;
@@ -268,6 +337,7 @@ async function conflictResponse(
     store_id: conflict.storeId,
     device_id: conflict.deviceId,
     table_name: conflict.tableName,
+    cloud_id: conflict.cloudId || null,
     local_id: conflict.localId,
     operation: conflict.operation,
     base_revision: conflict.baseRevision,

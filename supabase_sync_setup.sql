@@ -8,6 +8,7 @@ create table if not exists public.pos_sync_events (
   store_id uuid not null references public.stores(id) on delete cascade,
   local_queue_id bigint,
   table_name text not null,
+  cloud_id text,
   local_id text not null,
   operation text not null,
   payload text not null,
@@ -21,6 +22,7 @@ add column if not exists store_id uuid references public.stores(id) on delete ca
 
 alter table public.products
 add column if not exists store_id uuid references public.stores(id) on delete cascade,
+add column if not exists cloud_id text,
 add column if not exists local_id text unique,
 add column if not exists source_table text not null default 'products',
 add column if not exists sync_event_id text,
@@ -60,8 +62,11 @@ drop index if exists public.products_barcode_unique_idx;
 
 alter table public.sales
 add column if not exists store_id uuid references public.stores(id) on delete cascade,
+add column if not exists cloud_id text,
 add column if not exists local_id text unique,
 add column if not exists local_product_id text,
+add column if not exists product_cloud_id text,
+add column if not exists shift_cloud_id text,
 add column if not exists local_voided_by text,
 add column if not exists receipt_number text,
 add column if not exists cost_price numeric,
@@ -81,6 +86,7 @@ add column if not exists cloud_updated_at timestamptz not null default now();
 
 alter table public.users
 add column if not exists store_id uuid references public.stores(id) on delete cascade,
+add column if not exists cloud_id text,
 add column if not exists local_id text unique,
 add column if not exists local_role text,
 add column if not exists source_table text not null default 'users',
@@ -92,6 +98,7 @@ add column if not exists cloud_updated_at timestamptz not null default now();
 
 alter table public.audit_logs
 add column if not exists store_id uuid references public.stores(id) on delete cascade,
+add column if not exists cloud_id text,
 add column if not exists local_id text unique,
 add column if not exists local_user text,
 add column if not exists source_table text not null default 'audit_logs',
@@ -104,6 +111,7 @@ add column if not exists cloud_updated_at timestamptz not null default now();
 -- Required by pos-sync-apply for revision-safe sync and soft-delete restores.
 alter table public.pos_sync_events
 add column if not exists device_id uuid references public.store_devices(id) on delete set null,
+add column if not exists cloud_id text,
 add column if not exists base_revision bigint not null default 0,
 add column if not exists applied_revision bigint;
 
@@ -131,6 +139,7 @@ add column if not exists deleted_by_device_id uuid references public.store_devic
 create table if not exists public.shifts (
   id uuid primary key default gen_random_uuid(),
   store_id uuid not null references public.stores(id) on delete cascade,
+  cloud_id text,
   local_id text not null,
   status text not null default 'open',
   opened_by text not null,
@@ -156,8 +165,10 @@ create table if not exists public.shifts (
 create table if not exists public.shift_readings (
   id uuid primary key default gen_random_uuid(),
   store_id uuid not null references public.stores(id) on delete cascade,
+  cloud_id text,
   local_id text not null,
   shift_id bigint not null,
+  shift_cloud_id text,
   type text not null,
   created_by text not null,
   created_at timestamptz not null,
@@ -180,17 +191,83 @@ create table if not exists public.shift_readings (
   deleted_by_device_id uuid references public.store_devices(id) on delete set null
 );
 
+alter table public.shifts
+add column if not exists cloud_id text,
+add column if not exists revision bigint not null default 0,
+add column if not exists deleted_at timestamptz,
+add column if not exists deleted_by_device_id uuid references public.store_devices(id) on delete set null;
+
+alter table public.shift_readings
+add column if not exists cloud_id text,
+add column if not exists shift_cloud_id text,
+add column if not exists revision bigint not null default 0,
+add column if not exists deleted_at timestamptz,
+add column if not exists deleted_by_device_id uuid references public.store_devices(id) on delete set null;
+
+update public.products
+set cloud_id = gen_random_uuid()::text
+where cloud_id is null or trim(cloud_id) = '';
+
+update public.sales
+set cloud_id = gen_random_uuid()::text
+where cloud_id is null or trim(cloud_id) = '';
+
+update public.users
+set cloud_id = gen_random_uuid()::text
+where cloud_id is null or trim(cloud_id) = '';
+
+update public.audit_logs
+set cloud_id = gen_random_uuid()::text
+where cloud_id is null or trim(cloud_id) = '';
+
+update public.shifts
+set cloud_id = gen_random_uuid()::text
+where cloud_id is null or trim(cloud_id) = '';
+
+update public.shift_readings
+set cloud_id = gen_random_uuid()::text
+where cloud_id is null or trim(cloud_id) = '';
+
+update public.sales s
+set product_cloud_id = p.cloud_id
+from public.products p
+where s.store_id = p.store_id
+  and s.local_product_id = p.local_id
+  and p.cloud_id is not null
+  and (s.product_cloud_id is null or trim(s.product_cloud_id) = '');
+
+update public.sales s
+set shift_cloud_id = sh.cloud_id
+from public.shifts sh
+where s.store_id = sh.store_id
+  and s.shift_id is not null
+  and s.shift_id::text = sh.local_id
+  and sh.cloud_id is not null
+  and (s.shift_cloud_id is null or trim(s.shift_cloud_id) = '');
+
+update public.shift_readings sr
+set shift_cloud_id = sh.cloud_id
+from public.shifts sh
+where sr.store_id = sh.store_id
+  and sr.shift_id::text = sh.local_id
+  and sh.cloud_id is not null
+  and (sr.shift_cloud_id is null or trim(sr.shift_cloud_id) = '');
+
 create table if not exists public.pos_sync_conflicts (
   id uuid primary key default gen_random_uuid(),
   store_id uuid not null references public.stores(id) on delete cascade,
   device_id uuid references public.store_devices(id) on delete set null,
   table_name text not null,
+  cloud_id text,
   local_id text not null,
   operation text not null,
   base_revision bigint not null,
   cloud_revision bigint not null,
   created_at timestamptz not null default now()
 );
+
+alter table public.pos_sync_conflicts
+add column if not exists cloud_id text;
 
 do $$
 declare
@@ -285,8 +362,19 @@ alter table public.audit_logs drop constraint if exists audit_logs_local_id_key;
 alter table public.shifts drop constraint if exists shifts_local_id_key;
 alter table public.shift_readings drop constraint if exists shift_readings_local_id_key;
 
-create unique index if not exists products_store_local_id_unique_idx
+drop index if exists public.products_store_local_id_unique_idx;
+drop index if exists public.sales_store_local_id_unique_idx;
+drop index if exists public.users_store_local_id_unique_idx;
+drop index if exists public.audit_logs_store_local_id_unique_idx;
+drop index if exists public.shifts_store_local_id_unique_idx;
+drop index if exists public.shift_readings_store_local_id_unique_idx;
+
+create index if not exists products_store_local_id_idx
 on public.products (store_id, local_id);
+
+create unique index if not exists products_store_cloud_id_unique_idx
+on public.products (store_id, cloud_id)
+where cloud_id is not null;
 
 create unique index if not exists product_image_deletions_unique_idx
 on public.product_image_deletions (store_id, bucket_id, object_path);
@@ -298,20 +386,40 @@ create index if not exists product_image_deletions_purge_idx
 on public.product_image_deletions (store_id, status, purge_after_at)
 where status = 'soft_deleted';
 
-create unique index if not exists sales_store_local_id_unique_idx
+create index if not exists sales_store_local_id_idx
 on public.sales (store_id, local_id);
 
-create unique index if not exists users_store_local_id_unique_idx
+create unique index if not exists sales_store_cloud_id_unique_idx
+on public.sales (store_id, cloud_id)
+where cloud_id is not null;
+
+create index if not exists users_store_local_id_idx
 on public.users (store_id, local_id);
 
-create unique index if not exists audit_logs_store_local_id_unique_idx
+create unique index if not exists users_store_cloud_id_unique_idx
+on public.users (store_id, cloud_id)
+where cloud_id is not null;
+
+create index if not exists audit_logs_store_local_id_idx
 on public.audit_logs (store_id, local_id);
 
-create unique index if not exists shifts_store_local_id_unique_idx
+create unique index if not exists audit_logs_store_cloud_id_unique_idx
+on public.audit_logs (store_id, cloud_id)
+where cloud_id is not null;
+
+create index if not exists shifts_store_local_id_idx
 on public.shifts (store_id, local_id);
 
-create unique index if not exists shift_readings_store_local_id_unique_idx
+create unique index if not exists shifts_store_cloud_id_unique_idx
+on public.shifts (store_id, cloud_id)
+where cloud_id is not null;
+
+create index if not exists shift_readings_store_local_id_idx
 on public.shift_readings (store_id, local_id);
+
+create unique index if not exists shift_readings_store_cloud_id_unique_idx
+on public.shift_readings (store_id, cloud_id)
+where cloud_id is not null;
 
 create index if not exists products_store_deleted_idx
 on public.products (store_id, deleted_at);

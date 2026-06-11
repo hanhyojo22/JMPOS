@@ -14,6 +14,7 @@ class SupabaseSyncService {
   static const cloudImagePrefix = 'supabase-storage://';
   static const _imageDeleteFunction = 'pos-image-delete';
   static const _syncApplyFunction = 'pos-sync-apply';
+  static const _factoryResetFunction = 'pos-factory-reset';
 
   Future<List<SyncUploadResult>> uploadEvents(
     List<Map<String, Object?>> events,
@@ -49,7 +50,7 @@ class SupabaseSyncService {
           .from(table)
           .select()
           .eq('store_id', storeId)
-          .order('local_id', ascending: true);
+          .order('cloud_id', ascending: true);
       snapshot[table] = rows
           .map((row) => Map<String, dynamic>.from(row as Map))
           .where((row) => !_isSoftDeletedSnapshotRow(table, row))
@@ -57,6 +58,37 @@ class SupabaseSyncService {
     }
 
     return snapshot;
+  }
+
+  Future<FactoryResetCloudResult> factoryResetCloudBusinessData() async {
+    final client = await _authenticatedClient();
+    final storeId = await _activeStoreId();
+    final accessToken = client.auth.currentSession?.accessToken;
+    if (accessToken == null || accessToken.isEmpty) {
+      throw Exception('Cloud sync is not connected.');
+    }
+
+    final response = await http.post(
+      _functionUrl(_factoryResetFunction),
+      headers: {
+        'apikey': EnvConfig.supabaseAnonKey,
+        'Authorization': 'Bearer $accessToken',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'storeId': storeId, 'bucket': _storageBucket}),
+    );
+
+    final body = _decodePayload(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final result = body is Map ? body : const <String, Object?>{};
+      return FactoryResetCloudResult.fromJson(result);
+    }
+    if (response.statusCode == 404) {
+      throw const FactoryResetFunctionUnavailable();
+    }
+
+    final message = _errorMessageFromBody(body, response.body);
+    throw Exception('Factory reset function failed: $message');
   }
 
   bool _isSoftDeletedSnapshotRow(String table, Map<String, dynamic> row) {
@@ -177,6 +209,7 @@ class SupabaseSyncService {
     }
     final queueKey = event['queue_key']?.toString() ?? '';
     final payload = _decodePayload(event['payload']?.toString() ?? '{}');
+    final cloudId = payload is Map ? payload['cloud_id']?.toString() : null;
     final response = await http.post(
       _functionUrl(_syncApplyFunction),
       headers: {
@@ -190,6 +223,7 @@ class SupabaseSyncService {
         'localQueueId': event['id'],
         'tableName': event['table_name']?.toString(),
         'localId': event['local_id']?.toString(),
+        'cloudId': cloudId,
         'operation': event['operation']?.toString(),
         'payload': payload is Map ? payload : <String, Object?>{},
         'mirrorRow': mirrorRow,
@@ -525,6 +559,53 @@ class _CloudImageReference {
 
   final String bucket;
   final String objectPath;
+}
+
+class FactoryResetFunctionUnavailable implements Exception {
+  const FactoryResetFunctionUnavailable();
+
+  @override
+  String toString() =>
+      'Factory reset function "pos-factory-reset" is not deployed.';
+}
+
+class FactoryResetCloudResult {
+  const FactoryResetCloudResult({
+    required this.tableCounts,
+    required this.softDeletedImages,
+    required this.purgedImages,
+    required this.conflictsCleared,
+  });
+
+  factory FactoryResetCloudResult.fromJson(Map<Object?, Object?> json) {
+    final tableCounts = <String, int>{};
+    final rawCounts = json['tableCounts'];
+    if (rawCounts is Map) {
+      for (final entry in rawCounts.entries) {
+        tableCounts[entry.key.toString()] =
+            int.tryParse(entry.value?.toString() ?? '') ?? 0;
+      }
+    }
+
+    final rawImages = json['images'];
+    final images = rawImages is Map ? rawImages : const <Object?, Object?>{};
+    return FactoryResetCloudResult(
+      tableCounts: tableCounts,
+      softDeletedImages:
+          int.tryParse(images['softDeleted']?.toString() ?? '') ?? 0,
+      purgedImages: int.tryParse(images['purged']?.toString() ?? '') ?? 0,
+      conflictsCleared:
+          int.tryParse(json['conflictsCleared']?.toString() ?? '') ?? 0,
+    );
+  }
+
+  final Map<String, int> tableCounts;
+  final int softDeletedImages;
+  final int purgedImages;
+  final int conflictsCleared;
+
+  int get rowsSoftDeleted =>
+      tableCounts.values.fold<int>(0, (sum, count) => sum + count);
 }
 
 class SyncUploadResult {

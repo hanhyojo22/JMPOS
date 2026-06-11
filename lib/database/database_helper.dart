@@ -39,7 +39,7 @@ class DatabaseHelper {
   static Database? _database;
   static bool _syncInProgress = false;
   static bool _cloudRestoreInProgress = false;
-  static const int _dbVersion = 13;
+  static const int _dbVersion = 14;
   static const saleCompletionGracePeriod = Duration(seconds: 10);
   static const String _dbPasswordKey = 'pos_sqlcipher_database_key';
   static const int _productImageSize = 300;
@@ -416,6 +416,7 @@ class DatabaseHelper {
         await _createShiftsTable(db);
         await _createShiftReadingsTable(db);
         await _createSyncQueueTable(db);
+        await _ensureCloudIdentitySchema(db);
         await _createIndexes(db);
       },
     );
@@ -504,6 +505,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cloud_id TEXT,
         barcode TEXT NOT NULL,
         product_name TEXT NOT NULL,
         category TEXT,
@@ -525,7 +527,9 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE sales (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cloud_id TEXT,
         product_id INTEGER NOT NULL,
+        product_cloud_id TEXT,
         product_name TEXT NOT NULL,
         quantity INTEGER NOT NULL,
         price REAL NOT NULL,
@@ -546,6 +550,7 @@ class DatabaseHelper {
         receipt_discount_type TEXT,
         receipt_discount_value REAL,
         shift_id INTEGER,
+        shift_cloud_id TEXT,
         created_at TEXT NOT NULL
       )
     ''');
@@ -554,6 +559,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cloud_id TEXT,
         username TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         pin_hash TEXT,
@@ -617,12 +623,16 @@ class DatabaseHelper {
       await _ensureProductSchema(db);
       await _ensureSalesSchema(db);
     }
+    if (oldVersion < 14) {
+      await _ensureCloudIdentitySchema(db);
+    }
   }
 
   Future<void> _createAuditLogTable(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS audit_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cloud_id TEXT,
         user TEXT NOT NULL,
         action TEXT NOT NULL,
         details TEXT,
@@ -638,6 +648,7 @@ class DatabaseHelper {
         queue_key TEXT NOT NULL UNIQUE,
         table_name TEXT NOT NULL,
         local_id TEXT NOT NULL,
+        cloud_id TEXT,
         operation TEXT NOT NULL,
         payload TEXT NOT NULL,
         base_revision INTEGER NOT NULL DEFAULT 0,
@@ -673,6 +684,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS shifts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cloud_id TEXT,
         status TEXT NOT NULL DEFAULT 'open',
         opened_by TEXT NOT NULL,
         opened_at TEXT NOT NULL,
@@ -691,7 +703,9 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS shift_readings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cloud_id TEXT,
         shift_id INTEGER NOT NULL,
+        shift_cloud_id TEXT,
         type TEXT NOT NULL,
         created_by TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -761,6 +775,144 @@ class DatabaseHelper {
         'ALTER TABLE sync_queue ADD COLUMN conflict_details TEXT',
       );
     }
+    if (!columnNames.contains('cloud_id')) {
+      await db.execute('ALTER TABLE sync_queue ADD COLUMN cloud_id TEXT');
+    }
+  }
+
+  Future<void> _ensureCloudIdentitySchema(Database db) async {
+    await _ensureProductSchema(db);
+    await _ensureSalesSchema(db);
+    await _createShiftsTable(db);
+    await _createShiftReadingsTable(db);
+    await _createAuditLogTable(db);
+    await _createSyncQueueTable(db);
+
+    await _ensureTableColumn(db, 'products', 'cloud_id', 'TEXT');
+    await _ensureTableColumn(db, 'sales', 'cloud_id', 'TEXT');
+    await _ensureTableColumn(db, 'sales', 'product_cloud_id', 'TEXT');
+    await _ensureTableColumn(db, 'sales', 'shift_cloud_id', 'TEXT');
+    await _ensureTableColumn(db, 'users', 'cloud_id', 'TEXT');
+    await _ensureTableColumn(db, 'audit_logs', 'cloud_id', 'TEXT');
+    await _ensureTableColumn(db, 'shifts', 'cloud_id', 'TEXT');
+    await _ensureTableColumn(db, 'shift_readings', 'cloud_id', 'TEXT');
+    await _ensureTableColumn(db, 'shift_readings', 'shift_cloud_id', 'TEXT');
+
+    await _backfillCloudIds(db, 'products');
+    await _backfillCloudIds(db, 'sales');
+    await _backfillCloudIds(db, 'users');
+    await _backfillCloudIds(db, 'audit_logs');
+    await _backfillCloudIds(db, 'shifts');
+    await _backfillCloudIds(db, 'shift_readings');
+    await _backfillSalesCloudRelationships(db);
+    await _backfillShiftReadingCloudRelationships(db);
+  }
+
+  Future<void> _ensureTableColumn(
+    DatabaseExecutor db,
+    String tableName,
+    String columnName,
+    String columnType,
+  ) async {
+    final columns = await db.rawQuery('PRAGMA table_info($tableName)');
+    final hasColumn = columns.cast<Map<String, Object?>>().any(
+      (column) => column['name'] == columnName,
+    );
+    if (!hasColumn) {
+      await db.execute(
+        'ALTER TABLE $tableName ADD COLUMN $columnName $columnType',
+      );
+    }
+  }
+
+  Future<void> _backfillCloudIds(DatabaseExecutor db, String tableName) async {
+    final rows = await db.query(
+      tableName,
+      columns: ['id'],
+      where: "cloud_id IS NULL OR TRIM(cloud_id) = ''",
+    );
+    for (final row in rows) {
+      await db.update(
+        tableName,
+        {'cloud_id': _newCloudId()},
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+    }
+  }
+
+  Future<void> _backfillSalesCloudRelationships(DatabaseExecutor db) async {
+    final rows = await db.query(
+      'sales',
+      columns: ['id', 'product_id', 'shift_id'],
+    );
+    for (final row in rows) {
+      final productId = (row['product_id'] as num?)?.toInt();
+      final shiftId = (row['shift_id'] as num?)?.toInt();
+      final values = <String, Object?>{};
+      final productCloudId = await _cloudIdForLocalRow(
+        db,
+        'products',
+        productId,
+      );
+      if (productCloudId != null) values['product_cloud_id'] = productCloudId;
+      final shiftCloudId = await _cloudIdForLocalRow(db, 'shifts', shiftId);
+      if (shiftCloudId != null) values['shift_cloud_id'] = shiftCloudId;
+      if (values.isNotEmpty) {
+        await db.update(
+          'sales',
+          values,
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+      }
+    }
+  }
+
+  Future<void> _backfillShiftReadingCloudRelationships(
+    DatabaseExecutor db,
+  ) async {
+    final rows = await db.query('shift_readings', columns: ['id', 'shift_id']);
+    for (final row in rows) {
+      final shiftId = (row['shift_id'] as num?)?.toInt();
+      final shiftCloudId = await _cloudIdForLocalRow(db, 'shifts', shiftId);
+      if (shiftCloudId == null) continue;
+      await db.update(
+        'shift_readings',
+        {'shift_cloud_id': shiftCloudId},
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+    }
+  }
+
+  Future<String?> _cloudIdForLocalRow(
+    DatabaseExecutor db,
+    String tableName,
+    int? localId,
+  ) async {
+    if (localId == null) return null;
+    final rows = await db.query(
+      tableName,
+      columns: ['cloud_id'],
+      where: 'id = ?',
+      whereArgs: [localId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final cloudId = rows.first['cloud_id']?.toString().trim() ?? '';
+    return cloudId.isEmpty ? null : cloudId;
+  }
+
+  String _newCloudId() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
   Future<void> _createIndexes(Database db) async {
@@ -1288,12 +1440,13 @@ class DatabaseHelper {
 
     final db = executor ?? await database;
     await _createSyncQueueTable(db);
+    final payload = await _rowWithCloudSyncIdentity(db, tableName, row);
     await _queueSyncEvent(
       db,
       tableName: tableName,
       localId: localId,
       operation: 'upsert',
-      payload: row,
+      payload: payload,
     );
   }
 
@@ -1306,9 +1459,15 @@ class DatabaseHelper {
   }) async {
     final db = executor ?? await database;
     await _createSyncQueueTable(db);
+    final rowWithIdentity = await _rowWithCloudSyncIdentity(
+      db,
+      tableName,
+      oldRow,
+      persist: false,
+    );
     final payload = forceCloudDelete
-        ? <String, Object?>{...oldRow, '_force_cloud_delete': true}
-        : oldRow;
+        ? <String, Object?>{...rowWithIdentity, '_force_cloud_delete': true}
+        : rowWithIdentity;
     await _queueSyncEvent(
       db,
       tableName: tableName,
@@ -1326,7 +1485,13 @@ class DatabaseHelper {
     required Map<String, Object?> payload,
   }) async {
     final now = DateTime.now().toIso8601String();
-    final queueKey = '$tableName:$localId';
+    final cloudId = payload['cloud_id']?.toString().trim() ?? '';
+    if (cloudId.isEmpty) {
+      throw Exception(
+        'Cloud sync paused. Missing cloud_id for $tableName $localId, so local data was kept safe. Reopen the app to finish migration, then try again.',
+      );
+    }
+    final queueKey = '$tableName:$cloudId';
     final existing = await db.query(
       'sync_queue',
       columns: ['cloud_revision', 'created_at'],
@@ -1340,6 +1505,7 @@ class DatabaseHelper {
     final values = {
       'table_name': tableName,
       'local_id': localId,
+      'cloud_id': cloudId,
       'operation': operation,
       'payload': jsonEncode(payload),
       'base_revision': cloudRevision,
@@ -1370,6 +1536,68 @@ class DatabaseHelper {
     );
   }
 
+  Future<Map<String, Object?>> _rowWithCloudSyncIdentity(
+    DatabaseExecutor db,
+    String tableName,
+    Map<String, Object?> row, {
+    bool persist = true,
+  }) async {
+    final localId = (row['id'] as num?)?.toInt();
+    final enriched = <String, Object?>{...row};
+    var cloudId = enriched['cloud_id']?.toString().trim() ?? '';
+    if (cloudId.isEmpty) {
+      cloudId = _newCloudId();
+      enriched['cloud_id'] = cloudId;
+      if (persist && localId != null) {
+        await db.update(
+          tableName,
+          {'cloud_id': cloudId},
+          where: 'id = ?',
+          whereArgs: [localId],
+        );
+      }
+    }
+
+    if (tableName == 'sales') {
+      final productId = (enriched['product_id'] as num?)?.toInt();
+      final shiftId = (enriched['shift_id'] as num?)?.toInt();
+      final values = <String, Object?>{};
+      final productCloudId = await _cloudIdForLocalRow(
+        db,
+        'products',
+        productId,
+      );
+      if (productCloudId != null) {
+        enriched['product_cloud_id'] = productCloudId;
+        values['product_cloud_id'] = productCloudId;
+      }
+      final shiftCloudId = await _cloudIdForLocalRow(db, 'shifts', shiftId);
+      if (shiftCloudId != null) {
+        enriched['shift_cloud_id'] = shiftCloudId;
+        values['shift_cloud_id'] = shiftCloudId;
+      }
+      if (persist && values.isNotEmpty && localId != null) {
+        await db.update('sales', values, where: 'id = ?', whereArgs: [localId]);
+      }
+    } else if (tableName == 'shift_readings') {
+      final shiftId = (enriched['shift_id'] as num?)?.toInt();
+      final shiftCloudId = await _cloudIdForLocalRow(db, 'shifts', shiftId);
+      if (shiftCloudId != null) {
+        enriched['shift_cloud_id'] = shiftCloudId;
+        if (persist && localId != null) {
+          await db.update(
+            'shift_readings',
+            {'shift_cloud_id': shiftCloudId},
+            where: 'id = ?',
+            whereArgs: [localId],
+          );
+        }
+      }
+    }
+
+    return enriched;
+  }
+
   Future<int> syncPendingChanges({
     int limit = 100,
     int maxBatches = 100,
@@ -1393,13 +1621,13 @@ class DatabaseHelper {
         final pending = await db.query(
           'sync_queue',
           where: forceRetry
-              ? 'status IN (?, ?)'
+              ? 'status IN (?, ?, ?)'
               : '''
             status IN (?, ?)
             AND (next_retry_at IS NULL OR next_retry_at = '' OR next_retry_at <= ?)
           ''',
           whereArgs: forceRetry
-              ? ['pending', 'failed']
+              ? ['pending', 'failed', 'conflict']
               : ['pending', 'failed', now],
           orderBy: 'updated_at ASC',
           limit: limit,
@@ -1412,9 +1640,11 @@ class DatabaseHelper {
           'Uploading batch ${batch + 1} (${pending.length} rows)',
         );
         try {
-          for (final row in pending.cast<Map<String, Object?>>()) {
-            final results = await service.uploadEvents([row]);
-            final result = results.single;
+          final pendingRows = pending.cast<Map<String, Object?>>();
+          final results = await service.uploadEvents(pendingRows);
+          for (var index = 0; index < pendingRows.length; index += 1) {
+            final row = pendingRows[index];
+            final result = results[index];
             final syncedAt = DateTime.now().toIso8601String();
             if (result.conflicted) {
               await _markSyncQueueConflict(
@@ -1463,7 +1693,7 @@ class DatabaseHelper {
                 updated_at = ?,
                 next_retry_at = ?
             WHERE id IN (${List.filled(ids.length, '?').join(',')})
-              AND status IN (?, ?)
+              AND status IN (?, ?, ?)
             ''',
             [
               'failed',
@@ -1473,6 +1703,7 @@ class DatabaseHelper {
               ...ids,
               'pending',
               'failed',
+              'conflict',
             ],
           );
           onProgress?.call(
@@ -1613,12 +1844,7 @@ class DatabaseHelper {
 
   Future<void> queueLocalSnapshotForSync() async {
     final db = await database;
-    await _ensureProductSchema(db);
-    await _ensureSalesSchema(db);
-    await _createShiftsTable(db);
-    await _createShiftReadingsTable(db);
-    await _createAuditLogTable(db);
-    await _createSyncQueueTable(db);
+    await _ensureCloudIdentitySchema(db);
 
     final products = await db.query('products');
     for (final row in products) {
@@ -1674,16 +1900,13 @@ class DatabaseHelper {
     void Function(int imported, int total, String status)? onProgress,
   }) async {
     final db = await database;
-    await _ensureProductSchema(db);
-    await _ensureSalesSchema(db);
-    await _createShiftsTable(db);
-    await _createShiftReadingsTable(db);
-    await _createAuditLogTable(db);
-    await _createSyncQueueTable(db);
+    await _ensureCloudIdentitySchema(db);
 
     const service = SupabaseSyncService();
     onProgress?.call(0, 0, 'Downloading cloud data');
-    final snapshot = await service.downloadStoreSnapshot();
+    final snapshot = _prepareCloudSnapshotForRestore(
+      await service.downloadStoreSnapshot(),
+    );
     final imageDirPath = await productImagesDirectoryPath();
     await Directory(imageDirPath).create(recursive: true);
 
@@ -1744,11 +1967,229 @@ class DatabaseHelper {
       );
       onProgress?.call(imported, total, 'Restored audit log');
 
+      await _relinkCloudRestoredRelationships(txn);
       await _markCloudSnapshotSynced(snapshot, executor: txn);
     });
 
     onProgress?.call(imported, total, 'Cloud data restored');
     return imported;
+  }
+
+  Map<String, List<Map<String, dynamic>>> _prepareCloudSnapshotForRestore(
+    Map<String, List<Map<String, dynamic>>> snapshot,
+  ) {
+    final prepared = <String, List<Map<String, dynamic>>>{};
+    for (final entry in snapshot.entries) {
+      prepared[entry.key] = _dedupeCloudRowsByIdentity(entry.value);
+    }
+
+    prepared['users'] = _dedupeCloudRowsByField(
+      prepared['users'] ?? const [],
+      'username',
+    );
+
+    final shifts = prepared['shifts'] ?? const [];
+    final openShifts = shifts
+        .where((row) => _cloudRowString(row, 'status').toLowerCase() == 'open')
+        .toList();
+    if (openShifts.length > 1) {
+      openShifts.sort(_newestCloudRowFirst);
+      final keptOpenShift = openShifts.first;
+      final keptCloudId = _cloudRowString(keptOpenShift, 'cloud_id');
+      final skippedOpenShiftIds = openShifts
+          .skip(1)
+          .map((row) => _cloudRowString(row, 'cloud_id'))
+          .where((cloudId) => cloudId.isNotEmpty)
+          .toSet();
+
+      prepared['shifts'] = shifts
+          .where((row) {
+            final status = _cloudRowString(row, 'status').toLowerCase();
+            if (status != 'open') return true;
+            return _cloudRowString(row, 'cloud_id') == keptCloudId;
+          })
+          .toList(growable: false);
+
+      if (skippedOpenShiftIds.isNotEmpty) {
+        prepared['sales'] = (prepared['sales'] ?? const [])
+            .where((row) {
+              final shiftCloudId = _cloudRowString(row, 'shift_cloud_id');
+              return shiftCloudId.isEmpty ||
+                  !skippedOpenShiftIds.contains(shiftCloudId);
+            })
+            .toList(growable: false);
+
+        prepared['shift_readings'] = (prepared['shift_readings'] ?? const [])
+            .where((row) {
+              final shiftCloudId = _cloudRowString(row, 'shift_cloud_id');
+              return shiftCloudId.isNotEmpty &&
+                  !skippedOpenShiftIds.contains(shiftCloudId);
+            })
+            .toList(growable: false);
+      }
+    }
+
+    prepared['shift_readings'] = (prepared['shift_readings'] ?? const [])
+        .where((row) {
+          return _cloudRowString(row, 'shift_cloud_id').isNotEmpty;
+        })
+        .toList(growable: false);
+
+    return prepared;
+  }
+
+  List<Map<String, dynamic>> _dedupeCloudRowsByIdentity(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final byCloudId = <String, Map<String, dynamic>>{};
+    final withoutCloudId = <Map<String, dynamic>>[];
+    for (final row in rows) {
+      final cloudId = _cloudRowString(row, 'cloud_id');
+      if (cloudId.isEmpty) {
+        withoutCloudId.add(row);
+        continue;
+      }
+      final existing = byCloudId[cloudId];
+      if (existing == null || _newestCloudRowFirst(row, existing) < 0) {
+        byCloudId[cloudId] = row;
+      }
+    }
+    return [...byCloudId.values, ...withoutCloudId];
+  }
+
+  List<Map<String, dynamic>> _dedupeCloudRowsByField(
+    List<Map<String, dynamic>> rows,
+    String field,
+  ) {
+    final byField = <String, Map<String, dynamic>>{};
+    final withoutField = <Map<String, dynamic>>[];
+    for (final row in rows) {
+      final value = _cloudRowString(row, field).toLowerCase();
+      if (value.isEmpty) {
+        withoutField.add(row);
+        continue;
+      }
+      final existing = byField[value];
+      if (existing == null || _newestCloudRowFirst(row, existing) < 0) {
+        byField[value] = row;
+      }
+    }
+    return [...byField.values, ...withoutField];
+  }
+
+  int _newestCloudRowFirst(
+    Map<String, dynamic> left,
+    Map<String, dynamic> right,
+  ) {
+    final leftRevision = (left['revision'] as num?)?.toInt() ?? 0;
+    final rightRevision = (right['revision'] as num?)?.toInt() ?? 0;
+    if (leftRevision != rightRevision) {
+      return rightRevision.compareTo(leftRevision);
+    }
+    return _cloudRowTimestamp(right).compareTo(_cloudRowTimestamp(left));
+  }
+
+  DateTime _cloudRowTimestamp(Map<String, dynamic> row) {
+    for (final key in const [
+      'cloud_updated_at',
+      'updated_at',
+      'opened_at',
+      'created_at',
+    ]) {
+      final value = _cloudRowString(row, key);
+      final parsed = DateTime.tryParse(value);
+      if (parsed != null) return parsed;
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  String _cloudRowString(Map<String, dynamic> row, String key) {
+    final payload = _cloudPayloadMap(row);
+    return _cloudNullableString(payload, row, key)?.trim() ?? '';
+  }
+
+  Future<void> _relinkCloudRestoredRelationships(DatabaseExecutor db) async {
+    final sales = await db.query(
+      'sales',
+      columns: ['id', 'product_cloud_id', 'shift_cloud_id'],
+      where:
+          "(product_cloud_id IS NOT NULL AND TRIM(product_cloud_id) != '') OR "
+          "(shift_cloud_id IS NOT NULL AND TRIM(shift_cloud_id) != '')",
+    );
+    for (final sale in sales) {
+      final values = <String, Object?>{};
+      final productCloudId = sale['product_cloud_id']?.toString().trim() ?? '';
+      if (productCloudId.isNotEmpty) {
+        final productId = await _localIdForCloudId(
+          db,
+          'products',
+          productCloudId,
+        );
+        if (productId == null) {
+          throw Exception(
+            'Restore paused. A sale could not find its product, so your current local data was not changed.',
+          );
+        }
+        values['product_id'] = productId;
+      }
+      final shiftCloudId = sale['shift_cloud_id']?.toString().trim() ?? '';
+      if (shiftCloudId.isNotEmpty) {
+        final shiftId = await _localIdForCloudId(db, 'shifts', shiftCloudId);
+        if (shiftId == null) {
+          values['shift_id'] = null;
+        } else {
+          values['shift_id'] = shiftId;
+        }
+      }
+      if (values.isNotEmpty) {
+        await db.update(
+          'sales',
+          values,
+          where: 'id = ?',
+          whereArgs: [sale['id']],
+        );
+      }
+    }
+
+    final readings = await db.query(
+      'shift_readings',
+      columns: ['id', 'shift_cloud_id'],
+      where: "shift_cloud_id IS NOT NULL AND TRIM(shift_cloud_id) != ''",
+    );
+    for (final reading in readings) {
+      final shiftCloudId = reading['shift_cloud_id']?.toString().trim() ?? '';
+      final shiftId = await _localIdForCloudId(db, 'shifts', shiftCloudId);
+      if (shiftId == null) {
+        await db.delete(
+          'shift_readings',
+          where: 'id = ?',
+          whereArgs: [reading['id']],
+        );
+        continue;
+      }
+      await db.update(
+        'shift_readings',
+        {'shift_id': shiftId},
+        where: 'id = ?',
+        whereArgs: [reading['id']],
+      );
+    }
+  }
+
+  Future<int?> _localIdForCloudId(
+    DatabaseExecutor db,
+    String tableName,
+    String cloudId,
+  ) async {
+    final rows = await db.query(
+      tableName,
+      columns: ['id'],
+      where: 'cloud_id = ?',
+      whereArgs: [cloudId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return (rows.first['id'] as num?)?.toInt();
   }
 
   Future<void> _clearLocalMirrorBeforeCloudRestore(DatabaseExecutor db) async {
@@ -1771,8 +2212,6 @@ class DatabaseHelper {
     for (final cloudRow in cloudRows) {
       if (_shouldSkipCloudRestoreRow(tableName, cloudRow)) continue;
       final row = await mapper(cloudRow);
-      final id = row['id'];
-      if (id == null) continue;
       await db.insert(
         tableName,
         row,
@@ -1806,14 +2245,24 @@ class DatabaseHelper {
 
     for (final entry in snapshot.entries) {
       for (final cloudRow in entry.value) {
-        final localId = cloudRow['local_id']?.toString();
+        final payload = _cloudPayloadMap(cloudRow);
+        final cloudId = _cloudNullableString(payload, cloudRow, 'cloud_id');
+        if (cloudId == null || cloudId.isEmpty) continue;
+        final restoredLocalId = await _localIdForCloudId(
+          db,
+          entry.key,
+          cloudId,
+        );
+        final localId =
+            restoredLocalId?.toString() ?? cloudRow['local_id']?.toString();
         if (localId == null || localId.isEmpty) continue;
         await db.insert('sync_queue', {
-          'queue_key': '${entry.key}:$localId',
+          'queue_key': '${entry.key}:$cloudId',
           'table_name': entry.key,
           'local_id': localId,
+          'cloud_id': cloudId,
           'operation': cloudRow['operation']?.toString() ?? 'upsert',
-          'payload': jsonEncode(_cloudPayloadMap(cloudRow)),
+          'payload': jsonEncode(payload),
           'base_revision': (cloudRow['revision'] as num?)?.toInt() ?? 0,
           'cloud_revision': (cloudRow['revision'] as num?)?.toInt() ?? 0,
           'status': 'synced',
@@ -1839,7 +2288,8 @@ class DatabaseHelper {
   ) async {
     final payload = _cloudPayloadMap(cloudRow);
     return {
-      'id': _cloudLocalId(cloudRow),
+      'cloud_id':
+          _cloudNullableString(payload, cloudRow, 'cloud_id') ?? _newCloudId(),
       'barcode': _cloudString(payload, cloudRow, 'barcode'),
       'product_name': _cloudString(payload, cloudRow, 'product_name'),
       'category': _cloudNullableString(payload, cloudRow, 'category'),
@@ -1877,7 +2327,8 @@ class DatabaseHelper {
   Map<String, Object?> _cloudUserToLocalRow(Map<String, dynamic> cloudRow) {
     final payload = _cloudPayloadMap(cloudRow);
     return {
-      'id': _cloudLocalId(cloudRow),
+      'cloud_id':
+          _cloudNullableString(payload, cloudRow, 'cloud_id') ?? _newCloudId(),
       'username': _cloudString(payload, cloudRow, 'username'),
       'password_hash': _cloudString(payload, cloudRow, 'password_hash'),
       'pin_hash': _cloudNullableString(payload, cloudRow, 'pin_hash'),
@@ -1893,8 +2344,14 @@ class DatabaseHelper {
   Map<String, Object?> _cloudSaleToLocalRow(Map<String, dynamic> cloudRow) {
     final payload = _cloudPayloadMap(cloudRow);
     return {
-      'id': _cloudLocalId(cloudRow),
+      'cloud_id':
+          _cloudNullableString(payload, cloudRow, 'cloud_id') ?? _newCloudId(),
       'product_id': _cloudInt(payload, cloudRow, 'local_product_id'),
+      'product_cloud_id': _cloudNullableString(
+        payload,
+        cloudRow,
+        'product_cloud_id',
+      ),
       'product_name': _cloudString(payload, cloudRow, 'product_name'),
       'quantity': _cloudInt(payload, cloudRow, 'quantity'),
       'price': _cloudNumber(payload, cloudRow, 'price'),
@@ -1953,6 +2410,11 @@ class DatabaseHelper {
         'receipt_discount_value',
       ),
       'shift_id': _cloudNullableInt(payload, cloudRow, 'shift_id'),
+      'shift_cloud_id': _cloudNullableString(
+        payload,
+        cloudRow,
+        'shift_cloud_id',
+      ),
       'created_at':
           _cloudNullableString(payload, cloudRow, 'created_at') ??
           DateTime.now().toIso8601String(),
@@ -1962,7 +2424,8 @@ class DatabaseHelper {
   Map<String, Object?> _cloudShiftToLocalRow(Map<String, dynamic> cloudRow) {
     final payload = _cloudPayloadMap(cloudRow);
     return {
-      'id': _cloudLocalId(cloudRow),
+      'cloud_id':
+          _cloudNullableString(payload, cloudRow, 'cloud_id') ?? _newCloudId(),
       'status': _cloudNullableString(payload, cloudRow, 'status') ?? 'open',
       'opened_by':
           _cloudNullableString(payload, cloudRow, 'opened_by') ?? 'unknown',
@@ -1988,8 +2451,14 @@ class DatabaseHelper {
   ) {
     final payload = _cloudPayloadMap(cloudRow);
     return {
-      'id': _cloudLocalId(cloudRow),
+      'cloud_id':
+          _cloudNullableString(payload, cloudRow, 'cloud_id') ?? _newCloudId(),
       'shift_id': _cloudInt(payload, cloudRow, 'shift_id'),
+      'shift_cloud_id': _cloudNullableString(
+        payload,
+        cloudRow,
+        'shift_cloud_id',
+      ),
       'type': _cloudNullableString(payload, cloudRow, 'type') ?? 'x',
       'created_by':
           _cloudNullableString(payload, cloudRow, 'created_by') ?? 'unknown',
@@ -2010,7 +2479,8 @@ class DatabaseHelper {
   Map<String, Object?> _cloudAuditLogToLocalRow(Map<String, dynamic> cloudRow) {
     final payload = _cloudPayloadMap(cloudRow);
     return {
-      'id': _cloudLocalId(cloudRow),
+      'cloud_id':
+          _cloudNullableString(payload, cloudRow, 'cloud_id') ?? _newCloudId(),
       'user':
           _cloudNullableString(payload, cloudRow, 'local_user') ??
           _cloudNullableString(payload, cloudRow, 'user') ??
@@ -2037,10 +2507,6 @@ class DatabaseHelper {
       }
     }
     return <String, Object?>{};
-  }
-
-  int? _cloudLocalId(Map<String, dynamic> cloudRow) {
-    return int.tryParse(cloudRow['local_id']?.toString() ?? '');
   }
 
   String _cloudString(
@@ -2145,7 +2611,11 @@ class DatabaseHelper {
     final localId = row['id']?.toString();
     if (localId == null || localId.isEmpty) return;
 
-    final queueKey = '$tableName:$localId';
+    final payload = await _rowWithCloudSyncIdentity(db, tableName, row);
+    final cloudId = payload['cloud_id']?.toString().trim() ?? '';
+    if (cloudId.isEmpty) return;
+
+    final queueKey = '$tableName:$cloudId';
     final existing = await db.query(
       'sync_queue',
       columns: ['id', 'status', 'payload'],
@@ -2163,7 +2633,7 @@ class DatabaseHelper {
       tableName: tableName,
       localId: localId,
       operation: 'upsert',
-      payload: row,
+      payload: payload,
     );
   }
 
@@ -2472,7 +2942,10 @@ class DatabaseHelper {
     });
   }
 
-  Future<void> factoryResetBusinessData({required String ownerPassword}) async {
+  Future<void> factoryResetBusinessData({
+    required String ownerPassword,
+    void Function(int synced, int total, String status)? onProgress,
+  }) async {
     if (!await verifyOwnerPassword(ownerPassword)) {
       throw Exception('Owner password is incorrect.');
     }
@@ -2483,11 +2956,37 @@ class DatabaseHelper {
 
     final db = await database;
     await _ensureBusinessDataSchema(db);
+    await _ensureCloudIdentitySchema(db);
+    const service = SupabaseSyncService();
+
+    try {
+      onProgress?.call(0, 0, 'Starting cloud factory reset');
+      final result = await service.factoryResetCloudBusinessData();
+      onProgress?.call(
+        result.rowsSoftDeleted,
+        result.rowsSoftDeleted,
+        'Cloud factory reset complete',
+      );
+      await db.transaction(_clearLocalBusinessRows);
+      await _clearLocalProductImages();
+      return;
+    } on FactoryResetFunctionUnavailable {
+      onProgress?.call(
+        0,
+        0,
+        'Factory reset service not deployed; using sync delete fallback',
+      );
+    }
+
     await db.transaction((txn) async {
       await _queueBusinessDeletesForFactoryReset(txn);
     });
 
-    await syncPendingChanges(forceRetry: true, maxBatches: 1000);
+    await syncPendingChanges(
+      forceRetry: true,
+      maxBatches: 1000,
+      onProgress: onProgress,
+    );
     final remaining = await pendingSyncCount();
     if (remaining > 0) {
       final lastError = await lastSyncError();

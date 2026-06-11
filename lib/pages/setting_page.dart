@@ -924,6 +924,13 @@ class _SettingsPageState extends State<SettingsPage> {
           content: Text(issue.message),
           behavior: SnackBarBehavior.floating,
           backgroundColor: _danger,
+          action: issue.details == null
+              ? null
+              : SnackBarAction(
+                  label: 'Details',
+                  textColor: Colors.white,
+                  onPressed: () => _showSyncIssueDetails(issue),
+                ),
         ),
       );
     } finally {
@@ -1569,6 +1576,14 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       await DatabaseHelper.instance.factoryResetBusinessData(
         ownerPassword: ownerPassword,
+        onProgress: (done, total, status) {
+          if (!mounted) return;
+          setState(() {
+            _dangerZoneLoadingMessage = total <= 0
+                ? status
+                : '$status ($done/$total)';
+          });
+        },
       );
       if (mounted) {
         setState(() {
